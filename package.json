@@ -44,10 +44,8 @@
     "check": "ultracite check",
     "fix": "ultracite fix"
   },
-  "dependencies": {
-    "@js-temporal/polyfill": "^0.5.1"
-  },
   "devDependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
     "@types/node": "^25.6.2",
     "@typescript/native-preview": "^7.0.0-dev.20260509.2",
     "husky": "^9.1.7",
@@ -57,6 +55,9 @@
     "typescript": "^6.0.3",
     "ultracite": "7.6.5",
     "vitest": "^4.1.5"
+  },
+  "peerDependencies": {
+    "@js-temporal/polyfill": "^0.5.1"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
