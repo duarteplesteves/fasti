@@ -1,7 +1,13 @@
 import { Temporal } from "@js-temporal/polyfill";
 
-import type { ExpandRulesParams, ExpandedWindow } from "./types.js";
+import type { AvailabilityRule, ExpandedWindow } from "./types.js";
 import { validateRule } from "./validate.js";
+
+export interface ExpandRulesParams {
+  rules: AvailabilityRule[];
+  from: Temporal.PlainDate;
+  to: Temporal.PlainDate;
+}
 
 export function expandRules(params: ExpandRulesParams): ExpandedWindow[] {
   const { rules, from, to } = params;

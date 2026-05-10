@@ -5,7 +5,7 @@ import type { Booking } from "../core/types.js";
 import { withBlockingFlag } from "./with-blocking-flag.js";
 
 describe(withBlockingFlag, () => {
-  const baseBooking: Booking = {
+  const baseBooking: Omit<Booking, "isBlocking"> = {
     end: Temporal.Instant.from("2026-06-09T10:00:00Z"),
     id: "1",
     resourceId: "doc-1",
@@ -15,31 +15,42 @@ describe(withBlockingFlag, () => {
   it("marks blocking statuses as blocking", () => {
     const bookings = withBlockingFlag(
       [{ ...baseBooking, status: "CONFIRMED" }],
-      { blocking: ["CONFIRMED"] }
+      { blocking: ["CONFIRMED"], default: "nonBlocking" }
     );
-    expect(bookings[0].isBlocking).toBeTruthy();
+    expect(bookings[0]?.isBlocking).toBeTruthy();
   });
 
   it("marks non-blocking statuses as non-blocking", () => {
     const bookings = withBlockingFlag(
       [{ ...baseBooking, status: "CANCELLED" }],
-      { nonBlocking: ["CANCELLED"] }
+      { default: "blocking", nonBlocking: ["CANCELLED"] }
     );
-    expect(bookings[0].isBlocking).toBeFalsy();
+    expect(bookings[0]?.isBlocking).toBeFalsy();
   });
 
-  it("leaves bookings untouched when status is unmapped", () => {
+  it("applies default 'blocking' to unmapped statuses", () => {
     const bookings = withBlockingFlag([{ ...baseBooking, status: "UNKNOWN" }], {
       blocking: ["CONFIRMED"],
+      default: "blocking",
       nonBlocking: ["CANCELLED"],
     });
-    expect(bookings[0].isBlocking).toBeUndefined();
+    expect(bookings[0]?.isBlocking).toBeTruthy();
   });
 
-  it("leaves bookings without status untouched", () => {
+  it("applies default 'nonBlocking' to unmapped statuses", () => {
+    const bookings = withBlockingFlag([{ ...baseBooking, status: "UNKNOWN" }], {
+      blocking: ["CONFIRMED"],
+      default: "nonBlocking",
+      nonBlocking: ["CANCELLED"],
+    });
+    expect(bookings[0]?.isBlocking).toBeFalsy();
+  });
+
+  it("applies default to bookings without status", () => {
     const bookings = withBlockingFlag([baseBooking], {
       blocking: ["CONFIRMED"],
+      default: "blocking",
     });
-    expect(bookings[0].isBlocking).toBeUndefined();
+    expect(bookings[0]?.isBlocking).toBeTruthy();
   });
 });

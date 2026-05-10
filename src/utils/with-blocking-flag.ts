@@ -1,41 +1,39 @@
 import type { Booking } from "../core/types.js";
 
 /**
- * Maps user-defined statuses to the `isBlocking` flag.
+ * Maps user-defined statuses to the required `isBlocking` flag.
+ *
+ * Every returned booking has `isBlocking` set: by `blocking` if the status
+ * matches, by `nonBlocking` if it matches, otherwise by `default`.
  *
  * @example
  * const bookings = withBlockingFlag(rawBookings, {
  *   blocking: ["CONFIRMED", "PENDING"],
  *   nonBlocking: ["CANCELLED", "MISSED"],
+ *   default: "blocking",
  * });
  */
 export function withBlockingFlag(
-  bookings: Booking[],
+  bookings: Omit<Booking, "isBlocking">[],
   mapping: {
     blocking?: string[];
     nonBlocking?: string[];
+    default: "blocking" | "nonBlocking";
   }
 ): Booking[] {
   const blockingSet = new Set(mapping.blocking);
   const nonBlockingSet = new Set(mapping.nonBlocking);
+  const defaultIsBlocking = mapping.default === "blocking";
 
   return bookings.map((b) => {
-    if (b.status === undefined) {
-      return b;
-    }
-
-    let isBlocking: boolean | undefined;
-
-    if (blockingSet.has(b.status)) {
+    let isBlocking: boolean;
+    if (b.status !== undefined && blockingSet.has(b.status)) {
       isBlocking = true;
-    } else if (nonBlockingSet.has(b.status)) {
+    } else if (b.status !== undefined && nonBlockingSet.has(b.status)) {
       isBlocking = false;
+    } else {
+      isBlocking = defaultIsBlocking;
     }
-
-    if (isBlocking === undefined) {
-      return b;
-    }
-
     return { ...b, isBlocking };
   });
 }
