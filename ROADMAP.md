@@ -20,6 +20,24 @@ This document captures features, concepts, and architectural directions discusse
 - Integrate `fast-check` or similar to generate random rules, bookings, and ranges.
 - Catches edge cases in slot generation and conflict detection (DST transitions, leap years, timezone boundaries).
 
+### Cross-Day Availability Windows
+- Allow `timeWindow.start > timeWindow.end` interpreted as wrapping past midnight (e.g. 22:00–02:00 for night shifts).
+- *v0.1 workaround:* Split into two adjacent rules (22:00–24:00 + 00:00–02:00) on consecutive days of the week.
+
+### DST Fall-Back Double-Occurrence Slots
+- Add an opt-in flag (e.g. `includeDstOverlap: true`) to surface slots during the repeated wall-clock hour on fall-back day.
+- *v0.1 behaviour:* Only the first occurrence of the repeated hour generates slots; the second hour of bookable real time is invisible. See [ADR 005](./docs/adr/005-dst-policy.md).
+
+### Pre-Expanded Windows as Query Input
+- Allow `findFreeSlots` / `isSlotValid` to accept `ExpandedWindow[]` directly, bypassing in-call expansion.
+- Useful for callers who memoise expansion results across many queries with the same rules.
+- *v0.1 behaviour:* Query functions accept abstract `AvailabilityRule[]` only; `expandRules` is a separate utility.
+
+### Performance Benchmarks
+- Add `benchmark/` directory using `vitest bench` or `mitata`.
+- Track regression on large inputs (~10k bookings, year-long query ranges).
+- v0.1 commits to naive `O(D × R × S × B)` complexity with a query-range pre-filter; benchmarks formalise the acceptable bounds.
+
 ---
 
 ## v0.3 — Multi-Resource & Capacity
