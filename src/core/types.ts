@@ -66,6 +66,16 @@ export interface Slot {
   resourceId: string;
 }
 
+/**
+ * One concrete application of one `AvailabilityRule` on one calendar date
+ * in that rule's timezone. Output of `expandRules()`.
+ */
+export interface ExpandedWindow {
+  resourceId: string;
+  start: Temporal.ZonedDateTime;
+  end: Temporal.ZonedDateTime;
+}
+
 /* ------------------------------------------------------------------ */
 // Function parameter types
 /* ------------------------------------------------------------------ */
