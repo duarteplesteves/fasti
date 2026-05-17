@@ -6,9 +6,11 @@ import { describe, expect } from "vitest";
 import {
   arbAvailabilityRule,
   arbBooking,
+  arbDateRange,
   arbDuration,
   arbResourceId,
 } from "../test-utils/arbitraries.js";
+import { propConfig } from "../test-utils/prop-config.js";
 import { findFreeSlots } from "./find-free-slots.js";
 
 describe(`${findFreeSlots.name} (property)`, () => {
@@ -19,26 +21,24 @@ describe(`${findFreeSlots.name} (property)`, () => {
       arbBooking(),
       arbBooking(),
       arbDuration(),
+      arbDateRange(),
     ],
-    { timeout: 30_000 }
+    propConfig
   )(
     "no returned slot overlaps any blocking booking",
-    (rule, resourceId, b1, b2, duration) => {
+    (rule, resourceId, b1, b2, duration, range) => {
       const finalRule = { ...rule, resourceId };
       const finalB1 = { ...b1, resourceId };
       const finalB2 = { ...b2, resourceId };
 
-      const from = Temporal.Instant.from("2024-09-01T00:00:00Z");
-      const to = Temporal.Instant.from("2024-09-14T00:00:00Z");
-
       const slots = findFreeSlots({
         bookings: [finalB1, finalB2],
         duration,
-        from,
+        from: range.from,
         options: { interval: duration },
         resourceId,
         rules: [finalRule],
-        to,
+        to: range.to,
       });
 
       for (const slot of slots) {
@@ -60,11 +60,17 @@ describe(`${findFreeSlots.name} (property)`, () => {
   );
 
   test.prop(
-    [arbAvailabilityRule(), arbResourceId(), arbBooking(), arbDuration()],
-    { timeout: 30_000 }
+    [
+      arbAvailabilityRule(),
+      arbResourceId(),
+      arbBooking(),
+      arbDuration(),
+      arbDateRange(),
+    ],
+    propConfig
   )(
     "adding a non-blocking booking never reduces the number of free slots",
-    (rule, resourceId, nonBlocking, duration) => {
+    (rule, resourceId, nonBlocking, duration, range) => {
       const finalRule = { ...rule, resourceId };
       const finalNonBlocking = {
         ...nonBlocking,
@@ -72,27 +78,24 @@ describe(`${findFreeSlots.name} (property)`, () => {
         resourceId,
       };
 
-      const from = Temporal.Instant.from("2024-09-01T00:00:00Z");
-      const to = Temporal.Instant.from("2024-09-14T00:00:00Z");
-
       const slotsWithout = findFreeSlots({
         bookings: [],
         duration,
-        from,
+        from: range.from,
         options: { interval: duration },
         resourceId,
         rules: [finalRule],
-        to,
+        to: range.to,
       });
 
       const slotsWith = findFreeSlots({
         bookings: [finalNonBlocking],
         duration,
-        from,
+        from: range.from,
         options: { interval: duration },
         resourceId,
         rules: [finalRule],
-        to,
+        to: range.to,
       });
 
       expect(slotsWith.length).toBeGreaterThanOrEqual(slotsWithout.length);

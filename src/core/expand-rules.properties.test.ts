@@ -7,10 +7,11 @@ import {
   arbAvailabilityRule,
   arbResourceId,
 } from "../test-utils/arbitraries.js";
+import { propConfig } from "../test-utils/prop-config.js";
 import { expandRules } from "./expand-rules.js";
 
 describe(`${expandRules.name} (property)`, () => {
-  test.prop([arbAvailabilityRule(), arbResourceId()])(
+  test.prop([arbAvailabilityRule(), arbResourceId()], propConfig)(
     "emits windows with start < end for every output",
     (rule, resourceId) => {
       const finalRule = { ...rule, resourceId };
@@ -27,7 +28,7 @@ describe(`${expandRules.name} (property)`, () => {
     }
   );
 
-  test.prop([arbAvailabilityRule(), arbResourceId()])(
+  test.prop([arbAvailabilityRule(), arbResourceId()], propConfig)(
     "every window falls on a day of week declared in the rule",
     (rule, resourceId) => {
       const finalRule = { ...rule, resourceId };
@@ -45,7 +46,7 @@ describe(`${expandRules.name} (property)`, () => {
     }
   );
 
-  test.prop([arbAvailabilityRule(), arbResourceId()])(
+  test.prop([arbAvailabilityRule(), arbResourceId()], propConfig)(
     "no windows are emitted on exception dates",
     (rule, resourceId) => {
       const finalRule = { ...rule, resourceId };

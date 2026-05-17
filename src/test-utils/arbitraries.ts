@@ -1,5 +1,6 @@
 import { Temporal } from "@js-temporal/polyfill";
 import {
+  array,
   boolean,
   constant,
   constantFrom,
@@ -175,6 +176,15 @@ export function arbAvailabilityRule(opts?: {
     .filter((r): r is AvailabilityRule => r !== null);
 }
 
+export function arbRulesForResource(
+  resourceId: string
+): Arbitrary<AvailabilityRule[]> {
+  return array(arbAvailabilityRule({ resourceId }), {
+    maxLength: 3,
+    minLength: 1,
+  });
+}
+
 export function arbBooking(opts?: {
   isBlocking?: boolean;
   resourceId?: string;
@@ -234,4 +244,47 @@ export function arbResourceId(): Arbitrary<string> {
 
 export function arbDuration(): Arbitrary<number> {
   return integer({ max: 240, min: 5 });
+}
+
+const dstDates = [
+  Temporal.PlainDate.from("2024-03-10"),
+  Temporal.PlainDate.from("2024-03-31"),
+  Temporal.PlainDate.from("2024-10-27"),
+  Temporal.PlainDate.from("2024-11-03"),
+  Temporal.PlainDate.from("2025-03-09"),
+  Temporal.PlainDate.from("2025-03-30"),
+  Temporal.PlainDate.from("2025-10-26"),
+  Temporal.PlainDate.from("2025-11-02"),
+];
+
+const maxWeekRangeMs = 4 * 7 * 24 * 60 * 60 * 1000;
+
+export function arbDateRange(): Arbitrary<{
+  from: Temporal.Instant;
+  to: Temporal.Instant;
+}> {
+  return boolean().chain((useDst) => {
+    if (useDst) {
+      return constantFrom(...dstDates).map((date) => {
+        const start = date.toZonedDateTime({
+          plainTime: Temporal.PlainTime.from("00:00"),
+          timeZone: "UTC",
+        });
+        return {
+          from: start.subtract({ days: 1 }).toInstant(),
+          to: start.add({ weeks: 2 }).toInstant(),
+        };
+      });
+    }
+    return record({
+      _from: arbInstantInRange(
+        Temporal.Instant.from("2020-01-01T00:00:00Z"),
+        Temporal.Instant.from("2030-06-01T00:00:00Z")
+      ),
+      _to: integer({ max: maxWeekRangeMs, min: 1 }),
+    }).map(({ _from, _to }) => ({
+      from: _from,
+      to: _from.add({ milliseconds: _to }),
+    }));
+  });
 }

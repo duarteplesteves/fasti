@@ -1,38 +1,42 @@
-import { test } from "@fast-check/vitest";
 /* eslint-disable vitest/no-standalone-expect */
-import { Temporal } from "@js-temporal/polyfill";
+import { test } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
 
 import {
-  arbAvailabilityRule,
   arbBooking,
+  arbDateRange,
   arbDuration,
   arbResourceId,
+  arbRulesForResource,
 } from "../test-utils/arbitraries.js";
+import { propConfig } from "../test-utils/prop-config.js";
 import { findFreeSlots } from "./find-free-slots.js";
 import { isSlotValid } from "./is-slot-valid.js";
 
 describe("composition", () => {
   test.prop(
-    [arbAvailabilityRule(), arbResourceId(), arbBooking(), arbDuration()],
-    { timeout: 30_000 }
+    [
+      arbResourceId(),
+      arbRulesForResource(""),
+      arbBooking(),
+      arbDuration(),
+      arbDateRange(),
+    ],
+    propConfig
   )(
     "every slot from findFreeSlots passes isSlotValid",
-    (rule, resourceId, booking, duration) => {
-      const finalRule = { ...rule, resourceId };
+    (resourceId, rules, booking, duration, range) => {
+      const finalRules = rules.map((r) => ({ ...r, resourceId }));
       const finalBooking = { ...booking, resourceId };
-
-      const from = Temporal.Instant.from("2024-09-01T00:00:00Z");
-      const to = Temporal.Instant.from("2024-09-14T00:00:00Z");
 
       const slots = findFreeSlots({
         bookings: [finalBooking],
         duration,
-        from,
+        from: range.from,
         options: { interval: duration },
         resourceId,
-        rules: [finalRule],
-        to,
+        rules: finalRules,
+        to: range.to,
       });
 
       for (const slot of slots) {
@@ -40,7 +44,7 @@ describe("composition", () => {
           isSlotValid({
             bookings: [finalBooking],
             resourceId,
-            rules: [finalRule],
+            rules: finalRules,
             slot: {
               end: slot.end.toInstant(),
               start: slot.start.toInstant(),
