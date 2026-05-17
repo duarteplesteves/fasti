@@ -17,7 +17,7 @@ This document captures features, concepts, and architectural directions discusse
 - *Current workaround:* Inflate booking duration manually.
 
 ### Property-Based Testing
-- Integrate `fast-check` or similar to generate random rules, bookings, and ranges.
+- ~~Integrate `fast-check` or similar to generate random rules, bookings, and ranges.~~ **Done (2026-05-17)** — 6 properties across 3 suites covering `expandRules`, `findFreeSlots`, and cross-function composition. Includes typed domain arbitraries, DST-biased date range generation, CI-aware seeding (1k local / 10k CI iterations).
 - Catches edge cases in slot generation and conflict detection (DST transitions, leap years, timezone boundaries).
 
 ### Cross-Day Availability Windows

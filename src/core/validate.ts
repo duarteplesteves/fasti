@@ -12,10 +12,11 @@ export function validateRule(rule: AvailabilityRule): void {
     );
   }
 
-  const isEffectiveEndAfterStart =
-    Temporal.PlainTime.compare(rule.timeWindow.start, rule.timeWindow.end) < 0;
-
-  if (rule.effectiveFrom && rule.effectiveTo && isEffectiveEndAfterStart) {
+  if (
+    rule.effectiveFrom &&
+    rule.effectiveTo &&
+    Temporal.PlainDate.compare(rule.effectiveTo, rule.effectiveFrom) < 0
+  ) {
     throw new Error(
       `Invalid rule: effectiveTo (${rule.effectiveTo.toString()}) must be on or after effectiveFrom (${rule.effectiveFrom.toString()}).`
     );

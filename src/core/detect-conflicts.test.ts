@@ -4,26 +4,26 @@ import { describe, expect, it } from "vitest";
 import { detectConflicts } from "./detect-conflicts.js";
 import type { Booking } from "./types.js";
 
+function bookingAt(
+  id: string,
+  startISO: string,
+  endISO: string,
+  isBlocking: boolean
+): Booking {
+  return {
+    end: Temporal.Instant.from(endISO),
+    id,
+    isBlocking,
+    resourceId: "doc-1",
+    start: Temporal.Instant.from(startISO),
+  };
+}
+
 describe(detectConflicts, () => {
   const candidate = {
     end: Temporal.Instant.from("2026-05-12T10:00:00Z"),
     start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
   };
-
-  function bookingAt(
-    id: string,
-    startISO: string,
-    endISO: string,
-    isBlocking: boolean
-  ): Booking {
-    return {
-      end: Temporal.Instant.from(endISO),
-      id,
-      isBlocking,
-      resourceId: "doc-1",
-      start: Temporal.Instant.from(startISO),
-    };
-  }
 
   it("returns a blocking booking that fully contains the candidate", () => {
     const booking: Booking = {

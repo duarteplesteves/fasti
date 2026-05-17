@@ -9,5 +9,6 @@ export default defineConfig({
     },
     environment: "node",
     include: ["src/**/*.test.ts"],
+    testTimeout: process.env.CI ? 120_000 : 60_000,
   },
 });

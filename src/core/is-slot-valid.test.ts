@@ -4,6 +4,28 @@ import { describe, expect, it } from "vitest";
 import { isSlotValid } from "./is-slot-valid.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
+function slotAt(startISO: string, endISO: string) {
+  return {
+    end: Temporal.Instant.from(endISO),
+    start: Temporal.Instant.from(startISO),
+  };
+}
+
+function bookingAt(
+  id: string,
+  startISO: string,
+  endISO: string,
+  isBlocking: boolean
+): Booking {
+  return {
+    end: Temporal.Instant.from(endISO),
+    id,
+    isBlocking,
+    resourceId: "doc-1",
+    start: Temporal.Instant.from(startISO),
+  };
+}
+
 describe(isSlotValid, () => {
   const tuesdayMorning: AvailabilityRule = {
     recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
@@ -14,28 +36,6 @@ describe(isSlotValid, () => {
     },
     timezone: "Europe/Lisbon",
   };
-
-  function slotAt(startISO: string, endISO: string) {
-    return {
-      end: Temporal.Instant.from(endISO),
-      start: Temporal.Instant.from(startISO),
-    };
-  }
-
-  function bookingAt(
-    id: string,
-    startISO: string,
-    endISO: string,
-    isBlocking: boolean
-  ): Booking {
-    return {
-      end: Temporal.Instant.from(endISO),
-      id,
-      isBlocking,
-      resourceId: "doc-1",
-      start: Temporal.Instant.from(startISO),
-    };
-  }
 
   it("returns true for a slot fully inside a rule with no bookings", () => {
     // 2026-05-12 is a Tuesday. 09:30 Lisbon (WEST, UTC+1) = 08:30 UTC.

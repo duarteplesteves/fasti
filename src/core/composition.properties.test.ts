@@ -1,0 +1,57 @@
+/* eslint-disable vitest/no-standalone-expect */
+import { test } from "@fast-check/vitest";
+import { describe, expect } from "vitest";
+
+import {
+  arbBooking,
+  arbDateRange,
+  arbDuration,
+  arbResourceId,
+  arbRulesForResource,
+} from "../test-utils/arbitraries.js";
+import { propConfig } from "../test-utils/prop-config.js";
+import { findFreeSlots } from "./find-free-slots.js";
+import { isSlotValid } from "./is-slot-valid.js";
+
+describe("composition", () => {
+  test.prop(
+    [
+      arbResourceId(),
+      arbRulesForResource(""),
+      arbBooking(),
+      arbDuration(),
+      arbDateRange(),
+    ],
+    propConfig
+  )(
+    "every slot from findFreeSlots passes isSlotValid",
+    (resourceId, rules, booking, duration, range) => {
+      const finalRules = rules.map((r) => ({ ...r, resourceId }));
+      const finalBooking = { ...booking, resourceId };
+
+      const slots = findFreeSlots({
+        bookings: [finalBooking],
+        duration,
+        from: range.from,
+        options: { interval: duration },
+        resourceId,
+        rules: finalRules,
+        to: range.to,
+      });
+
+      for (const slot of slots) {
+        expect(
+          isSlotValid({
+            bookings: [finalBooking],
+            resourceId,
+            rules: finalRules,
+            slot: {
+              end: slot.end.toInstant(),
+              start: slot.start.toInstant(),
+            },
+          })
+        ).toBeTruthy();
+      }
+    }
+  );
+});
