@@ -1,4 +1,4 @@
-# CONTEXT.md — better-schedule
+# GLOSSARY.md — better-schedule
 
 ## Domain
 

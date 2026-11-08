@@ -26,7 +26,7 @@ v0.1 adopts approach 2:
 - **Spring-forward gap → drop the slot.** Grid candidates whose wall-clock start does not exist in the rule's zone are silently skipped. The next grid step proceeds normally. Constructed via `Temporal.ZonedDateTime` with `disambiguation: 'reject'`, treating the throw as "this slot does not exist."
 - **Fall-back overlap → first occurrence only.** When the wall-clock grid step happens during a repeated hour, only the first occurrence (still under the pre-transition offset) generates a slot. The second occurrence's real-time bookable hour is not enumerated.
 
-Both behaviours are documented in CONTEXT.md as a v0.1 simplification.
+Both behaviours are documented in GLOSSARY.md as a v0.1 simplification.
 
 ## Consequences
 

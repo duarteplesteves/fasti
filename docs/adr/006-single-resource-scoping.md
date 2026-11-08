@@ -12,7 +12,7 @@ The earlier params shape did not encode this constraint: `findFreeSlots` accepte
 
 - Multi-resource inputs were syntactically valid but semantically undefined.
 - An empty `rules` array carried no resource identity at all.
-- The single-resource invariant lived in prose (CONTEXT.md) rather than in the type system.
+- The single-resource invariant lived in prose (GLOSSARY.md) rather than in the type system.
 
 Three options were considered:
 
@@ -28,7 +28,7 @@ Three options were considered:
 
 ## Consequences
 
-- **Positive:** The single-resource contract is self-documenting in the type signature. No reader has to find the prose constraint in CONTEXT.md.
+- **Positive:** The single-resource contract is self-documenting in the type signature. No reader has to find the prose constraint in GLOSSARY.md.
 - **Positive:** Empty-input cases are well-defined. `findFreeSlots({ resourceId: "doc-1", rules: [], bookings: [], ... })` unambiguously means "no slots for doc-1," not "no slots for some unspecified resource."
 - **Positive:** Caller mistakes (mixing resources in one call) fail loudly at the engine boundary rather than producing subtly-wrong results downstream.
 - **Negative:** Slight syntactic redundancy — the resource is named at the top level and also present on every rule/booking in the input. Acceptable cost for the guarantee.
