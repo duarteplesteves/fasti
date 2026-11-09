@@ -2,9 +2,9 @@
 
 ## Domain
 
-**better-schedule** is a headless, type-safe scheduling engine for TypeScript.
+**better-schedule** is a type-safe scheduling **Framework** for TypeScript, built around a pure **Core**.
 
-It answers one question: *given a resource's availability rules and existing bookings, what time slots are free?* The engine is stateless, framework-agnostic, and storage-agnostic. Users bring their own data; the engine performs time-and-resource math.
+The **Core** answers one question: *given a resource's availability rules and existing bookings, what time slots are free?* It is stateless, framework-agnostic, and storage-agnostic. The **Framework** sits between the developer's system and their own database: configured with an **Adapter**, it exposes **Actions** that read and write scheduling data, using the Core for the math.
 
 ---
 
@@ -15,6 +15,17 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 ---
 
 ## Ubiquitous Language
+
+### Layers
+
+| Term | Definition | Notes |
+|------|------------|-------|
+| **Framework** | The configurable instance a developer creates and calls from their backend; it owns scheduling operations against the developer's database. | _Avoid_: SDK, engine (for the whole package). Built on the Core; never replaces it. |
+| **Core** | The pure scheduling math: stateless functions over rules and bookings, with no storage or side effects. | Usable on its own, without a Framework instance. _Avoid_: engine (as a synonym for the whole package). |
+| **Adapter** | The bridge between the Framework and the developer's own database. | The developer owns the database; the Adapter only reads and writes through it. |
+| **Action** | A server-side operation exposed by a Framework instance (e.g. booking, cancelling). | Called directly from the developer's backend. _Avoid_: endpoint (HTTP exposure is a separate, later concern). |
+
+### Scheduling
 
 | Term | Definition | Notes |
 |------|------------|-------|
