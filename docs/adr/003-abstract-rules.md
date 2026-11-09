@@ -18,3 +18,7 @@ Availability can be expressed as concrete windows or abstract patterns ("every T
 - **Positive:** Expansion is testable in isolation.
 - **Positive:** Users can bring their own recurrence engine if they need more complexity (e.g. `rrule`).
 - **Negative:** Two-step flow for advanced use cases (expand, then query).
+
+## Amendment (2026-11-09)
+
+The Decision above overstates the input surface. In v0.1 the query functions (`findFreeSlots`, `isSlotValid`) accept abstract `AvailabilityRule[]` only; pre-expanded `ExpandedWindow[]` is not a supported entry point. `expandRules()` remains a standalone utility, and accepting pre-expanded input is a possible future addition.
