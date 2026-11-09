@@ -1,5 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
-
 import { detectConflicts } from "./detect-conflicts.js";
 import { expandRules } from "./expand-rules.js";
 import type { AvailabilityRule, Booking } from "./types.js";
@@ -37,6 +35,7 @@ export function isSlotValid(params: IsSlotValidParams): boolean {
   const fitsInSomeWindow = windows.some((w) => {
     const windowStart = w.start.toInstant();
     const windowEnd = w.end.toInstant();
+
     return (
       Temporal.Instant.compare(slot.start, windowStart) >= 0 &&
       Temporal.Instant.compare(slot.end, windowEnd) <= 0

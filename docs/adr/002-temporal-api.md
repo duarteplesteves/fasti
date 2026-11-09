@@ -18,3 +18,7 @@ The engine will use the **Temporal API** (TC39 proposal) via `@js-temporal/polyf
 - **Positive:** Future-proof as runtimes adopt Temporal natively.
 - **Negative:** Requires a polyfill (~100KB) until native support is universal.
 - **Mitigation:** Polyfill is bundled as a direct dependency in v0.1; will be removed in a future major version.
+
+## Amendment (2026-11-08)
+
+The polyfill was removed. The engine now uses the global `Temporal`, typed by TypeScript 7.1's `esnext` lib and native in Node.js 26+ and Bun 1.4+. `engines.node` is `>=26`. Consumers on other runtimes must install a global polyfill themselves.

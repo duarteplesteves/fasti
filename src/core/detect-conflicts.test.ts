@@ -1,4 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
 
 import { detectConflicts } from "./detect-conflicts.js";
@@ -59,6 +58,7 @@ describe(detectConflicts, () => {
       "2026-05-12T10:00:00Z",
       false
     );
+
     expect(
       detectConflicts({
         bookings: [nonBlocking],
@@ -75,12 +75,14 @@ describe(detectConflicts, () => {
       "2026-05-12T09:00:00Z",
       true
     );
+
     const touchAtEnd = bookingAt(
       "b2",
       "2026-05-12T10:00:00Z",
       "2026-05-12T11:00:00Z",
       true
     );
+
     expect(
       detectConflicts({
         bookings: [touchAtStart, touchAtEnd],
@@ -97,17 +99,20 @@ describe(detectConflicts, () => {
       "2026-05-12T10:30:00Z",
       true
     );
+
     const earlier = bookingAt(
       "earlier",
       "2026-05-12T08:30:00Z",
       "2026-05-12T09:30:00Z",
       true
     );
+
     const result = detectConflicts({
       bookings: [later, earlier],
       candidate,
       resourceId: "doc-1",
     });
+
     expect(result.map((b) => b.id)).toStrictEqual(["earlier", "later"]);
   });
 
@@ -118,12 +123,14 @@ describe(detectConflicts, () => {
       "2026-05-12T08:00:00Z",
       true
     );
+
     const after = bookingAt(
       "b2",
       "2026-05-12T11:00:00Z",
       "2026-05-12T12:00:00Z",
       true
     );
+
     expect(
       detectConflicts({
         bookings: [before, after],
@@ -140,23 +147,27 @@ describe(detectConflicts, () => {
       "2026-05-12T09:30:00Z",
       true
     );
+
     const overlapMiddle = bookingAt(
       "middle",
       "2026-05-12T09:15:00Z",
       "2026-05-12T09:45:00Z",
       true
     );
+
     const overlapEnd = bookingAt(
       "end",
       "2026-05-12T09:30:00Z",
       "2026-05-12T10:30:00Z",
       true
     );
+
     const result = detectConflicts({
       bookings: [overlapEnd, overlapMiddle, overlapStart],
       candidate,
       resourceId: "doc-1",
     });
+
     expect(result.map((b) => b.id)).toStrictEqual(["start", "middle", "end"]);
   });
 
@@ -167,6 +178,7 @@ describe(detectConflicts, () => {
       "2026-05-12T10:00:00Z",
       true
     );
+
     const wrongResource: Booking = { ...stray, resourceId: "doc-2" };
     expect(() =>
       detectConflicts({

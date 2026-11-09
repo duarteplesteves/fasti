@@ -1,5 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
-
 import type { Booking } from "./types.js";
 
 export interface DetectConflictsParams {
@@ -24,11 +22,14 @@ export function detectConflicts(params: DetectConflictsParams): Booking[] {
       if (!b.isBlocking) {
         return false;
       }
+
       // Half-open intervals [start, end): overlap iff a.start < b.end AND b.start < a.end.
       const startsBeforeBookingEnds =
         Temporal.Instant.compare(candidate.start, b.end) < 0;
+
       const bookingStartsBeforeCandidateEnds =
         Temporal.Instant.compare(b.start, candidate.end) < 0;
+
       return startsBeforeBookingEnds && bookingStartsBeforeCandidateEnds;
     })
     .toSorted((a, b) => Temporal.Instant.compare(a.start, b.start));

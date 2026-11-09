@@ -27,6 +27,7 @@ export function withBlockingFlag(
 
   return bookings.map((b) => {
     let isBlocking: boolean;
+
     if (b.status !== undefined && blockingSet.has(b.status)) {
       isBlocking = true;
     } else if (b.status !== undefined && nonBlockingSet.has(b.status)) {
@@ -34,6 +35,7 @@ export function withBlockingFlag(
     } else {
       isBlocking = defaultIsBlocking;
     }
+
     return { ...b, isBlocking };
   });
 }

@@ -38,7 +38,7 @@ The engine has no internal state, no storage adapter, and no side effects. Every
 
 ### Temporal-Native
 
-All time representations use the TC39 Temporal API (via polyfill until native support is universal):
+All time representations use the TC39 Temporal API (the native global `Temporal`):
 - **Absolute facts** (bookings, query boundaries) → `Temporal.Instant`
 - **Local policy** (availability windows, slots shown to users) → `Temporal.ZonedDateTime` / `Temporal.PlainTime`
 - **Calendar iteration** (effective dates, exceptions) → `Temporal.PlainDate`

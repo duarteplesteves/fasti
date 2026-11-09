@@ -1,5 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
-
 import type { AvailabilityRule } from "./types.js";
 
 export function validateRule(rule: AvailabilityRule): void {

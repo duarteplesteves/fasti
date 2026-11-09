@@ -1,4 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
 
 import type { Booking } from "../core/types.js";
@@ -17,6 +16,7 @@ describe(withBlockingFlag, () => {
       [{ ...baseBooking, status: "CONFIRMED" }],
       { blocking: ["CONFIRMED"], default: "nonBlocking" }
     );
+
     expect(bookings[0]?.isBlocking).toBeTruthy();
   });
 
@@ -25,6 +25,7 @@ describe(withBlockingFlag, () => {
       [{ ...baseBooking, status: "CANCELLED" }],
       { default: "blocking", nonBlocking: ["CANCELLED"] }
     );
+
     expect(bookings[0]?.isBlocking).toBeFalsy();
   });
 
@@ -34,6 +35,7 @@ describe(withBlockingFlag, () => {
       default: "blocking",
       nonBlocking: ["CANCELLED"],
     });
+
     expect(bookings[0]?.isBlocking).toBeTruthy();
   });
 
@@ -43,6 +45,7 @@ describe(withBlockingFlag, () => {
       default: "nonBlocking",
       nonBlocking: ["CANCELLED"],
     });
+
     expect(bookings[0]?.isBlocking).toBeFalsy();
   });
 
@@ -51,6 +54,7 @@ describe(withBlockingFlag, () => {
       blocking: ["CONFIRMED"],
       default: "blocking",
     });
+
     expect(bookings[0]?.isBlocking).toBeTruthy();
   });
 });

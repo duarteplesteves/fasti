@@ -12,12 +12,12 @@ A type-safe, stateless scheduling engine for TypeScript.
 ## Installation
 
 ```bash
-npm install better-schedule @js-temporal/polyfill
+npm install better-schedule
 # or
-bun add better-schedule @js-temporal/polyfill
+bun add better-schedule
 ```
 
-`@js-temporal/polyfill` is a peer dependency. It's required until TC39 Temporal lands in every runtime the package targets.
+better-schedule uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without native Temporal, install a global polyfill before importing the package.
 
 ## Core Concepts
 
@@ -41,7 +41,6 @@ bun add better-schedule @js-temporal/polyfill
 ## Usage
 
 ```typescript
-import { Temporal } from "@js-temporal/polyfill";
 import { findFreeSlots, withBlockingFlag } from "better-schedule";
 
 const rules = [

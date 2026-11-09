@@ -1,4 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
 
 import { findFreeSlots, isSlotValid, withBlockingFlag } from "./index.js";
@@ -47,6 +46,7 @@ describe("public API surface", () => {
         rules: [tuesday9to17],
         slot: { end: slot.end.toInstant(), start: slot.start.toInstant() },
       });
+
       expect(valid).toBeTruthy();
     }
   });

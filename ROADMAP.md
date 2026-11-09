@@ -112,7 +112,7 @@ const scheduler = createScheduler({
 
 ### Bundled Build Outputs
 - Move from `tsc`-only to `unbuild` or `rollup` for optimized, tree-shakeable bundles.
-- Separate browser-optimized bundle (smaller polyfill, no Node-specific code).
+- Separate browser-optimized bundle (no Node-specific code).
 
 ### Documentation Site
 - VitePress or similar for interactive examples, API reference, and recipe guides.

@@ -1,5 +1,3 @@
-import type { Temporal } from "@js-temporal/polyfill";
-
 /**
  * Abstract rule defining when a resource is available.
  * The engine expands these into concrete time windows on demand.

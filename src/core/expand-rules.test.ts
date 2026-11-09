@@ -1,4 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
 
 import { expandRules } from "./expand-rules.js";
@@ -113,6 +112,7 @@ describe(expandRules, () => {
       },
       timezone: "Europe/Lisbon",
     };
+
     const ruleB: AvailabilityRule = { ...ruleA, resourceId: "doc-2" };
 
     const result = expandRules({
@@ -142,6 +142,7 @@ describe(expandRules, () => {
       },
       timezone: "Europe/Lisbon",
     };
+
     const afternoon: AvailabilityRule = {
       ...morning,
       timeWindow: {
@@ -175,6 +176,7 @@ describe(expandRules, () => {
       },
       timezone: "Europe/Lisbon",
     };
+
     const ruleNewYork: AvailabilityRule = {
       ...ruleLisbon,
       resourceId: "doc-NY",
@@ -216,9 +218,11 @@ describe(expandRules, () => {
     });
 
     const [window] = result;
+
     if (!window) {
       throw new Error("expected one window");
     }
+
     expect(window.start.toString()).toBe(
       Temporal.ZonedDateTime.from("2026-03-29T00:00[Europe/Lisbon]").toString()
     );
@@ -251,9 +255,11 @@ describe(expandRules, () => {
     });
 
     const [window] = result;
+
     if (!window) {
       throw new Error("expected one window");
     }
+
     expect(window.start.until(window.end, { largestUnit: "hours" }).hours).toBe(
       5
     );
@@ -278,6 +284,7 @@ describe(expandRules, () => {
           start: Temporal.PlainTime.from("09:00"),
         },
       };
+
       expect(() =>
         expandRules({
           from: Temporal.PlainDate.from("2026-05-12"),
@@ -293,6 +300,7 @@ describe(expandRules, () => {
         effectiveFrom: Temporal.PlainDate.from("2026-06-01"),
         effectiveTo: Temporal.PlainDate.from("2026-05-01"),
       };
+
       expect(() =>
         expandRules({
           from: Temporal.PlainDate.from("2026-05-12"),
@@ -307,6 +315,7 @@ describe(expandRules, () => {
         ...baseRule,
         recurrence: { daysOfWeek: [], frequency: "weekly", interval: 1 },
       };
+
       expect(() =>
         expandRules({
           from: Temporal.PlainDate.from("2026-05-12"),
@@ -323,6 +332,7 @@ describe(expandRules, () => {
           ...baseRule,
           recurrence: { daysOfWeek: [value], frequency: "weekly", interval: 1 },
         };
+
         expect(() =>
           expandRules({
             from: Temporal.PlainDate.from("2026-05-12"),
@@ -338,6 +348,7 @@ describe(expandRules, () => {
         ...baseRule,
         recurrence: { daysOfWeek: [2, 2], frequency: "weekly", interval: 1 },
       };
+
       expect(() =>
         expandRules({
           from: Temporal.PlainDate.from("2026-05-12"),
@@ -354,6 +365,7 @@ describe(expandRules, () => {
           ...baseRule,
           recurrence: { daysOfWeek: [2], frequency: "weekly", interval: value },
         };
+
         expect(() =>
           expandRules({
             from: Temporal.PlainDate.from("2026-05-12"),
@@ -380,6 +392,7 @@ describe(expandRules, () => {
         rules: [baseRule],
         to: Temporal.PlainDate.from("2026-05-12"),
       });
+
       expect(result).toHaveLength(1);
     });
 
@@ -391,6 +404,7 @@ describe(expandRules, () => {
           start: Temporal.PlainTime.from("22:00"),
         },
       };
+
       expect(() =>
         expandRules({
           from: Temporal.PlainDate.from("2026-05-12"),

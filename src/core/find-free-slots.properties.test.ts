@@ -1,6 +1,5 @@
 import { test } from "@fast-check/vitest";
 /* eslint-disable vitest/no-standalone-expect */
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect } from "vitest";
 
 import {
@@ -53,6 +52,7 @@ describe(`${findFreeSlots.name} (property)`, () => {
           const overlaps =
             Temporal.Instant.compare(slotStart, booking.end) < 0 &&
             Temporal.Instant.compare(booking.start, slotEnd) < 0;
+
           expect(overlaps).toBeFalsy();
         }
       }
@@ -72,6 +72,7 @@ describe(`${findFreeSlots.name} (property)`, () => {
     "adding a non-blocking booking never reduces the number of free slots",
     (rule, resourceId, nonBlocking, duration, range) => {
       const finalRule = { ...rule, resourceId };
+
       const finalNonBlocking = {
         ...nonBlocking,
         isBlocking: false,

@@ -1,4 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
 
 import { findFreeSlots } from "./find-free-slots.js";
@@ -48,6 +47,7 @@ describe(findFreeSlots, () => {
       resourceId: "doc-1",
       start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
     };
+
     const slots = findFreeSlots({
       bookings: [blocking],
       duration: 60,
@@ -71,6 +71,7 @@ describe(findFreeSlots, () => {
       resourceId: "doc-1",
       start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
     };
+
     const slots = findFreeSlots({
       bookings: [nonBlocking],
       duration: 60,
@@ -95,6 +96,7 @@ describe(findFreeSlots, () => {
       resourceId: "doc-1",
       start: Temporal.Instant.from("2026-05-12T09:30:00Z"),
     };
+
     const slots = findFreeSlots({
       bookings: [blocking],
       duration: 60,
@@ -119,6 +121,7 @@ describe(findFreeSlots, () => {
       resourceId: "doc-1",
       start: Temporal.Instant.from("2026-05-12T08:30:00Z"),
     };
+
     // Booking starts exactly at 10:00 UTC (slot ends there).
     const after: Booking = {
       end: Temporal.Instant.from("2026-05-12T10:30:00Z"),
@@ -127,6 +130,7 @@ describe(findFreeSlots, () => {
       resourceId: "doc-1",
       start: Temporal.Instant.from("2026-05-12T10:00:00Z"),
     };
+
     const slots = findFreeSlots({
       bookings: [before, after],
       duration: 60,
@@ -163,6 +167,7 @@ describe(findFreeSlots, () => {
       resourceId: "doc-2",
       start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
     };
+
     expect(() =>
       findFreeSlots({
         bookings: [stray],
@@ -212,6 +217,7 @@ describe(findFreeSlots, () => {
       },
       timezone: "Europe/Lisbon",
     };
+
     const slots = findFreeSlots({
       bookings: [],
       duration: 60,
@@ -222,9 +228,11 @@ describe(findFreeSlots, () => {
     });
 
     const wallClockStarts = slots.map((s) => s.start.toPlainTime().toString());
+
     const firstOccurrenceCount = wallClockStarts.filter(
       (t) => t === "01:30:00"
     ).length;
+
     expect(firstOccurrenceCount).toBe(1);
   });
 
@@ -239,6 +247,7 @@ describe(findFreeSlots, () => {
       },
       timezone: "Europe/Lisbon",
     };
+
     const slots = findFreeSlots({
       bookings: [],
       duration: 60,
@@ -350,6 +359,7 @@ describe(findFreeSlots, () => {
   it("dedupes identical slots produced by two overlapping rules", () => {
     // Two rules with the same window produce the same grid; result must be deduped.
     const duplicate: AvailabilityRule = { ...tuesday9to17 };
+
     const slots = findFreeSlots({
       bookings: [],
       duration: 60,

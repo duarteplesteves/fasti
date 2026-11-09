@@ -1,4 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect, it } from "vitest";
 
 import { isSlotValid } from "./is-slot-valid.js";
@@ -115,6 +114,7 @@ describe(isSlotValid, () => {
         start: Temporal.PlainTime.from("12:00"),
       },
     };
+
     const morningOnly: AvailabilityRule = {
       ...tuesdayMorning,
       timeWindow: {
@@ -122,6 +122,7 @@ describe(isSlotValid, () => {
         start: Temporal.PlainTime.from("09:00"),
       },
     };
+
     expect(
       isSlotValid({
         bookings: [],
@@ -137,6 +138,7 @@ describe(isSlotValid, () => {
       ...tuesdayMorning,
       resourceId: "doc-2",
     };
+
     expect(() =>
       isSlotValid({
         bookings: [],
@@ -152,6 +154,7 @@ describe(isSlotValid, () => {
       ...bookingAt("b1", "2026-05-12T08:45:00Z", "2026-05-12T09:15:00Z", true),
       resourceId: "doc-2",
     };
+
     expect(() =>
       isSlotValid({
         bookings: [stray],

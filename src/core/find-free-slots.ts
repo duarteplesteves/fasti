@@ -1,5 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
-
 import { detectConflicts } from "./detect-conflicts.js";
 import { expandRules } from "./expand-rules.js";
 import type { AvailabilityRule, Booking, Slot } from "./types.js";
@@ -65,26 +63,32 @@ export function findFreeSlots(params: FindFreeSlotsParams): Slot[] {
   for (const window of windows) {
     const windowEndInstant = window.end.toInstant();
     let cursor = window.start;
+
     while (Temporal.ZonedDateTime.compare(cursor, window.end) < 0) {
       const start = cursor;
       const startInstant = start.toInstant();
       const endInstant = startInstant.add({ minutes: duration });
+
       if (
         !allowEndOverflow &&
         Temporal.Instant.compare(endInstant, windowEndInstant) > 0
       ) {
         break;
       }
+
       // Dedup by (timezone, wall-clock start): collapses identical-window rules and
       // the second occurrence during a DST fall-back overlap (ADR 005).
       const key = `${start.timeZoneId}|${start.toPlainDateTime().toString()}`;
+
       if (!seen.has(key)) {
         seen.add(key);
+
         const conflicts = detectConflicts({
           bookings,
           candidate: { end: endInstant, start: startInstant },
           resourceId,
         });
+
         if (conflicts.length === 0) {
           slots.push({
             end: endInstant.toZonedDateTimeISO(window.start.timeZoneId),
@@ -93,6 +97,7 @@ export function findFreeSlots(params: FindFreeSlotsParams): Slot[] {
           });
         }
       }
+
       cursor = cursor.add({ minutes: interval });
     }
   }

@@ -1,6 +1,5 @@
 import { test } from "@fast-check/vitest";
 /* eslint-disable vitest/no-standalone-expect */
-import { Temporal } from "@js-temporal/polyfill";
 import { describe, expect } from "vitest";
 
 import {

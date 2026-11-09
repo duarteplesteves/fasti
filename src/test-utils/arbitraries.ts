@@ -1,4 +1,3 @@
-import { Temporal } from "@js-temporal/polyfill";
 import {
   array,
   boolean,
@@ -80,6 +79,7 @@ function arbInstantInRange(
 ): Arbitrary<Temporal.Instant> {
   const fromMs = from.epochMilliseconds;
   const toMs = to.epochMilliseconds;
+
   return integer({ max: toMs - fromMs, min: 0 }).map((offset) =>
     Temporal.Instant.fromEpochMilliseconds(fromMs + offset)
   );
@@ -96,11 +96,13 @@ export function arbDaysOfWeek(): Arbitrary<number[]> {
     boolean()
   ).map((flags) => {
     const days: number[] = [];
+
     for (let i = 0; i < 7; i += 1) {
       if (flags[i]) {
         days.push(i + 1);
       }
     }
+
     return days.length === 0 ? [1] : days;
   });
 }
@@ -148,6 +150,7 @@ export function arbAvailabilityRule(opts?: {
           const sortedEffective = [_effectiveFrom, _effectiveTo].toSorted(
             Temporal.PlainDate.compare
           );
+
           const [earlier, later] = sortedEffective;
 
           const rule: AvailabilityRule = {
@@ -163,12 +166,15 @@ export function arbAvailabilityRule(opts?: {
             },
             timezone,
           };
+
           if (useEffectiveFrom && earlier) {
             rule.effectiveFrom = earlier;
           }
+
           if (useEffectiveTo && later) {
             rule.effectiveTo = later;
           }
+
           return rule;
         });
       }
@@ -199,9 +205,11 @@ export function arbBooking(opts?: {
   })
     .chain(({ _durationMs, _isBlocking, _start }) => {
       const end = _start.add({ milliseconds: _durationMs });
+
       if (Temporal.Instant.compare(end, rangeTo) >= 0) {
         return constant(null);
       }
+
       return record({
         _id: string({ maxLength: 12, minLength: 1 }),
         _status: option(string({ maxLength: 12, minLength: 1 })),
@@ -213,9 +221,11 @@ export function arbBooking(opts?: {
           resourceId: opts?.resourceId ?? "booking-res",
           start: _start,
         };
+
         if (_status !== null) {
           booking.status = _status;
         }
+
         return booking;
       });
     })
@@ -270,12 +280,14 @@ export function arbDateRange(): Arbitrary<{
           plainTime: Temporal.PlainTime.from("00:00"),
           timeZone: "UTC",
         });
+
         return {
           from: start.subtract({ days: 1 }).toInstant(),
           to: start.add({ weeks: 2 }).toInstant(),
         };
       });
     }
+
     return record({
       _from: arbInstantInRange(
         Temporal.Instant.from("2020-01-01T00:00:00Z"),
