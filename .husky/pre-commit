@@ -1,5 +1,7 @@
-bun run test:ci
+# Skip tests when only docs are staged (Markdown anywhere, or anything under docs/).
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qvE '(\.md$|^docs/)'; then
+  bun run test:ci
+fi
 
 # ultracite
-#!/bin/sh
 bun x lint-staged
