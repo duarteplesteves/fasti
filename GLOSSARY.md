@@ -22,7 +22,9 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 |------|------------|-------|
 | **Framework** | The configurable instance a developer creates and calls from their backend; it owns scheduling operations against the developer's database. | _Avoid_: SDK, engine (for the whole package). Built on the Core; never replaces it. |
 | **Core** | The pure scheduling math: stateless functions over rules and bookings, with no storage or side effects. | Usable on its own, without a Framework instance. _Avoid_: engine (as a synonym for the whole package). |
-| **Adapter** | The bridge between the Framework and the developer's own database. | The developer owns the database; the Adapter only reads and writes through it. |
+| **Adapter** | The bridge between the Framework and the developer's own database. | The developer owns the database; the Adapter only reads and writes through it. A **first-party Adapter** ships with better-schedule; a **custom Adapter** is written by the developer against the same contract, for tables that differ from the Logical Model by more than names. |
+| **Logical Model** | The entities and fields the Framework stores through an Adapter: Booking and AvailabilityRule. | Named independently of the developer's physical tables and columns, which can be renamed. Resources are not part of it; they stay in the developer's own tables. |
+| **Developer Field** | A field the developer declares on a Booking (e.g. a customer id), which the Framework stores and types but never interprets. | _Avoid_: metadata, custom data. |
 | **Action** | A server-side operation exposed by a Framework instance (e.g. booking, cancelling). | Called directly from the developer's backend. _Avoid_: endpoint (HTTP exposure is a separate, later concern). |
 
 ### Scheduling
@@ -127,4 +129,5 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 004](./docs/adr/004-blocking-required.md) | `isBlocking` is required on Booking | Accepted |
 | [ADR 005](./docs/adr/005-dst-policy.md) | DST policy: drop on gap, first occurrence on overlap | Accepted |
 | [ADR 006](./docs/adr/006-single-resource-scoping.md) | Single-resource scoping via required `resourceId` | Accepted |
+| [ADR 007](./docs/adr/007-hybrid-schema-ownership.md) | Hybrid schema ownership: Framework owns the Logical Model, developer owns the database | Accepted |
 
