@@ -1,0 +1,42 @@
+# ADR 010: Actions Return Typed Results in a Plain Form and an Effect Form
+
+**Status:** Accepted
+
+**Date:** 2026-11-10
+
+## Context
+
+The Framework is built on Effect, but most developers don't know Effect, so every Action comes in two forms: a plain Promise form (the default) and an Effect form. Expected failures (a slot conflict, a booking that doesn't exist, a broken database) must be typed, never thrown. The plain form must not get harder to use because Effect sits underneath it.
+
+Options considered:
+
+1. **Throw `Error` subclasses** from the plain form (Effect 4's `runPromise` rejects with the typed error itself). Common practice, but the failures disappear from the types, and a caller can forget to handle a conflict.
+2. **Return Effect's `Result`** from the plain form. This puts Effect inside the plain API.
+3. **A separate error vocabulary for each form** (`code` in plain, `_tag` in Effect). Each reads naturally in its own world, but needs two sets of types, a mapping between them, and docs for both.
+4. **One error vocabulary, reported the native way in each form**: a discriminated result value in plain, the error channel in Effect.
+
+## Decision
+
+We choose option 4.
+
+- **Plain form (`fasti`).** Every Action returns `{ ok: true; value: T } | { ok: false; error: E }`. Only bugs reject the promise. There is no `unwrap` helper. `createScheduler` owns no resources, so it has no `dispose()`.
+- **Effect form (`fasti/effect`).** A `Scheduler` Service and a `Scheduler.layer({ schema, adapter })` Layer. Actions return `Effect<T, E>`, with failures in the error channel.
+- **Shared.** Both forms take the same params and have the same `T` and `E`. The plain form is a mechanical wrapper over the Effect form, so the two can't drift apart.
+- **Errors.**
+  - The discriminator is `_tag` with PascalCase values, which is what `Effect.catchTag` understands.
+  - Each Action declares only the failures it can produce, and `AdapterError` is always one of them.
+  - Domain failures (`SlotConflict`, `BookingNotFound`, …) are plain readonly objects with structured fields and no `message`, because the developer writes their own user-facing text.
+  - `AdapterError` is an `Error` subclass carrying the database `cause`.
+  - "No such booking" is always `BookingNotFound`, including from `getBooking`, so `value` is never nullable.
+- **Validation.**
+  - fasti checks meaning that TypeScript can't express (e.g. `end` after `start`, a sensible AvailabilityRule, a declared Status) and reports it as `InvalidParams`, whose `issues` follow the Standard Schema issue shape.
+  - fasti never checks shape. That is TypeScript's job plus the developer's own request parsing.
+  - Each check is defined once, in the Core, as a plain TypeScript function that returns issues. The Framework reuses it, with no Effect Schema at the Action boundary.
+  - Brands mark validated values inside fasti only. Public params stay plain, apart from fasti-owned ids.
+
+## Consequences
+
+- **Positive:** The compiler shows every expected failure in both forms, and `switch (error._tag)` can be checked for exhaustiveness.
+- **Positive:** Domain failures can be sent straight to a client as JSON.
+- **Negative:** Plain users see the field name `_tag`, which comes from Effect.
+- **Negative:** Adding a resource-owning part to the runtime later (a cache, a timer) would require a `dispose()`, which is a breaking change.

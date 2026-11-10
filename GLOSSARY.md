@@ -141,4 +141,5 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 007](./docs/adr/007-hybrid-schema-ownership.md) | Hybrid schema ownership: Framework owns the Logical Model, developer owns the database | Accepted |
 | [ADR 008](./docs/adr/008-adapter-contract.md) | The Adapter contract is domain verbs plus a Resource Lock; checks stay in the Framework | Accepted |
 | [ADR 009](./docs/adr/009-booking-lifecycle.md) | The booking lifecycle is declared as data and enforced by the Framework | Accepted |
+| [ADR 010](./docs/adr/010-action-results-and-two-forms.md) | Actions return typed results in a plain form and an Effect form | Accepted |
 
