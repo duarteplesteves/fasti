@@ -102,10 +102,10 @@ Properties of the output:
    Slots start at `ruleStart + n * interval`. The `interval` defaults to the requested `duration`.
 
 6. **Single-resource scoping is enforced.**
-   `findFreeSlots`, `isSlotValid`, and `detectConflicts` take a required `resourceId`. Every input rule and booking must match it; the engine throws on mismatch. `expandRules` is the exception — it accepts mixed `resourceId`s and groups them in its output.
+   `findFreeSlots`, `isSlotValid`, and `detectConflicts` take a required `resourceId`. Every input rule and booking must match it; a mismatch is invalid input. `expandRules` is the exception — it accepts mixed `resourceId`s and groups them in its output.
 
-7. **Rule validity is checked synchronously.**
-   The engine throws on construction-quality issues at the start of every entry point: `start >= end`, `effectiveTo < effectiveFrom`, empty `daysOfWeek`, values outside 1–7, duplicates, `recurrence.interval < 1`. Cross-day windows (`start > end` interpreted as wrapping past midnight) are **out of scope for v0.1** — split into two rules.
+7. **Invalid input is reported, never thrown.**
+   Every entry point checks its input before computing, and reports all problems found rather than the first: a rule whose window doesn't end after it starts, `effectiveTo < effectiveFrom`, empty `daysOfWeek`, values outside 1–7, duplicates, `recurrence.interval < 1`, an unknown timezone, and any time range whose end isn't after its start. Cross-day windows (`start > end` interpreted as wrapping past midnight) are **out of scope for v0.1** — split into two rules. See ADR 011.
 
 8. **DST policy (v0.1 simplification).**
    - **Spring-forward gap** (e.g. Lisbon, last Sunday March, 01:00 → 02:00): if a grid candidate's start time falls in the gap, the slot is dropped. The next grid step is generated normally.
@@ -142,4 +142,5 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 008](./docs/adr/008-adapter-contract.md) | The Adapter contract is domain verbs plus a Resource Lock; checks stay in the Framework | Accepted |
 | [ADR 009](./docs/adr/009-booking-lifecycle.md) | The booking lifecycle is declared as data and enforced by the Framework | Accepted |
 | [ADR 010](./docs/adr/010-action-results-and-two-forms.md) | Actions return typed results in a plain form and an Effect form | Accepted |
+| [ADR 011](./docs/adr/011-effect-free-core-returns-results.md) | The Core is Effect-free and returns typed results | Accepted |
 
