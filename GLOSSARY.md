@@ -43,6 +43,13 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **Recurrence Expansion** | The process of converting an abstract AvailabilityRule into concrete, calendar-specific time windows. | Performed by `expandRules()` and exposed as a standalone utility. v0.1 query functions accept abstract `AvailabilityRule[]` only — pre-expanded input is not a supported entry point. |
 | **ExpandedWindow** | One concrete application of one `AvailabilityRule` on one calendar date in that rule's timezone. Carries `resourceId`, zoned `start`, and zoned `end`. | Output of `expandRules()`. Not accepted as input to query functions in v0.1. See "Expansion Semantics" below for properties. |
 
+### Lifecycle
+
+| Term | Definition | Notes |
+|------|------------|-------|
+| **Status** | Where a Booking stands in its lifecycle. Each Status either blocks or doesn't, and that is all the Framework reads from it. | Two **base Statuses** ship with the Framework: `booked` (blocks) and `cancelled` (doesn't). The developer declares any others, each saying whether it blocks. Meanings such as completed or no-show stay with the developer. The Core never sees a Status, only whether a Booking blocks. |
+| **Transition** | A declared move of a Booking from one Status to another. | Only declared Transitions are allowed; a Status with none leaving it is terminal. A Transition into a blocking Status must pass the overlap check. _Avoid_: status change (for a move that isn't declared). |
+
 ---
 
 ## Key Concepts
@@ -133,4 +140,5 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 006](./docs/adr/006-single-resource-scoping.md) | Single-resource scoping via required `resourceId` | Accepted |
 | [ADR 007](./docs/adr/007-hybrid-schema-ownership.md) | Hybrid schema ownership: Framework owns the Logical Model, developer owns the database | Accepted |
 | [ADR 008](./docs/adr/008-adapter-contract.md) | The Adapter contract is domain verbs plus a Resource Lock; checks stay in the Framework | Accepted |
+| [ADR 009](./docs/adr/009-booking-lifecycle.md) | The booking lifecycle is declared as data and enforced by the Framework | Accepted |
 

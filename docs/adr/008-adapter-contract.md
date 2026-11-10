@@ -27,7 +27,7 @@ An Adapter connects the Framework to the developer's database (ADR 007). The Fra
   - Writes exist only on the transaction handle, so the types make an unlocked write impossible.
 - **The lock is per database, with no lock table.**
   - Postgres uses an advisory transaction lock. SQLite uses `BEGIN IMMEDIATE`. The in-memory Adapter uses a promise queue.
-  - The Postgres Adapter may add an `EXCLUDE` constraint as a backstop. A clash it catches is reported as the same typed conflict.
+  - The Postgres Adapter may add an `EXCLUDE` constraint as a backstop. A clash it catches is reported as the same typed conflict. The constraint applies only to Bookings whose Status blocks: `WHERE (status IN (…))`, generated from the declared Statuses (ADR 009).
 - **Plain Promises at the boundary.**
   - Adapter authors need no Effect. The Framework wraps the Adapter in Effect internally.
   - A rejected call becomes a typed `AdapterError`. Adapters retry their own transient errors.
