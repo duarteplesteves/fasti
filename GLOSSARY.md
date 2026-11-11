@@ -1,8 +1,8 @@
-# GLOSSARY.md — better-schedule
+# GLOSSARY.md — fasti
 
 ## Domain
 
-**better-schedule** is a type-safe scheduling **Framework** for TypeScript, built around a pure **Core**.
+**fasti** is a type-safe scheduling **Framework** for TypeScript, built around a pure **Core**.
 
 The **Core** answers one question: *given a resource's availability rules and existing bookings, what time slots are free?* It is stateless, framework-agnostic, and storage-agnostic. The **Framework** sits between the developer's system and their own database: configured with an **Adapter**, it exposes **Actions** that read and write scheduling data, using the Core for the math.
 
@@ -10,7 +10,7 @@ The **Core** answers one question: *given a resource's availability rules and ex
 
 ## Purpose
 
-Developers building scheduling tools (appointments, reservations, bookings) currently rebuild slot-finding, conflict detection, and recurrence expansion from scratch. Existing libraries handle dates (`date-fns`, `luxon`) or UI (FullCalendar), but none provide a reusable **scheduling logic** layer. better-schedule fills that gap.
+Developers building scheduling tools (appointments, reservations, bookings) currently rebuild slot-finding, conflict detection, and recurrence expansion from scratch. Existing libraries handle dates (`date-fns`, `luxon`) or UI (FullCalendar), but none provide a reusable **scheduling logic** layer. fasti fills that gap.
 
 ---
 
@@ -22,7 +22,7 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 |------|------------|-------|
 | **Framework** | The configurable instance a developer creates and calls from their backend; it owns scheduling operations against the developer's database. | _Avoid_: SDK, engine (for the whole package). Built on the Core; never replaces it. |
 | **Core** | The pure scheduling math: stateless functions over rules and bookings, with no storage or side effects. | Usable on its own, without a Framework instance. _Avoid_: engine (as a synonym for the whole package). |
-| **Adapter** | The bridge between the Framework and the developer's own database. | The developer owns the database; the Adapter only reads and writes through it. A **first-party Adapter** ships with better-schedule; a **custom Adapter** is written by the developer against the same contract, for tables that differ from the Logical Model by more than names. |
+| **Adapter** | The bridge between the Framework and the developer's own database. | The developer owns the database; the Adapter only reads and writes through it. A **first-party Adapter** ships with fasti; a **custom Adapter** is written by the developer against the same contract, for tables that differ from the Logical Model by more than names. |
 | **Resource Lock** | The exclusive right to change one Resource's bookings and availability for the length of one unit of work. | Every write Action holds one; reads don't. Promised per Resource only: an Adapter may lock more broadly, never more narrowly. _Avoid_: mutex. |
 | **Conformance Suite** | The published tests every Adapter must pass to count as correct, including concurrency tests against a real database. | Applies equally to first-party and custom Adapters. No opt-outs except explicitly optional groups. |
 | **Logical Model** | The entities and fields the Framework stores through an Adapter: Booking and AvailabilityRule. | Named independently of the developer's physical tables and columns, which can be renamed. Resources are not part of it; they stay in the developer's own tables. |

@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues on `duarteplesteves/better-schedule` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues on `duarteplesteves/fasti` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 

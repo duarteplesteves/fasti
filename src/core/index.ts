@@ -7,3 +7,5 @@ export * from "./find-free-slots.js";
 export * from "./is-slot-valid.js";
 
 export * from "./types.js";
+
+export * from "./with-blocking-flag.js";

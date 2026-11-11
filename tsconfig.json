@@ -30,5 +30,11 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/test-utils",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
 }

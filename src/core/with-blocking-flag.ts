@@ -1,4 +1,4 @@
-import type { Booking } from "../core/types.js";
+import type { Booking } from "./types.js";
 
 /**
  * Maps user-defined statuses to the required `isBlocking` flag.

@@ -6,7 +6,7 @@
 
 ## Context
 
-We need to decide the fundamental architecture of `better-schedule`. The target users are developers building scheduling tools who currently rebuild slot-finding and conflict-detection logic from scratch.
+We need to decide the fundamental architecture of `fasti`. The target users are developers building scheduling tools who currently rebuild slot-finding and conflict-detection logic from scratch.
 
 ## Decision
 

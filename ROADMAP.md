@@ -26,7 +26,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 - The README notes that `latest` is a prerelease until `0.1.0`.
 - A manual `npm publish --tag next`. Trusted publishing can only be set up once the package exists.
 
-**Not in scope:** any Core API change, including the fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/better-schedule/issues/19).
+**Not in scope:** any Core API change, including the fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/fasti/issues/19).
 
 **Test of done:** CI is green on `main`; `npm view fasti dist-tags` shows `next: 0.1.0-next.0`; the tag `v0.1.0-next.0` is pushed.
 
@@ -38,7 +38,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 - Every entry point returns `Result` with `InvalidParams`, and `checkRule` is exported ([ADR 011](./docs/adr/011-effect-free-core-returns-results.md)).
 - One slot grid from local midnight, with required `interval` and `timezone` ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)).
-- The fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/better-schedule/issues/19).
+- The fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/fasti/issues/19).
 - Recurrence is stored as one `frequency`-discriminated value, so a new frequency needs no migration.
 - Excluding one Booking from the conflict check, needed for rescheduling.
 - `waived` tagging per slot.

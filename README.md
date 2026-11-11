@@ -1,4 +1,4 @@
-# better-schedule
+# fasti
 
 A type-safe, stateless scheduling engine for TypeScript.
 
@@ -12,12 +12,16 @@ A type-safe, stateless scheduling engine for TypeScript.
 ## Installation
 
 ```bash
-npm install better-schedule
+npm install fasti@next
 # or
-bun add better-schedule
+bun add fasti@next
 ```
 
-better-schedule uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without native Temporal, install a global polyfill before importing the package.
+> **Prerelease.** Until `0.1.0` ships, every published version is an internal `0.1.0-next.N` prerelease, and npm's `latest` tag points at one of them. Expect breaking changes between them. See the [roadmap](./ROADMAP.md).
+
+Everything is imported from `fasti/core`. The package has no root export yet.
+
+fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without native Temporal, install a global polyfill before importing the package.
 
 ## Core Concepts
 
@@ -41,7 +45,7 @@ better-schedule uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes 
 ## Usage
 
 ```typescript
-import { findFreeSlots, withBlockingFlag } from "better-schedule";
+import { findFreeSlots, withBlockingFlag } from "fasti/core";
 
 const rules = [
   {
@@ -93,14 +97,19 @@ See the [decision record](./docs/adr/) for detailed ADRs on primitives, date han
 # Install dependencies
 bun install
 
-# Type-check
+# Lint and format check
 bun run check
+
+# Type-check (including tests)
+bun run typecheck
 
 # Run tests
 bun run test
 
-# Build
+# Build, then check the published package
 bun run build
+bun run publint
+bun run attw
 ```
 
 ## License

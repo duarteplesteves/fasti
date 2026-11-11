@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Booking } from "../core/types.js";
+import type { Booking } from "./types.js";
 import { withBlockingFlag } from "./with-blocking-flag.js";
 
 describe(withBlockingFlag, () => {

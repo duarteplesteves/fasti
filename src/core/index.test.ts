@@ -4,7 +4,7 @@ import { findFreeSlots, isSlotValid, withBlockingFlag } from "./index.js";
 import type { AvailabilityRule, Booking, Slot } from "./index.js";
 
 describe("public API surface", () => {
-  it("composes withBlockingFlag → findFreeSlots → isSlotValid round-trip via the package entry", () => {
+  it("composes withBlockingFlag → findFreeSlots → isSlotValid round-trip via the fasti/core entry", () => {
     const tuesday9to17: AvailabilityRule = {
       recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
       resourceId: "doc-1",
