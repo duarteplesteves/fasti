@@ -58,6 +58,7 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **Policy** | A named rule about when a booking change is allowed, which a caller may relax on a single call. | **availability** (inside the Resource's AvailabilityRules) is always present, because it enforces rules the developer stored. Every other Policy applies only if the developer lists it: the prebuilt **notice** (a minimum lead time before the start; zero forbids past starts), or one they write (buffers, limits, a Transition's preconditions). _Avoid_: rule (taken by AvailabilityRule), constraint, built-in. |
 | **Waived** | The relaxed Policies a slot or a successful booking change actually broke. | Reported so the developer can show or log the exception (e.g. "booked outside hours"). |
 | **Relax** | To skip named Policies for one Action call, decided by the developer's backend. | Only Policies can be relaxed, never Invariants, and only by name. _Avoid_: override, bypass. |
+| **Veto** | The developer's refusal, from inside an Action's transaction, that undoes the whole Action. | E.g. no credit left on a pack, so the Booking is never made. Reported as `Vetoed`. _Avoid_: reject, abort. |
 
 ---
 
@@ -153,4 +154,5 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 010](./docs/adr/010-action-results-and-two-forms.md) | Actions return typed results in a plain form and an Effect form | Accepted |
 | [ADR 011](./docs/adr/011-effect-free-core-returns-results.md) | The Core is Effect-free and returns typed results | Accepted |
 | [ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md) | Four Invariants, everything else a Policy the caller can relax | Accepted |
+| [ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md) | The developer's own writes run inside the Action's transaction | Accepted |
 

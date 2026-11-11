@@ -38,7 +38,7 @@ We choose option 4.
   - Stored Status values can be renamed through `names`, like columns.
   - A stored value the Framework doesn't know comes back as a typed `AdapterError`.
   - `listBookings` returns every Status, with no filter.
-- **Not in the base.** No lifecycle timestamps, since the UUIDv7 id carries the creation time. No holds that expire. No writing Developer Fields as part of a Transition: atomic writes alongside an Action are a separate decision.
+- **Not in the base.** No lifecycle timestamps, since the UUIDv7 id carries the creation time. No holds that expire. Developer Fields and the developer's own writes alongside a Transition were left to a separate decision, now ADR 015: a typed `fields` patch, and an `also` function inside the transaction.
 
 ## Consequences
 
