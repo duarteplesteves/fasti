@@ -1,0 +1,47 @@
+# Publishes to npm when a version tag (v*) is pushed.
+# npm trusts this exact file via Trusted Publishing, so no npm token is stored anywhere.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # lets GitHub prove to npm that this workflow is the publisher
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Tag must match package.json version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - run: bun run check
+      - run: bun run typecheck
+      - run: bun run test:ci
+      - run: bun run build
+      - run: bun run publint
+      - run: bun run attw
+
+      # Versions with a "-" (e.g. 0.1.0-next.1) are prereleases and go to "next"; the rest go to "latest".
+      - name: Publish
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          npm publish --tag "$tag" --access public
