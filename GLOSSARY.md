@@ -50,6 +50,15 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **Status** | Where a Booking stands in its lifecycle. Each Status either blocks or doesn't, and that is all the Framework reads from it. | Two **base Statuses** ship with the Framework: `booked` (blocks) and `cancelled` (doesn't). The developer declares any others, each saying whether it blocks. Meanings such as completed or no-show stay with the developer. The Core never sees a Status, only whether a Booking blocks. |
 | **Transition** | A declared move of a Booking from one Status to another. | Only declared Transitions are allowed; a Status with none leaving it is terminal. A Transition into a blocking Status must pass the overlap check. _Avoid_: status change (for a move that isn't declared). |
 
+### Booking checks
+
+| Term | Definition | Notes |
+|------|------------|-------|
+| **Invariant** | A check the Framework always enforces and no caller can relax. | Exactly four: params are meaningful, no overlap with a blocking Booking on the same Resource, the Transition is declared, and the Booking exists with the expected Status. |
+| **Policy** | A named rule about when a booking change is allowed, which a caller may relax on a single call. | **availability** (inside the Resource's AvailabilityRules) is always present, because it enforces rules the developer stored. Every other Policy applies only if the developer lists it: the prebuilt **notice** (a minimum lead time before the start; zero forbids past starts), or one they write (buffers, limits, a Transition's preconditions). _Avoid_: rule (taken by AvailabilityRule), constraint, built-in. |
+| **Waived** | The relaxed Policies a slot or a successful booking change actually broke. | Reported so the developer can show or log the exception (e.g. "booked outside hours"). |
+| **Relax** | To skip named Policies for one Action call, decided by the developer's backend. | Only Policies can be relaxed, never Invariants, and only by name. _Avoid_: override, bypass. |
+
 ---
 
 ## Key Concepts
@@ -143,4 +152,5 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 009](./docs/adr/009-booking-lifecycle.md) | The booking lifecycle is declared as data and enforced by the Framework | Accepted |
 | [ADR 010](./docs/adr/010-action-results-and-two-forms.md) | Actions return typed results in a plain form and an Effect form | Accepted |
 | [ADR 011](./docs/adr/011-effect-free-core-returns-results.md) | The Core is Effect-free and returns typed results | Accepted |
+| [ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md) | Four Invariants, everything else a Policy the caller can relax | Accepted |
 

@@ -1,0 +1,52 @@
+# ADR 014: Four Invariants, Everything Else a Policy the Caller Can Relax
+
+**Status:** Accepted
+
+**Date:** 2026-11-11
+
+## Context
+
+Some booking rules hold in theory but have legitimate exceptions in practice. Staff may book outside a Resource's availability, record a walk-in after the fact, or skip a buffer. An overlap with a blocking Booking, however, must never be allowed. Actions trust their caller and know nothing about roles (ADR 010), so any exception has to be decided per call by the developer's backend. ADR 009 left a Transition's preconditions ("`missed` only after the start") to this decision. Listing and booking must agree: a slot that `findSlots` shows must be bookable with the same exceptions.
+
+Options considered:
+
+1. **Hard-coded checks with boolean flags** (`allowOutsideAvailability: true`). Every new rule is a breaking change to every Action's params.
+2. **Policies on by default**, replaced or disabled through config. Hidden defaults, and passing a custom list can silently drop the default ones.
+3. **A small fixed set of Invariants, plus named Policies the developer lists**, relaxed per call by name.
+
+## Decision
+
+We choose option 3.
+
+- **Invariants** are enforced on every call and can't be relaxed: params are meaningful (`InvalidParams`), no overlap with a blocking Booking on the same Resource, the Transition is declared, and the Booking exists with the expected Status. They are checked before any Policy. If one fails, its error comes back alone.
+- **Policies** are everything else. Each is defined against the schema, so names, Transition edges and Developer Fields are typed:
+
+  ```ts
+  definePolicy(schema, {
+    name: "missedAfterStart",
+    appliesTo: [{ to: "missed" }],     // Action names, or Transition edges as { to } / { from, to }
+    load: async (ctx) => data,          // optional; once per Action call
+    check: ({ booking, now }, data) => null | detail,  // synchronous, once per candidate
+  })
+  ```
+
+  - `load` runs once per call and `check` runs once per candidate, so `findSlots` can test every slot without a database round trip each time. For writes, both run under the Resource Lock.
+  - There is no wildcard for all Transition edges, so a Policy is never applied by surprise when a new edge is declared.
+- **Which Policies apply.**
+  - `availability` belongs to the availability Actions. It is always present, because it enforces rules the developer stored on purpose, and it can be relaxed like any other Policy.
+  - `createScheduler({ schema, adapter, policies })` requires `policies`; `[]` means none. Nothing else is on by default.
+  - fasti exports the prebuilt `notice(schema, { minimum, appliesTo })`. A `minimum` of zero forbids past starts. An app whose notice varies writes its own.
+- **Relaxing.**
+  - The caller passes `relax: [...names]`, typed per Action and per Transition edge, so autocomplete lists exactly the Policies that apply. There is no `"all"`, because a Policy added later would then be relaxed by old code.
+  - Broken Policies return `{ _tag: "PolicyViolation", violations: [{ policy, detail }, …] }`: every one that broke, not just the first, each with `detail` narrowed by `policy`.
+  - A relaxed success returns `waived`, the relaxed Policies that actually broke, using the same element type.
+- **`findSlots`** requires `timezone` and `interval`. It walks one grid from local midnight in `timezone`, in steps of `interval`. A candidate that breaks an Invariant or a Policy the caller didn't relax is hidden. A candidate that breaks only relaxed Policies is returned with them in `waived`. Passing the same `relax` to `book` succeeds, so listing and booking agree.
+- **Time.** `now` comes from Effect's `Clock` in the Effect form, and from system time in the plain form. To test a Policy on its own, call its `check` directly.
+
+## Consequences
+
+- **Positive:** Buffers, group limits, notice and Transition preconditions all fit one shape. Adding a Policy never changes an Action's params beyond the `relax` union.
+- **Positive:** Exceptions are visible in the types and in the result (`waived`), so the developer can log who booked outside hours.
+- **Negative:** A Policy is race-free only for the Resource whose lock it runs under. A limit across Resources (sessions per pack) can be overfilled by concurrent bookings on different Resources. Its guarantee has to come from an atomic write that can veto the Action, not from a Policy.
+- **Negative:** The grid starts at local midnight, not at each rule's start. A rule starting at 09:10 needs an `interval` that reaches 09:10 (for example 10 minutes), or its first slot moves.
+- **Negative:** `policies: []` allows past starts. The developer has to opt into `notice`.
