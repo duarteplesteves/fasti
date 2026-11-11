@@ -25,6 +25,7 @@ An Adapter connects the Framework to the developer's database (ADR 007). The Fra
   - The Framework reads, checks with the Core and policies, and writes inside it.
   - Every write Action takes exactly one lock, on the Resource being written to. Rescheduling to another Resource locks only the destination.
   - Writes exist only on the transaction handle, so the types make an unlocked write impossible.
+  - The handle also carries the Adapter's own transaction as `tx`, so the developer's writes can join it (ADR 015).
 - **The lock is per database, with no lock table.**
   - Postgres uses an advisory transaction lock. SQLite uses `BEGIN IMMEDIATE`. The in-memory Adapter uses a promise queue.
   - The Postgres Adapter may add an `EXCLUDE` constraint as a backstop. A clash it catches is reported as the same typed conflict. The constraint applies only to Bookings whose Status blocks: `WHERE (status IN (…))`, generated from the declared Statuses (ADR 009).
