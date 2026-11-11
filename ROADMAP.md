@@ -28,7 +28,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Not in scope:** any Core API change, including the fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/fasti/issues/19).
 
-**Test of done:** CI is green on `main`; `npm view fasti dist-tags` shows `next: 0.1.0-next.0`; the tag `v0.1.0-next.0` is pushed.
+**Test of done:** CI is green on `main`; `npm view @fastijs/scheduler dist-tags` shows `next: 0.1.0-next.0`; the tag `v0.1.0-next.0` is pushed.
 
 ## 2. Core reshaped — `0.1.0-next.N` (internal)
 
