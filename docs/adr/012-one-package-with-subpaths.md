@@ -30,3 +30,9 @@ We choose option 3.
 - **Negative:** A Core-only user still downloads `effect` (about 10 MB packed, 61 MB on disk). If that becomes a real complaint, the Core can move to its own dependency-free package, with `fasti/core` re-exporting it so no import breaks.
 - **Negative:** An ORM major release can force a `fasti` release. Widening a peer range is a minor release; dropping an old major is a breaking one. An Adapter whose release schedule diverges can split into its own package behind its existing subpath.
 - **Negative:** Breaking for v0.1 users: Core functions are no longer exported from `fasti`, and `withBlockingFlag` moves to `fasti/core`.
+
+## Amendment (2026-11-11): published as `@fasti/scheduler`
+
+npm rejects the unscoped name `fasti` because its typosquatting check finds it too similar to `fastify` and `fastq`. Scoped names are exempt from that check, so the package is published as `@fasti/scheduler` under the `@fasti` npm org. The product is still called fasti, and the layout above is unchanged. Only the import specifiers change: `fasti` → `@fasti/scheduler`, and `fasti/<subpath>` → `@fasti/scheduler/<subpath>` (for example `@fasti/scheduler/core`). The other ADRs still use the short `fasti/<subpath>` form to mean these paths.
+
+Owning the scope also keeps the escape hatches above open. If the Core or an Adapter ever splits out, it becomes a sibling package such as `@fasti/core`, and `@fasti/scheduler/core` re-exports it.

@@ -12,14 +12,14 @@ A type-safe, stateless scheduling engine for TypeScript.
 ## Installation
 
 ```bash
-npm install fasti@next
+npm install @fasti/scheduler@next
 # or
-bun add fasti@next
+bun add @fasti/scheduler@next
 ```
 
 > **Prerelease.** Until `0.1.0` ships, every published version is an internal `0.1.0-next.N` prerelease, and npm's `latest` tag points at one of them. Expect breaking changes between them. See the [roadmap](./ROADMAP.md).
 
-Everything is imported from `fasti/core`. The package has no root export yet.
+Everything is imported from `@fasti/scheduler/core`. The package has no root export yet.
 
 fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without native Temporal, install a global polyfill before importing the package.
 
@@ -45,7 +45,7 @@ fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without na
 ## Usage
 
 ```typescript
-import { findFreeSlots, withBlockingFlag } from "fasti/core";
+import { findFreeSlots, withBlockingFlag } from "@fasti/scheduler/core";
 
 const rules = [
   {
