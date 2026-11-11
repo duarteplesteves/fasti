@@ -9,7 +9,6 @@ export default defineConfig({
     },
     environment: "node",
     include: ["src/**/*.test.ts"],
-    // CI runs 10k property cases per test (see prop-config); the composition one takes minutes on GitHub runners.
-    testTimeout: process.env.CI ? 600_000 : 60_000,
+    testTimeout: process.env.CI ? 120_000 : 60_000,
   },
 });
