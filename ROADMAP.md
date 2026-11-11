@@ -1,150 +1,147 @@
-# ROADMAP — better-schedule
+# ROADMAP — fasti
 
-This document captures features, concepts, and architectural directions discussed during design but intentionally deferred from v0.1. Items are grouped by likely release phase, but timelines are fluid.
+The milestone plan from the v0.1 Core to a finished **Framework**: persistence through an **Adapter**, booking **Actions**, and a base lifecycle. Terms are defined in [`GLOSSARY.md`](./GLOSSARY.md); decisions are in [`docs/adr/`](./docs/adr/).
 
----
+## Versions
 
-## v0.2 — Core Engine Hardening
+- **Internal checkpoints** get a git tag `v0.1.0-next.N` and an npm publish under the `next` dist-tag.
+- **Public releases** are `0.x` on `latest`, starting with `0.1.0`: the Core plus a thin `createScheduler` slice.
+- **`1.0.0`** is the finished Framework.
 
-### Additional Recurrence Patterns
-- **Daily recurrence** — simpler than weekly; useful for continuous services.
-- **Monthly recurrence** — "first Monday of every month," "15th of every month." Harder due to variable month lengths and day-of-week drift.
+On a package's first publish, npm also points `latest` at it, so `latest` is a prerelease until `0.1.0` ships. The README says so.
 
-### Buffer Time
-- Configurable gaps between bookings (cleanup, travel, prep time).
-- Buffers at start vs. end of booking.
-- Conditional buffers (e.g., only between certain booking types).
-- *Current workaround:* Inflate booking duration manually.
-
-### Property-Based Testing
-- ~~Integrate `fast-check` or similar to generate random rules, bookings, and ranges.~~ **Done (2026-05-17)** — 6 properties across 3 suites covering `expandRules`, `findFreeSlots`, and cross-function composition. Includes typed domain arbitraries, DST-biased date range generation, CI-aware seeding (1k local / 10k CI iterations).
-- Catches edge cases in slot generation and conflict detection (DST transitions, leap years, timezone boundaries).
-
-### Cross-Day Availability Windows
-- Allow `timeWindow.start > timeWindow.end` interpreted as wrapping past midnight (e.g. 22:00–02:00 for night shifts).
-- *v0.1 workaround:* Split into two adjacent rules (22:00–24:00 + 00:00–02:00) on consecutive days of the week.
-
-### DST Fall-Back Double-Occurrence Slots
-- Add an opt-in flag (e.g. `includeDstOverlap: true`) to surface slots during the repeated wall-clock hour on fall-back day.
-- *v0.1 behaviour:* Only the first occurrence of the repeated hour generates slots; the second hour of bookable real time is invisible. See [ADR 005](./docs/adr/005-dst-policy.md).
-
-### Pre-Expanded Windows as Query Input
-- Allow `findFreeSlots` / `isSlotValid` to accept `ExpandedWindow[]` directly, bypassing in-call expansion.
-- Useful for callers who memoise expansion results across many queries with the same rules.
-- *v0.1 behaviour:* Query functions accept abstract `AvailabilityRule[]` only; `expandRules` is a separate utility.
-
-### Performance Benchmarks
-- Add `benchmark/` directory using `vitest bench` or `mitata`.
-- Track regression on large inputs (~10k bookings, year-long query ranges).
-- v0.1 commits to naive `O(D × R × S × B)` complexity with a query-range pre-filter; benchmarks formalise the acceptable bounds.
+Milestones marked _open_ carry questions that get decided when that milestone starts, before any of its building begins.
 
 ---
 
-## v0.3 — Multi-Resource & Capacity
+## 1. Claim the name — `0.1.0-next.0` (internal)
 
-### Capacity > 1
-- Resources that host multiple simultaneous bookings (gym classes, workshops, tour groups).
-- `Resource.capacity: number` and `Booking.seats: number`.
-- Conflict = sum of overlapping bookings' seats > resource capacity.
+**Goal:** own `fasti` on npm by publishing today's Core, unchanged, under its new name.
 
-### Multi-Resource Atomic Bookings
-- A single logical booking that blocks multiple resources simultaneously (doctor + consultation room + equipment).
-- Requires all-or-nothing availability: if any resource is unavailable, the entire booking is invalid.
-- *Current workaround:* Create separate single-resource bookings sharing a `groupId`.
+**Scope:**
+
+- Rename `better-schedule` → `fasti` everywhere: `package.json`, README, `GLOSSARY.md`, docs, the GitHub repo (GitHub redirects the old URL), and the `better-schedule/core` import path → `fasti/core`.
+- Package layout per [ADR 012](./docs/adr/012-one-package-with-subpaths.md), limited to what exists: export `fasti/core` only. No root `fasti` export until the Framework exists.
+- A first GitHub Actions CI workflow: lint, typecheck, unit and property tests, build, `publint`, `attw`.
+- The README notes that `latest` is a prerelease until `0.1.0`.
+- A manual `npm publish --tag next`. Trusted publishing can only be set up once the package exists.
+
+**Not in scope:** any Core API change, including the fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/better-schedule/issues/19).
+
+**Test of done:** CI is green on `main`; `npm view fasti dist-tags` shows `next: 0.1.0-next.0`; the tag `v0.1.0-next.0` is pushed.
+
+## 2. Core reshaped — `0.1.0-next.N` (internal)
+
+**Goal:** settle the Core's public signatures once, before anything is built on them.
+
+**Scope:**
+
+- Every entry point returns `Result` with `InvalidParams`, and `checkRule` is exported ([ADR 011](./docs/adr/011-effect-free-core-returns-results.md)).
+- One slot grid from local midnight, with required `interval` and `timezone` ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)).
+- The fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/better-schedule/issues/19).
+- Recurrence is stored as one `frequency`-discriminated value, so a new frequency needs no migration.
+- Excluding one Booking from the conflict check, needed for rescheduling.
+- `waived` tagging per slot.
+- Branded ids in the Core's public types, for ids the Framework owns.
+
+**Test of done:** unit and property tests pass; `fasti/core` has zero runtime dependencies; `publint` and `attw` pass.
+
+## 3. Adapter contract — `0.1.0-next.N` (internal)
+
+**Goal:** prove the Adapter contract on a real database before any Action exists.
+
+**Scope:**
+
+- `fasti/adapter`: the contract types ([ADR 008](./docs/adr/008-adapter-contract.md)) and `defineSchema`.
+- `fasti/memory`: the in-memory Adapter.
+- `fasti/testing`: the Conformance Suite.
+- `fasti/drizzle/pg`: the Drizzle Adapter on Postgres.
+- A CI job with a Postgres 18 service container ([ADR 013](./docs/adr/013-integration-tests-on-real-databases.md)).
+
+**Test of done:** the Conformance Suite passes on the in-memory and Drizzle Postgres Adapters, and the lock-off negative control fails as expected (`test.fails`).
+
+## 4. Thin Framework — `0.1.0` (public)
+
+**Goal:** the first public release: the Core plus a thin `createScheduler` slice.
+
+**Scope:**
+
+- `createScheduler({ schema, adapter })` with `book`, `cancel`, `findSlots` and `scheduler.availability.set/get`, in both the plain form and the `fasti/effect` form ([ADR 010](./docs/adr/010-action-results-and-two-forms.md)).
+- The two base Statuses (`booked`, `cancelled`), the overlap invariant, and the always-present `availability` Policy.
+- Docs: a README quickstart, TSDoc on every public export, and an `examples/` app.
+- Release infrastructure:
+  - Changesets for versions and changelogs.
+  - npm trusted publishing with provenance from GitHub Actions; no more manual publishes.
+  - Bun added next to Node 26 in the unit-test matrix; Conformance stays on Node 26.
+  - Databases: latest versions only.
+
+**Test of done:** the Conformance Suite on Postgres and the `examples/` app both run green in CI; `0.1.0` is published on `latest` by the release workflow.
+
+## 5. Time off and blocks — `0.2` (public)
+
+**Goal:** periods when a Resource isn't bookable, beyond availability-rule exceptions. This comes first after the public release because it touches the Logical Model, so it should land while few developers have tables to migrate.
+
+**Open:** a new Logical Model entity or a kind of Booking; how `findSlots` and the booking checks treat them.
+
+## 6. Full lifecycle — `0.3` (public)
+
+**Goal:** the complete base lifecycle.
+
+**Scope:** `reschedule`, `transition({ id, from, to })`, developer Statuses ([ADR 009](./docs/adr/009-booking-lifecycle.md)), and `also` on every write Action ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)).
+
+## 7. Policies — `0.4` (public)
+
+**Goal:** the developer's own booking rules.
+
+**Scope:** `definePolicy`, the required `policies` list, per-call `relax` and `waived`, and the prebuilt `notice` Policy ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)). This milestone comes after the lifecycle because `relax` is typed per Action and per Transition edge.
+
+## 8. Adapter breadth — `0.5` (public)
+
+**Goal:** the rest of the first-party Adapters.
+
+**Scope:** `fasti/drizzle/sqlite`; `fasti/prisma` on Prisma 8. Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, the Prisma Adapter ships marked experimental, and the label goes in a `1.x` once GA lands.
+
+**Test of done:** the Conformance Suite passes on each new Adapter in CI.
+
+## 9. Plugin system — `0.6` (public)
+
+**Goal:** extend the Framework without forking it.
+
+**Open:**
+
+- Hooks or an ordered pipeline.
+- How plugins extend types.
+- After-commit effects of Actions and Transitions (emails, calendar sync): best effort, never rolled back.
+- Hooks that run on every call, such as an audit log.
+- Whether availability (its Actions and its `availability` Policy) becomes a plugin the developer turns on.
+
+## 10. Finished Framework — `1.0.0` (public)
+
+**Goal:** a stable Framework.
+
+**Scope:**
+
+- A docs website in a `website/` folder of this repo, with code samples type-checked in CI. **Open:** the tool and the hosting.
+- An API freeze.
+- No milestone above left with an open question.
 
 ---
 
-## v1.0 — Framework Layer
+## Beyond the Framework
 
-### `createScheduler()` — Better-Auth-style API
-An opinionated, configurable framework built on top of the pure-function core:
+Deferred past `1.0`, in no order.
 
-```typescript
-import { createScheduler } from "better-schedule/framework";
-
-const scheduler = createScheduler({
-  storageAdapter: prismaAdapter,
-  plugins: [emailReminders, stripePayments],
-});
-```
-
-### Plugin System
-- Hooks for `onBeforeBook`, `onAfterBook`, `onConflict`, `onCancel`.
-- First-party plugins for common integrations (email, SMS, payments, calendar sync).
-
-### Effect-TS Integration (Optional Adapter)
-- An `@better-schedule/effect` package that wraps core functions in `Effect` for applications already using Effect-TS.
-- Provides typed errors, structured concurrency, and composable scheduling pipelines.
-
-### Booking Lifecycle & Transitions
-- User-defined state machines for booking status flows.
-- `validateTransition(currentStatus, proposedStatus, rules)` helper.
-- Not part of core engine; belongs to framework layer.
-
-### BookingGroup / Pack / Subscription Support
-- Containers for multiple related bookings (course of 8 sessions, therapy plan, subscription with monthly limits).
-- Group-level constraints: max bookings, minimum gaps between sessions, first vs. follow-up durations.
-
----
-
-## v1.5 — Advanced Scheduling
-
-### Continuous Slot Generation
-- Currently v0.1 uses fixed-interval grid slots only.
-- Future: "greedy" continuous slots where any start time is valid as long as duration fits and no conflict exists.
-- Useful for flexible scheduling (e.g., coworking desks, rental equipment).
-
-### Intelligent Search
-- `findFirstAvailableSlot(resources[], constraints)` — search across multiple resources and return the earliest match.
-- `optimizeSchedule(bookings[], rules[])` — rearrange existing bookings to minimize gaps ( NP-hard; heuristic-based).
-
-### Recurring Booking Generation
-- Given a pattern ("every Tuesday at 9:00 for 6 weeks"), generate a series of bookings with group linkage.
-- Handle exceptions, rescheduling entire series vs. single occurrence.
-
----
-
-## v2.0+ — Ecosystem & Scale
-
-### Monorepo Migration
-- If framework + plugins + adapters grow complex, migrate to `packages/core`, `packages/framework`, `packages/adapters/*`.
-- Independent versioning per package.
-
-### Bundled Build Outputs
-- Move from `tsc`-only to `unbuild` or `rollup` for optimized, tree-shakeable bundles.
-- Separate browser-optimized bundle (no Node-specific code).
-
-### Documentation Site
-- VitePress or similar for interactive examples, API reference, and recipe guides.
-- Hosted at `better-schedule.dev` or similar.
-
-### Release Automation
-- Changesets for versioning and changelogs.
-- Automated publishing to npm via GitHub Actions.
-- CI matrix: Node LTS, Bun, Deno (when Temporal-native).
-
-### Community Adapters
-- Official storage adapters: Prisma, Drizzle, Supabase, Firebase.
-- Official framework integrations: React hooks, Vue composables, Svelte stores.
-
----
-
-## Maybe / Needs Validation
-
-These ideas were discussed but lack conviction. Require real-world usage before commitment:
-
-- **Booking consequences** — automated side effects when a booking is missed/cancelled (strikes, fees, pack deductions).
-- **Waitlists** — automatically notify when a slot opens.
-- **Overlapping rules** — multiple rules for the same resource on the same day with different priorities.
-- **Rule inheritance** — resources inherit default rules but can override specific days.
-- **Dynamic pricing** — slot pricing varies by time of day, demand, or resource.
-- **AI-assisted scheduling** — suggest optimal slots based on historical patterns.
-
----
-
-## How to Contribute to the Roadmap
-
-Open an issue with the `[roadmap]` prefix describing:
-1. The use case
-2. Why it can't be solved with v0.1 primitives
-3. Whether it belongs in core, framework, or an external adapter
+- **Capacity > 1.** Guard: nothing in the Adapter contract or Conformance Suite assumes capacity 1; the Postgres `EXCLUDE` backstop is documented as capacity-1 only.
+- **Multi-resource atomic bookings.** Workaround: several `book` calls linked by a Developer Field such as `groupId`.
+- **Multi-resource convenience Actions** ("find any free Resource", e.g. `findFirstAvailableSlot`), built on single-resource queries ([ADR 006](./docs/adr/006-single-resource-scoping.md)).
+- **Buffers**, as a Policy. Workaround: inflate the booking's duration.
+- **Monthly recurrence.** Guard: recurrence is already one `frequency`-discriminated value (milestone 2).
+- **Recurring booking series.**
+- **Holds that expire**: a Status that blocks only until a deadline; it has to fit with ADR 009's "blocking comes from Status alone".
+- **Cloudflare D1**: no interactive transactions, so no Resource Lock. Likeliest route: a Durable Object per Resource as the lock.
+- **Cross-day availability windows.** Workaround: two rules.
+- **DST fall-back double-occurrence opt-in** ([ADR 005](./docs/adr/005-dst-policy.md)).
+- **Continuous slots**: free intervals instead of a grid.
+- **Performance benchmarks.**
+- **First-party integration plugins** (email, SMS, payments, calendar sync).
+- **Waitlists**, as an after-commit effect of `cancel`.
