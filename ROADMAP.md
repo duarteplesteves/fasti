@@ -16,15 +16,15 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 ## 1. Claim the name — `0.1.0-next.0` (internal)
 
-**Goal:** own the `@fasti` npm scope by publishing today's Core, unchanged, under its new name.
+**Goal:** own the `@fastijs` npm scope by publishing today's Core, unchanged, under its new name.
 
 **Scope:**
 
-- Rename `better-schedule` → `fasti` everywhere: `package.json`, README, `GLOSSARY.md`, docs, the GitHub repo (GitHub redirects the old URL), and the `better-schedule/core` import path → `@fasti/scheduler/core`.
-- Package layout per [ADR 012](./docs/adr/012-one-package-with-subpaths.md), limited to what exists: export `@fasti/scheduler/core` only. No root `@fasti/scheduler` export until the Framework exists.
+- Rename `better-schedule` → `fasti` everywhere: `package.json`, README, `GLOSSARY.md`, docs, the GitHub repo (GitHub redirects the old URL), and the `better-schedule/core` import path → `@fastijs/scheduler/core`.
+- Package layout per [ADR 012](./docs/adr/012-one-package-with-subpaths.md), limited to what exists: export `@fastijs/scheduler/core` only. No root `@fastijs/scheduler` export until the Framework exists.
 - A first GitHub Actions CI workflow: lint, typecheck, unit and property tests, build, `publint`, `attw`.
 - The README notes that `latest` is a prerelease until `0.1.0`.
-- A manual `npm publish --tag next --access public` as `@fasti/scheduler` (npm rejects unscoped `fasti` as too similar to `fastify` and `fastq`; see ADR 012). Trusted publishing can only be set up once the package exists.
+- A manual `npm publish --tag next --access public` as `@fastijs/scheduler` (npm rejects unscoped `fasti` as too similar to `fastify` and `fastq`; see ADR 012). Trusted publishing can only be set up once the package exists.
 
 **Not in scope:** any Core API change, including the fix for [findFreeSlots ignores the time of day in from/to](https://github.com/duarteplesteves/fasti/issues/19).
 
@@ -44,7 +44,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 - `waived` tagging per slot.
 - Branded ids in the Core's public types, for ids the Framework owns.
 
-**Test of done:** unit and property tests pass; `@fasti/scheduler/core` has zero runtime dependencies; `publint` and `attw` pass.
+**Test of done:** unit and property tests pass; `@fastijs/scheduler/core` has zero runtime dependencies; `publint` and `attw` pass.
 
 ## 3. Adapter contract — `0.1.0-next.N` (internal)
 
@@ -52,10 +52,10 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Scope:**
 
-- `@fasti/scheduler/adapter`: the contract types ([ADR 008](./docs/adr/008-adapter-contract.md)) and `defineSchema`.
-- `@fasti/scheduler/memory`: the in-memory Adapter.
-- `@fasti/scheduler/testing`: the Conformance Suite.
-- `@fasti/scheduler/drizzle/pg`: the Drizzle Adapter on Postgres.
+- `@fastijs/scheduler/adapter`: the contract types ([ADR 008](./docs/adr/008-adapter-contract.md)) and `defineSchema`.
+- `@fastijs/scheduler/memory`: the in-memory Adapter.
+- `@fastijs/scheduler/testing`: the Conformance Suite.
+- `@fastijs/scheduler/drizzle/pg`: the Drizzle Adapter on Postgres.
 - A CI job with a Postgres 18 service container ([ADR 013](./docs/adr/013-integration-tests-on-real-databases.md)).
 
 **Test of done:** the Conformance Suite passes on the in-memory and Drizzle Postgres Adapters, and the lock-off negative control fails as expected (`test.fails`).
@@ -66,7 +66,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Scope:**
 
-- `createScheduler({ schema, adapter })` with `book`, `cancel`, `findSlots` and `scheduler.availability.set/get`, in both the plain form and the `@fasti/scheduler/effect` form ([ADR 010](./docs/adr/010-action-results-and-two-forms.md)).
+- `createScheduler({ schema, adapter })` with `book`, `cancel`, `findSlots` and `scheduler.availability.set/get`, in both the plain form and the `@fastijs/scheduler/effect` form ([ADR 010](./docs/adr/010-action-results-and-two-forms.md)).
 - The two base Statuses (`booked`, `cancelled`), the overlap invariant, and the always-present `availability` Policy.
 - Docs: a README quickstart, TSDoc on every public export, and an `examples/` app.
 - Release infrastructure:
@@ -99,7 +99,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Goal:** the rest of the first-party Adapters.
 
-**Scope:** `@fasti/scheduler/drizzle/sqlite`; `@fasti/scheduler/prisma` on Prisma 8. Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, the Prisma Adapter ships marked experimental, and the label goes in a `1.x` once GA lands.
+**Scope:** `@fastijs/scheduler/drizzle/sqlite`; `@fastijs/scheduler/prisma` on Prisma 8. Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, the Prisma Adapter ships marked experimental, and the label goes in a `1.x` once GA lands.
 
 **Test of done:** the Conformance Suite passes on each new Adapter in CI.
 
