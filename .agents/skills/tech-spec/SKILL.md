@@ -1,6 +1,7 @@
 ---
+
 name: tech-spec
-description: Write a typed call-stack architecture handoff.
+description: Write a typed call-stack architecture handoff after looking for structural simplifications. Use when preparing a tech spec or implementation-ready design.
 disable-model-invocation: true
 ---
 
@@ -48,9 +49,26 @@ Mark unknowns as open questions instead of filling gaps with plausible design.
 
 Completion criterion: every claimed requirement or constraint is grounded in conversation, code, docs, or an explicit open question.
 
-### 3. Explore design alternatives
+### 3. Look for code-judo opportunities
 
-Produce materially different alternatives before choosing the recommended design. Alternatives should differ in interface shape, seam placement, ownership, call stack, runtime topology, or module boundaries — not just names.
+Before designing the feature, inspect the affected code and its callers for behavior-preserving restructurings that would make the change substantially simpler. Apply the structural-simplification principles from the sibling [Thermo-Nuclear Code Quality Review](../thermo-nuclear-code-quality-review/SKILL.md), not its full review workflow.
+
+Be ambitious about deleting complexity, not merely moving it around. Look for ways to:
+
+- reframe the state model so flags, repeated conditionals, and special cases disappear;
+- move logic to the module or layer that already owns the concept and reuse canonical helpers;
+- remove duplicate flows, redundant state, pass-through wrappers, or unnecessary layers;
+- change an ownership boundary or split a busy module so the feature fits naturally instead of adding scattered checks.
+
+For each credible opportunity, show the current flow versus the simpler flow, what complexity disappears, which files/callers change, and how tests protect existing behavior. For example, replace repeated mode checks in several callers with one explicit domain state owned by the existing module—only if that removes decisions rather than hiding the same branches behind a new wrapper.
+
+Keep the search tied to the requested change. Compare the restructuring's cost and risk with a direct implementation; do not turn unrelated cleanup into a prerequisite. If no worthwhile move exists, say so and continue. This is design work: propose moves, do not perform them.
+
+Completion criterion: promising simplifications are grounded in inspected code and carried into the alternatives, or the spec explains why a direct change is already simplest.
+
+### 4. Explore design alternatives
+
+Produce materially different alternatives before choosing the recommended design. Compare a direct change against any credible code-judo restructuring from step 3; do not assume either wins. Alternatives should differ in interface shape, seam placement, ownership, call stack, runtime topology, or module boundaries — not just names.
 
 For each alternative, sketch:
 
@@ -75,11 +93,12 @@ Compare alternatives on:
 - error and cancellation model;
 - testability through real seams;
 - operational/runtime fit;
-- implementation complexity.
+- implementation complexity, including complexity removed versus merely relocated;
+- restructuring cost, behavior-preservation risk, and payoff for the requested change.
 
 Completion criterion: the recommendation is chosen after comparing alternatives, not before.
 
-### 4. Specify the recommended typed contracts
+### 5. Specify the recommended typed contracts
 
 For the recommended design, outline every new, changed, or deleted:
 
@@ -101,7 +120,7 @@ Name seams, adapters, implementations, ownership boundaries, and what crosses ea
 
 Completion criterion: every new or changed boundary has a concrete type/interface/API sketch, or an explicit reason no new contract is needed.
 
-### 5. Specify call stacks and data flow
+### 6. Specify call stacks and data flow
 
 For every new, changed, or deleted behavior, show the call stack from entrypoint to side effects and response.
 
@@ -123,7 +142,7 @@ Include current vs proposed flow when changing existing behavior. Include failur
 
 Completion criterion: every affected behavior has an end-to-end call stack and type/data-flow trace.
 
-### 6. Map files and modules
+### 7. Map files and modules
 
 List:
 
@@ -137,7 +156,7 @@ For each file, state the contract, code path, boundary, adapter, domain concept,
 
 Completion criterion: every contract and call-stack step maps to a file/module or an open question.
 
-### 7. Write the RGR TDD test plan
+### 8. Write the RGR TDD test plan
 
 Use the sibling TDD workflow and testing standards. Plan vertical Red-Green-Refactor slices: one failing behavior test, minimal implementation, repeat. Do not write a horizontal "all tests first, all code later" plan.
 
@@ -157,7 +176,7 @@ Cover proportionately:
 
 Completion criterion: every public behavior, invariant, important failure path, changed boundary, and changed seam has a red test slice or an explicit reason not to test it.
 
-### 8. Produce the spec
+### 9. Produce the spec
 
 Return the spec inline unless the user requested a file path. If a file was requested, save it there.
 
@@ -196,6 +215,8 @@ Use this shape unless the task is tiny enough to compress without losing contrac
 ## Invariants
 
 ## Design Constraints
+
+## Code-Judo Opportunities
 
 ## Alternatives Considered
 
