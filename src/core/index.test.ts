@@ -3,7 +3,14 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import { unwrap } from "../test-utils/results.js";
 import * as core from "./index.js";
 import { findFreeSlots, isSlotValid, withBlockingFlag } from "./index.js";
-import type { AvailabilityRule, Booking, Issue, Slot } from "./index.js";
+import type {
+  AvailabilityRule,
+  Booking,
+  Issue,
+  Recurrence,
+  Slot,
+  WeeklyRecurrence,
+} from "./index.js";
 
 describe("public API surface", () => {
   it("composes withBlockingFlag → findFreeSlots → isSlotValid round-trip via the fasti/core entry", () => {
@@ -78,6 +85,12 @@ describe("export surface", () => {
       "isSlotValid",
       "withBlockingFlag",
     ]);
+  });
+
+  it("exports Recurrence as the frequency-discriminated rule recurrence", () => {
+    expectTypeOf<AvailabilityRule["recurrence"]>().toEqualTypeOf<Recurrence>();
+    expectTypeOf<Recurrence>().toEqualTypeOf<WeeklyRecurrence>();
+    expectTypeOf<WeeklyRecurrence["frequency"]>().toEqualTypeOf<"weekly">();
   });
 
   it("Issue matches the Standard Schema issue structurally", () => {

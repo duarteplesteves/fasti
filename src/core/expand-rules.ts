@@ -1,12 +1,60 @@
 import { checkOrder, checkRules } from "./checks.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
-import type { AvailabilityRule, ExpandedWindow } from "./types.js";
+import type {
+  AvailabilityRule,
+  ExpandedWindow,
+  Recurrence,
+  WeeklyRecurrence,
+} from "./types.js";
 
 export interface ExpandRulesParams {
   rules: readonly AvailabilityRule[];
   from: Temporal.PlainDate;
   to: Temporal.PlainDate;
+}
+
+/** Weeks count from the Monday of `effectiveFrom`; without it every week is on. */
+function occursOnWeekly(
+  recurrence: WeeklyRecurrence,
+  date: Temporal.PlainDate,
+  effectiveFrom: Temporal.PlainDate | undefined
+): boolean {
+  const weekIndex =
+    effectiveFrom === undefined
+      ? 0
+      : date
+          .subtract({ days: date.dayOfWeek - 1 })
+          .since(
+            effectiveFrom.subtract({ days: effectiveFrom.dayOfWeek - 1 }),
+            {
+              largestUnit: "days",
+            }
+          ).days / 7;
+
+  return (
+    weekIndex % recurrence.interval === 0 &&
+    recurrence.daysOfWeek.includes(date.dayOfWeek)
+  );
+}
+
+function occursOn(
+  recurrence: Recurrence,
+  date: Temporal.PlainDate,
+  effectiveFrom: Temporal.PlainDate | undefined
+): boolean {
+  switch (recurrence.frequency) {
+    case "weekly": {
+      return occursOnWeekly(recurrence, date, effectiveFrom);
+    }
+
+    default: {
+      // A new Recurrence member fails to compile here until it is handled.
+      const unhandled: never = recurrence.frequency;
+
+      return unhandled;
+    }
+  }
 }
 
 /** `expandRules` without checks, for Core functions that already checked their params. */
@@ -17,10 +65,6 @@ export function expandRulesUnchecked(
   const windows: ExpandedWindow[] = [];
 
   for (const rule of rules) {
-    const weekAnchor = rule.effectiveFrom?.subtract({
-      days: rule.effectiveFrom.dayOfWeek - 1,
-    });
-
     let cursor = from;
 
     while (Temporal.PlainDate.compare(cursor, to) <= 0) {
@@ -34,22 +78,13 @@ export function expandRulesUnchecked(
         !!rule.effectiveTo &&
         Temporal.PlainDate.compare(date, rule.effectiveTo) > 0;
 
-      const dateMonday = date.subtract({ days: date.dayOfWeek - 1 });
-
-      const weekIndex =
-        weekAnchor === undefined
-          ? 0
-          : dateMonday.since(weekAnchor, { largestUnit: "days" }).days / 7;
-
-      const onIntervalWeek = weekIndex % rule.recurrence.interval === 0;
       const isException = rule.exceptions?.some((e) => e.equals(date));
 
       if (
         !beforeEffective &&
         !afterEffective &&
-        onIntervalWeek &&
         !isException &&
-        rule.recurrence.daysOfWeek.includes(date.dayOfWeek)
+        occursOn(rule.recurrence, date, rule.effectiveFrom)
       ) {
         windows.push({
           end: date.toZonedDateTime({

@@ -22,7 +22,9 @@ export type {
   AvailabilityRule,
   Booking,
   ExpandedWindow,
+  Recurrence,
   Slot,
+  WeeklyRecurrence,
 } from "./types.js";
 
 export { withBlockingFlag } from "./with-blocking-flag.js";

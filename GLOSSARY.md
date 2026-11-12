@@ -34,7 +34,7 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | Term | Definition | Notes |
 |------|------------|-------|
 | **Resource** | Anything that can be booked (person, room, machine, doctor, etc.). | Treated as an opaque, globally unique identifier (`resourceId`). The engine does not understand resource taxonomy; namespacing is the caller's responsibility. |
-| **AvailabilityRule** | An abstract, recurring pattern defining when a Resource is available for booking. | Expressed as frequency (weekly), days of the week, time window, timezone, and effective date range. Concrete windows are generated on demand. |
+| **AvailabilityRule** | An abstract, recurring pattern defining when a Resource is available for booking. | Expressed as a recurrence, time window, timezone, and effective date range. The recurrence is one value discriminated by `frequency` (only `weekly` today: interval and days of the week), so a new frequency is a new kind of recurrence, not a data migration. Concrete windows are generated on demand. |
 | **Booking** | An existing reservation that occupies a Resource for a specific time range. | The engine uses `isBlocking` (not `status`) to determine if a booking consumes capacity. The engine knows nothing about booking lifecycle or business consequences. |
 | **Slot** | A candidate time window returned by the engine that is both within an AvailabilityRule and free of conflicting Bookings. | Represents a bookable window. Returned with zoned start/end so the caller knows local wall-clock time. |
 | **Capacity** | The number of simultaneous bookings a Resource can host. | **v0.1 constraint: capacity is always 1.** Multi-booking resources (classes, group events) are out of scope for the core engine. |

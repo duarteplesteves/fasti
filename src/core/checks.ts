@@ -1,5 +1,10 @@
 import type { Issue } from "./result.js";
-import type { AvailabilityRule, Booking } from "./types.js";
+import type {
+  AvailabilityRule,
+  Booking,
+  Recurrence,
+  WeeklyRecurrence,
+} from "./types.js";
 
 export type Path = readonly (string | number)[];
 
@@ -63,36 +68,9 @@ export function checkTimeZone(timeZone: string, path: Path): CheckIssue[] {
     : [];
 }
 
-/** Every problem with `rule`, with paths relative to the rule. Empty when valid. */
-export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
+function checkWeeklyRecurrence(recurrence: WeeklyRecurrence): CheckIssue[] {
   const issues: CheckIssue[] = [];
-  const { timeWindow, effectiveFrom, effectiveTo } = rule;
-  const { daysOfWeek, interval } = rule.recurrence;
-
-  issues.push(
-    ...checkOrder(
-      Temporal.PlainTime.compare,
-      { label: "timeWindow.start", value: timeWindow.start },
-      { label: "timeWindow.end", value: timeWindow.end },
-      "after",
-      ["timeWindow", "end"]
-    ).map((issue) => ({
-      ...issue,
-      message: `${issue.message} Cross-day windows are not supported; split into two rules.`,
-    }))
-  );
-
-  if (effectiveFrom && effectiveTo) {
-    issues.push(
-      ...checkOrder(
-        Temporal.PlainDate.compare,
-        { label: "effectiveFrom", value: effectiveFrom },
-        { label: "effectiveTo", value: effectiveTo },
-        "onOrAfter",
-        ["effectiveTo"]
-      )
-    );
-  }
+  const { daysOfWeek, interval } = recurrence;
 
   if (daysOfWeek.length === 0) {
     issues.push({
@@ -126,7 +104,58 @@ export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
     });
   }
 
-  issues.push(...checkTimeZone(rule.timezone, ["timezone"]));
+  return issues;
+}
+
+function checkRecurrence(recurrence: Recurrence): CheckIssue[] {
+  switch (recurrence.frequency) {
+    case "weekly": {
+      return checkWeeklyRecurrence(recurrence);
+    }
+
+    default: {
+      // A new Recurrence member fails to compile here until it is handled.
+      const unhandled: never = recurrence.frequency;
+
+      return unhandled;
+    }
+  }
+}
+
+/** Every problem with `rule`, with paths relative to the rule. Empty when valid. */
+export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
+  const issues: CheckIssue[] = [];
+  const { timeWindow, effectiveFrom, effectiveTo } = rule;
+
+  issues.push(
+    ...checkOrder(
+      Temporal.PlainTime.compare,
+      { label: "timeWindow.start", value: timeWindow.start },
+      { label: "timeWindow.end", value: timeWindow.end },
+      "after",
+      ["timeWindow", "end"]
+    ).map((issue) => ({
+      ...issue,
+      message: `${issue.message} Cross-day windows are not supported; split into two rules.`,
+    }))
+  );
+
+  if (effectiveFrom && effectiveTo) {
+    issues.push(
+      ...checkOrder(
+        Temporal.PlainDate.compare,
+        { label: "effectiveFrom", value: effectiveFrom },
+        { label: "effectiveTo", value: effectiveTo },
+        "onOrAfter",
+        ["effectiveTo"]
+      )
+    );
+  }
+
+  issues.push(
+    ...checkRecurrence(rule.recurrence),
+    ...checkTimeZone(rule.timezone, ["timezone"])
+  );
 
   return issues;
 }
