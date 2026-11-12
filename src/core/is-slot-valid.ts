@@ -1,6 +1,6 @@
+import { availableWindows, fitsInSomeWindow } from "./availability.js";
 import { checkInstantRange, checkResourceInputs } from "./checks.js";
-import { detectConflictsUnchecked } from "./detect-conflicts.js";
-import { expandRulesUnchecked } from "./expand-rules.js";
+import { overlapsBlockingBooking } from "./detect-conflicts.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, Booking } from "./types.js";
@@ -14,47 +14,20 @@ export interface IsSlotValidParams<Id extends string = string> {
   excludeBookingId?: NoInfer<Id>;
 }
 
-function isSlotValidUnchecked(params: IsSlotValidParams): boolean {
-  const { rules, slot } = params;
-
-  // Pad the expansion range by ±1 day to cover any rule timezone vs slot UTC mismatch.
-  const slotStartUtc = slot.start.toZonedDateTimeISO("UTC");
-  const slotEndUtc = slot.end.toZonedDateTimeISO("UTC");
-  const expansionFrom = slotStartUtc.toPlainDate().subtract({ days: 1 });
-  const expansionTo = slotEndUtc.toPlainDate().add({ days: 1 });
-
-  const windows = expandRulesUnchecked({
-    from: expansionFrom,
-    rules,
-    to: expansionTo,
-  });
-
-  const fitsInSomeWindow = windows.some((w) => {
-    const windowStart = w.start.toInstant();
-    const windowEnd = w.end.toInstant();
-
-    return (
-      Temporal.Instant.compare(slot.start, windowStart) >= 0 &&
-      Temporal.Instant.compare(slot.end, windowEnd) <= 0
-    );
-  });
-
-  if (!fitsInSomeWindow) {
-    return false;
-  }
-
-  return detectConflictsUnchecked({ ...params, candidate: slot }).length === 0;
-}
-
 export function isSlotValid<Id extends string = string>(
   params: IsSlotValidParams<Id>
 ): Result<boolean, InvalidParams> {
-  const { bookings, resourceId, rules, slot } = params;
+  const { bookings, excludeBookingId, resourceId, rules, slot } = params;
 
   const issues = [
     ...checkInstantRange(slot, ["slot"]),
     ...checkResourceInputs({ bookings, resourceId, rules }),
   ];
 
-  return checked(issues, () => isSlotValidUnchecked(params));
+  return checked(
+    issues,
+    () =>
+      fitsInSomeWindow(availableWindows(rules, slot), slot) &&
+      !overlapsBlockingBooking(bookings, slot, excludeBookingId)
+  );
 }

@@ -86,3 +86,9 @@ export interface ExpandedWindow {
   start: Temporal.ZonedDateTime;
   end: Temporal.ZonedDateTime;
 }
+
+/** A half-open `[start, end)` range of instants. Internal; not exported from the Core. */
+export interface InstantRange {
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
+}
