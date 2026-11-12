@@ -1,10 +1,6 @@
+import { checkRecurrence } from "./recurrence.js";
 import type { Issue } from "./result.js";
-import type {
-  AvailabilityRule,
-  Booking,
-  Recurrence,
-  WeeklyRecurrence,
-} from "./types.js";
+import type { AvailabilityRule, Booking } from "./types.js";
 
 export type Path = readonly (string | number)[];
 
@@ -40,60 +36,6 @@ export function checkTimeZone(timeZone: string, path: Path): CheckIssue[] {
         },
       ]
     : [];
-}
-
-function checkWeeklyRecurrence(recurrence: WeeklyRecurrence): CheckIssue[] {
-  const issues: CheckIssue[] = [];
-  const { daysOfWeek, interval } = recurrence;
-
-  if (daysOfWeek.length === 0) {
-    issues.push({
-      message: "daysOfWeek must not be empty.",
-      path: ["recurrence", "daysOfWeek"],
-    });
-  }
-
-  const seen = new Set<number>();
-
-  for (const [i, day] of daysOfWeek.entries()) {
-    if (!Number.isInteger(day) || day < 1 || day > 7) {
-      issues.push({
-        message: `daysOfWeek values must be integers in 1–7 (1 = Monday), got ${day}.`,
-        path: ["recurrence", "daysOfWeek", i],
-      });
-    } else if (seen.has(day)) {
-      issues.push({
-        message: `daysOfWeek must not repeat a day, got ${day} again.`,
-        path: ["recurrence", "daysOfWeek", i],
-      });
-    }
-
-    seen.add(day);
-  }
-
-  if (!Number.isInteger(interval) || interval < 1) {
-    issues.push({
-      message: `recurrence.interval must be an integer ≥ 1, got ${interval}.`,
-      path: ["recurrence", "interval"],
-    });
-  }
-
-  return issues;
-}
-
-function checkRecurrence(recurrence: Recurrence): CheckIssue[] {
-  switch (recurrence.frequency) {
-    case "weekly": {
-      return checkWeeklyRecurrence(recurrence);
-    }
-
-    default: {
-      // A new Recurrence member fails to compile here until it is handled.
-      const unhandled: never = recurrence.frequency;
-
-      return unhandled;
-    }
-  }
 }
 
 /** Every problem with `rule`, with paths relative to the rule. Empty when valid. */
