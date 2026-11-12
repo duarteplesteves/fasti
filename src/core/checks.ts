@@ -3,6 +3,11 @@ import type { AvailabilityRule, Booking } from "./types.js";
 
 export type Path = readonly (string | number)[];
 
+/** An `Issue` whose path is always set: every check knows where its problem is. */
+export interface CheckIssue extends Issue {
+  readonly path: Path;
+}
+
 interface Bound<T> {
   readonly label: string;
   readonly value: T;
@@ -15,7 +20,7 @@ export function checkOrder<T extends { toString: () => string }>(
   end: Bound<T>,
   relation: "after" | "onOrAfter",
   path: Path
-): Issue[] {
+): CheckIssue[] {
   const cmp = compare(start.value, end.value);
   const ok = cmp < 0 || (relation === "onOrAfter" && cmp === 0);
 
@@ -30,7 +35,7 @@ export function checkOrder<T extends { toString: () => string }>(
 }
 
 /** IANA names only: fixed offsets like "+01:00" don't follow DST. */
-export function checkTimeZone(timeZone: string, path: Path): Issue[] {
+export function checkTimeZone(timeZone: string, path: Path): CheckIssue[] {
   let canonical: string;
 
   try {
@@ -59,8 +64,8 @@ export function checkTimeZone(timeZone: string, path: Path): Issue[] {
 }
 
 /** Every problem with `rule`, with paths relative to the rule. Empty when valid. */
-export function checkRule(rule: AvailabilityRule): readonly Issue[] {
-  const issues: Issue[] = [];
+export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
+  const issues: CheckIssue[] = [];
   const { timeWindow, effectiveFrom, effectiveTo } = rule;
   const { daysOfWeek, interval } = rule.recurrence;
 
@@ -129,7 +134,7 @@ export function checkRule(rule: AvailabilityRule): readonly Issue[] {
 export function checkInstantRange(
   range: { readonly start: Temporal.Instant; readonly end: Temporal.Instant },
   path: Path
-): Issue[] {
+): CheckIssue[] {
   return checkOrder(
     Temporal.Instant.compare,
     { label: "start", value: range.start },
@@ -140,17 +145,17 @@ export function checkInstantRange(
 }
 
 // shortcut: no upper bound, so a huge value can still overflow Temporal's range and throw; cap it if #29/#31 settle a limit.
-export function checkPositiveInteger(n: number, path: Path): Issue[] {
+export function checkPositiveInteger(n: number, path: Path): CheckIssue[] {
   return Number.isInteger(n) && n >= 1
     ? []
     : [{ message: `Must be a positive integer (minutes), got ${n}.`, path }];
 }
 
-export function checkRules(rules: readonly AvailabilityRule[]): Issue[] {
+export function checkRules(rules: readonly AvailabilityRule[]): CheckIssue[] {
   return rules.flatMap((rule, i) =>
     checkRule(rule).map((issue) => ({
       message: issue.message,
-      path: ["rules", i, ...(issue.path ?? [])],
+      path: ["rules", i, ...issue.path],
     }))
   );
 }
@@ -159,7 +164,7 @@ export function checkSameResource(
   items: readonly { readonly resourceId: string }[],
   key: "rules" | "bookings",
   resourceId: string
-): Issue[] {
+): CheckIssue[] {
   return items.flatMap((item, i) =>
     item.resourceId === resourceId
       ? []
@@ -175,7 +180,7 @@ export function checkSameResource(
 export function checkBookings(
   bookings: readonly Booking[],
   resourceId: string
-): Issue[] {
+): CheckIssue[] {
   return [
     ...checkSameResource(bookings, "bookings", resourceId),
     ...bookings.flatMap((b, i) => checkInstantRange(b, ["bookings", i])),
