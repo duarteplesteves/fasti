@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
+import { unwrap } from "../test-utils/results.js";
+import * as core from "./index.js";
 import { findFreeSlots, isSlotValid, withBlockingFlag } from "./index.js";
-import type { AvailabilityRule, Booking, Slot } from "./index.js";
+import type { AvailabilityRule, Booking, Issue, Slot } from "./index.js";
 
 describe("public API surface", () => {
   it("composes withBlockingFlag → findFreeSlots → isSlotValid round-trip via the fasti/core entry", () => {
@@ -24,30 +26,83 @@ describe("public API surface", () => {
       },
     ];
 
-    const bookings: Booking[] = withBlockingFlag(rawBookings, {
-      default: "blocking",
-    });
+    const bookings: Booking[] = unwrap(
+      withBlockingFlag(rawBookings, {
+        default: "blocking",
+      })
+    );
 
-    const slots: Slot[] = findFreeSlots({
-      bookings,
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots: Slot[] = unwrap(
+      findFreeSlots({
+        bookings,
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots).not.toHaveLength(0);
 
     for (const slot of slots) {
-      const valid = isSlotValid({
-        bookings,
-        resourceId: "doc-1",
-        rules: [tuesday9to17],
-        slot: { end: slot.end.toInstant(), start: slot.start.toInstant() },
-      });
+      const valid = unwrap(
+        isSlotValid({
+          bookings,
+          resourceId: "doc-1",
+          rules: [tuesday9to17],
+          slot: { end: slot.end.toInstant(), start: slot.start.toInstant() },
+        })
+      );
 
       expect(valid).toBeTruthy();
     }
+  });
+});
+
+/** Copied from the Standard Schema spec (StandardSchemaV1.Issue / PathSegment). */
+interface StandardSchemaIssue {
+  readonly message: string;
+  readonly path?:
+    | readonly (PropertyKey | { readonly key: PropertyKey })[]
+    | undefined;
+}
+
+describe("export surface", () => {
+  it("exports exactly the six functions at runtime", () => {
+    expect(Object.keys(core).toSorted()).toStrictEqual([
+      "checkRule",
+      "detectConflicts",
+      "expandRules",
+      "findFreeSlots",
+      "isSlotValid",
+      "withBlockingFlag",
+    ]);
+  });
+
+  it("Issue matches the Standard Schema issue structurally", () => {
+    expectTypeOf<Issue>().toEqualTypeOf<StandardSchemaIssue>();
+  });
+
+  it("accepts readonly `as const` inputs", () => {
+    const rules = [
+      {
+        recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
+        resourceId: "doc-1",
+        timeWindow: {
+          end: Temporal.PlainTime.from("17:00"),
+          start: Temporal.PlainTime.from("09:00"),
+        },
+        timezone: "Europe/Lisbon",
+      },
+    ] as const;
+
+    const result = core.expandRules({
+      from: Temporal.PlainDate.from("2026-05-12"),
+      rules,
+      to: Temporal.PlainDate.from("2026-05-12"),
+    });
+
+    expect(unwrap(result)).toHaveLength(1);
   });
 });

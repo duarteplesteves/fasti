@@ -1,5 +1,5 @@
-import { test } from "@fast-check/vitest";
 /* eslint-disable vitest/no-standalone-expect */
+import { test } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
 
 import {
@@ -7,6 +7,7 @@ import {
   arbResourceId,
 } from "../test-utils/arbitraries.js";
 import { propConfig } from "../test-utils/prop-config.js";
+import { unwrap } from "../test-utils/results.js";
 import { expandRules } from "./expand-rules.js";
 
 describe(`${expandRules.name} (property)`, () => {
@@ -15,11 +16,13 @@ describe(`${expandRules.name} (property)`, () => {
     (rule, resourceId) => {
       const finalRule = { ...rule, resourceId };
 
-      const result = expandRules({
-        from: Temporal.PlainDate.from("2025-11-01"),
-        rules: [finalRule],
-        to: Temporal.PlainDate.from("2026-02-28"),
-      });
+      const result = unwrap(
+        expandRules({
+          from: Temporal.PlainDate.from("2025-11-01"),
+          rules: [finalRule],
+          to: Temporal.PlainDate.from("2026-02-28"),
+        })
+      );
 
       for (const w of result) {
         expect(Temporal.ZonedDateTime.compare(w.start, w.end)).toBeLessThan(0);
@@ -32,11 +35,13 @@ describe(`${expandRules.name} (property)`, () => {
     (rule, resourceId) => {
       const finalRule = { ...rule, resourceId };
 
-      const result = expandRules({
-        from: Temporal.PlainDate.from("2025-11-01"),
-        rules: [finalRule],
-        to: Temporal.PlainDate.from("2026-02-28"),
-      });
+      const result = unwrap(
+        expandRules({
+          from: Temporal.PlainDate.from("2025-11-01"),
+          rules: [finalRule],
+          to: Temporal.PlainDate.from("2026-02-28"),
+        })
+      );
 
       for (const w of result) {
         const date = w.start.toPlainDate();
@@ -50,11 +55,13 @@ describe(`${expandRules.name} (property)`, () => {
     (rule, resourceId) => {
       const finalRule = { ...rule, resourceId };
 
-      const result = expandRules({
-        from: Temporal.PlainDate.from("2025-11-01"),
-        rules: [finalRule],
-        to: Temporal.PlainDate.from("2026-02-28"),
-      });
+      const result = unwrap(
+        expandRules({
+          from: Temporal.PlainDate.from("2025-11-01"),
+          rules: [finalRule],
+          to: Temporal.PlainDate.from("2026-02-28"),
+        })
+      );
 
       const exceptionSet = new Set(
         (finalRule.exceptions ?? []).map((d) => d.toString())

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { unwrap, issuePaths } from "../test-utils/results.js";
 import { findFreeSlots } from "./find-free-slots.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
@@ -17,14 +18,16 @@ describe(findFreeSlots, () => {
   it("emits a grid of hourly slots inside a single rule with no bookings", () => {
     // 2026-05-12 is a Tuesday. 09:00 Lisbon (WEST, UTC+1) = 08:00 UTC. 17:00 = 16:00 UTC.
     // Hourly duration: slots at 09, 10, 11, 12, 13, 14, 15, 16 Lisbon = 8 slots.
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots.map((s) => s.start.toPlainTime().toString())).toStrictEqual([
       "09:00:00",
@@ -48,14 +51,16 @@ describe(findFreeSlots, () => {
       start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
     };
 
-    const slots = findFreeSlots({
-      bookings: [blocking],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [blocking],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots.map((s) => s.start.toPlainTime().toString())).not.toContain(
       "10:00:00"
@@ -72,14 +77,16 @@ describe(findFreeSlots, () => {
       start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
     };
 
-    const slots = findFreeSlots({
-      bookings: [nonBlocking],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [nonBlocking],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots).toHaveLength(8);
     expect(slots.map((s) => s.start.toPlainTime().toString())).toContain(
@@ -97,14 +104,16 @@ describe(findFreeSlots, () => {
       start: Temporal.Instant.from("2026-05-12T09:30:00Z"),
     };
 
-    const slots = findFreeSlots({
-      bookings: [blocking],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [blocking],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots.map((s) => s.start.toPlainTime().toString())).not.toContain(
       "10:00:00"
@@ -131,35 +140,39 @@ describe(findFreeSlots, () => {
       start: Temporal.Instant.from("2026-05-12T10:00:00Z"),
     };
 
-    const slots = findFreeSlots({
-      bookings: [before, after],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [before, after],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots.map((s) => s.start.toPlainTime().toString())).toContain(
       "10:00:00"
     );
   });
 
-  it("throws when a rule's resourceId does not match params.resourceId", () => {
+  it("reports a rule's resourceId does not match params.resourceId", () => {
     const stray: AvailabilityRule = { ...tuesday9to17, resourceId: "doc-2" };
-    expect(() =>
-      findFreeSlots({
-        bookings: [],
-        duration: 60,
-        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-        resourceId: "doc-1",
-        rules: [stray],
-        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-      })
-    ).toThrow(/resourceId/u);
+    expect(
+      issuePaths(
+        findFreeSlots({
+          bookings: [],
+          duration: 60,
+          from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+          resourceId: "doc-1",
+          rules: [stray],
+          to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+        })
+      )
+    ).toStrictEqual([["rules", 0, "resourceId"]]);
   });
 
-  it("throws when a booking's resourceId does not match params.resourceId", () => {
+  it("reports a booking's resourceId does not match params.resourceId", () => {
     const stray: Booking = {
       end: Temporal.Instant.from("2026-05-12T10:00:00Z"),
       id: "b1",
@@ -168,40 +181,46 @@ describe(findFreeSlots, () => {
       start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
     };
 
-    expect(() =>
-      findFreeSlots({
-        bookings: [stray],
-        duration: 60,
-        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-        resourceId: "doc-1",
-        rules: [tuesday9to17],
-        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-      })
-    ).toThrow(/resourceId/u);
+    expect(
+      issuePaths(
+        findFreeSlots({
+          bookings: [stray],
+          duration: 60,
+          from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+          resourceId: "doc-1",
+          rules: [tuesday9to17],
+          to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+        })
+      )
+    ).toStrictEqual([["bookings", 0, "resourceId"]]);
   });
 
-  it("throws when duration is not a positive integer", () => {
-    expect(() =>
-      findFreeSlots({
-        bookings: [],
-        duration: 0,
-        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-        resourceId: "doc-1",
-        rules: [tuesday9to17],
-        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-      })
-    ).toThrow(/duration/u);
+  it("reports duration is not a positive integer", () => {
+    expect(
+      issuePaths(
+        findFreeSlots({
+          bookings: [],
+          duration: 0,
+          from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+          resourceId: "doc-1",
+          rules: [tuesday9to17],
+          to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+        })
+      )
+    ).toStrictEqual([["duration"]]);
 
-    expect(() =>
-      findFreeSlots({
-        bookings: [],
-        duration: 1.5,
-        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-        resourceId: "doc-1",
-        rules: [tuesday9to17],
-        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-      })
-    ).toThrow(/duration/u);
+    expect(
+      issuePaths(
+        findFreeSlots({
+          bookings: [],
+          duration: 1.5,
+          from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+          resourceId: "doc-1",
+          rules: [tuesday9to17],
+          to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+        })
+      )
+    ).toStrictEqual([["duration"]]);
   });
 
   it("emits only the first occurrence across a fall-back DST overlap", () => {
@@ -218,14 +237,16 @@ describe(findFreeSlots, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 60,
-      from: Temporal.Instant.from("2026-10-25T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [sundayFallback],
-      to: Temporal.Instant.from("2026-10-26T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 60,
+        from: Temporal.Instant.from("2026-10-25T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [sundayFallback],
+        to: Temporal.Instant.from("2026-10-26T00:00:00Z"),
+      })
+    );
 
     const wallClockStarts = slots.map((s) => s.start.toPlainTime().toString());
 
@@ -248,14 +269,16 @@ describe(findFreeSlots, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 60,
-      from: Temporal.Instant.from("2026-03-29T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [sundayEarly],
-      to: Temporal.Instant.from("2026-03-30T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 60,
+        from: Temporal.Instant.from("2026-03-29T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [sundayEarly],
+        to: Temporal.Instant.from("2026-03-30T00:00:00Z"),
+      })
+    );
 
     const wallClockStarts = slots.map((s) => s.start.toPlainTime().toString());
     expect(wallClockStarts).not.toContain("01:00:00");
@@ -265,15 +288,17 @@ describe(findFreeSlots, () => {
   it("uses options.interval as the candidate cadence when smaller than duration", () => {
     // 8-hour window, 60-min slots, but candidates every 15 min ⇒ 29 candidates.
     // (window 09:00–17:00 = 480 min; latest 60-min start is 16:00; 16*4 + 1 = 29).
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      options: { interval: 15 },
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        options: { interval: 15 },
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots).toHaveLength(29);
     expect(slots[0]?.start.toPlainTime().toString()).toBe("09:00:00");
@@ -284,15 +309,17 @@ describe(findFreeSlots, () => {
   it("respects options.interval when larger than duration (sparse grid)", () => {
     // 30-min slots cadenced every 2 hours: 09:00, 11:00, 13:00, 15:00.
     // (window 09:00–17:00; latest 30-min start that fits is 16:30, but cadence skips it.)
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 30,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      options: { interval: 120 },
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 30,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        options: { interval: 120 },
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots.map((s) => s.start.toPlainTime().toString())).toStrictEqual([
       "09:00:00",
@@ -305,15 +332,17 @@ describe(findFreeSlots, () => {
   it("drops a trailing slot whose end overflows the window by default", () => {
     // Window 09:00–17:00. Duration 90 min, interval 60 min.
     // 16:00 + 90 = 17:30 → overflows window end.
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 90,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      options: { interval: 60 },
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 90,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        options: { interval: 60 },
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots.map((s) => s.start.toPlainTime().toString())).toStrictEqual([
       "09:00:00",
@@ -327,15 +356,17 @@ describe(findFreeSlots, () => {
   });
 
   it("keeps the overflowing trailing slot when options.allowEndOverflow is true", () => {
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 90,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      options: { allowEndOverflow: true, interval: 60 },
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 90,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        options: { allowEndOverflow: true, interval: 60 },
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     const starts = slots.map((s) => s.start.toPlainTime().toString());
     expect(starts).toContain("16:00:00");
@@ -344,14 +375,16 @@ describe(findFreeSlots, () => {
 
   it("returns no slots when the rule does not fire in the range", () => {
     // Range is a single Wednesday; the rule only fires on Tuesdays.
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17],
-      to: Temporal.Instant.from("2026-05-14T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        to: Temporal.Instant.from("2026-05-14T00:00:00Z"),
+      })
+    );
 
     expect(slots).toStrictEqual([]);
   });
@@ -360,29 +393,95 @@ describe(findFreeSlots, () => {
     // Two rules with the same window produce the same grid; result must be deduped.
     const duplicate: AvailabilityRule = { ...tuesday9to17 };
 
-    const slots = findFreeSlots({
-      bookings: [],
-      duration: 60,
-      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
-      resourceId: "doc-1",
-      rules: [tuesday9to17, duplicate],
-      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
-    });
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        resourceId: "doc-1",
+        rules: [tuesday9to17, duplicate],
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
 
     expect(slots).toHaveLength(8);
   });
 
-  it("throws when from is not strictly before to", () => {
+  it("reports from is not strictly before to", () => {
     const same = Temporal.Instant.from("2026-05-12T00:00:00Z");
-    expect(() =>
-      findFreeSlots({
-        bookings: [],
-        duration: 60,
-        from: same,
-        resourceId: "doc-1",
-        rules: [tuesday9to17],
-        to: same,
-      })
-    ).toThrow(/from/u);
+    expect(
+      issuePaths(
+        findFreeSlots({
+          bookings: [],
+          duration: 60,
+          from: same,
+          resourceId: "doc-1",
+          rules: [tuesday9to17],
+          to: same,
+        })
+      )
+    ).toStrictEqual([["to"]]);
+  });
+});
+
+describe(`${findFreeSlots.name} issues`, () => {
+  const rule: AvailabilityRule = {
+    recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
+    resourceId: "doc-1",
+    timeWindow: {
+      end: Temporal.PlainTime.from("17:00"),
+      start: Temporal.PlainTime.from("09:00"),
+    },
+    timezone: "Europe/Lisbon",
+  };
+
+  const base = {
+    bookings: [],
+    duration: 60,
+    from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+    resourceId: "doc-1",
+    rules: [rule],
+    to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+  };
+
+  it.each([0, -30, 1.5])("reports options.interval %s", (interval) => {
+    expect(
+      issuePaths(findFreeSlots({ ...base, options: { interval } }))
+    ).toStrictEqual([["options", "interval"]]);
+  });
+
+  it("skips the interval check when interval defaults from a bad duration", () => {
+    expect(issuePaths(findFreeSlots({ ...base, duration: 0 }))).toStrictEqual([
+      ["duration"],
+    ]);
+  });
+
+  it("reports params, rule and booking issues together, with rule paths under rules", () => {
+    const result = findFreeSlots({
+      ...base,
+      bookings: [
+        {
+          end: Temporal.Instant.from("2026-05-12T09:00:00Z"),
+          id: "b1",
+          isBlocking: true,
+          resourceId: "doc-1",
+          start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
+        },
+      ],
+      duration: 0,
+      from: base.to,
+      options: { interval: -1 },
+      rules: [rule, { ...rule, resourceId: "doc-2", timezone: "+01:00" }],
+      to: base.from,
+    });
+
+    expect(issuePaths(result)).toStrictEqual([
+      ["duration"],
+      ["options", "interval"],
+      ["rules", 1, "timezone"],
+      ["rules", 1, "resourceId"],
+      ["bookings", 0, "end"],
+      ["to"],
+    ]);
   });
 });

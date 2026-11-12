@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { unwrap, issuePaths } from "../test-utils/results.js";
 import { expandRules } from "./expand-rules.js";
 import type { AvailabilityRule } from "./types.js";
 
@@ -16,11 +17,13 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-11"),
-      rules: [rule],
-      to: Temporal.PlainDate.from("2026-05-13"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-11"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("2026-05-13"),
+      })
+    );
 
     expect(result).toHaveLength(1);
     expect(result[0]?.resourceId).toBe("doc-1");
@@ -44,11 +47,13 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-11"),
-      rules: [rule],
-      to: Temporal.PlainDate.from("2026-05-13"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-11"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("2026-05-13"),
+      })
+    );
 
     expect(result).toStrictEqual([]);
   });
@@ -68,11 +73,13 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-04"),
-      rules: [rule],
-      to: Temporal.PlainDate.from("2026-05-26"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-04"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("2026-05-26"),
+      })
+    );
 
     expect(result).toHaveLength(2);
     expect(result[0]?.start.toPlainDate().toString()).toBe("2026-05-05");
@@ -91,11 +98,13 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-05"),
-      rules: [rule],
-      to: Temporal.PlainDate.from("2026-05-19"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-05"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("2026-05-19"),
+      })
+    );
 
     expect(result).toHaveLength(2);
     expect(result[0]?.start.toPlainDate().toString()).toBe("2026-05-05");
@@ -115,12 +124,14 @@ describe(expandRules, () => {
 
     const ruleB: AvailabilityRule = { ...ruleA, resourceId: "doc-2" };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-05"),
-      // Intentionally reversed input order — engine must sort.
-      rules: [ruleB, ruleA],
-      to: Temporal.PlainDate.from("2026-05-12"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-05"),
+        // Intentionally reversed input order — engine must sort.
+        rules: [ruleB, ruleA],
+        to: Temporal.PlainDate.from("2026-05-12"),
+      })
+    );
 
     expect(
       result.map((w) => `${w.resourceId}@${w.start.toPlainDate().toString()}`)
@@ -151,11 +162,13 @@ describe(expandRules, () => {
       },
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-12"),
-      rules: [morning, afternoon],
-      to: Temporal.PlainDate.from("2026-05-12"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-12"),
+        rules: [morning, afternoon],
+        to: Temporal.PlainDate.from("2026-05-12"),
+      })
+    );
 
     expect(result).toHaveLength(2);
     expect(result[0]?.start.toString()).toBe(
@@ -183,11 +196,13 @@ describe(expandRules, () => {
       timezone: "America/New_York",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-12"),
-      rules: [ruleLisbon, ruleNewYork],
-      to: Temporal.PlainDate.from("2026-05-12"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-12"),
+        rules: [ruleLisbon, ruleNewYork],
+        to: Temporal.PlainDate.from("2026-05-12"),
+      })
+    );
 
     expect(result).toHaveLength(2);
     // Lisbon 09:00 (UTC+1 in May) = 08:00 UTC, sorts before NY 09:00 (UTC-4) = 13:00 UTC.
@@ -211,11 +226,13 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-03-29"),
-      rules: [rule],
-      to: Temporal.PlainDate.from("2026-03-29"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-03-29"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("2026-03-29"),
+      })
+    );
 
     const [window] = result;
 
@@ -248,11 +265,13 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-10-25"),
-      rules: [rule],
-      to: Temporal.PlainDate.from("2026-10-25"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-10-25"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("2026-10-25"),
+      })
+    );
 
     const [window] = result;
 
@@ -276,7 +295,7 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    it("throws when timeWindow.start equals timeWindow.end", () => {
+    it("reports timeWindow.start equals timeWindow.end", () => {
       const rule: AvailabilityRule = {
         ...baseRule,
         timeWindow: {
@@ -285,118 +304,134 @@ describe(expandRules, () => {
         },
       };
 
-      expect(() =>
-        expandRules({
-          from: Temporal.PlainDate.from("2026-05-12"),
-          rules: [rule],
-          to: Temporal.PlainDate.from("2026-05-12"),
-        })
-      ).toThrow(/timeWindow\.start/u);
+      expect(
+        issuePaths(
+          expandRules({
+            from: Temporal.PlainDate.from("2026-05-12"),
+            rules: [rule],
+            to: Temporal.PlainDate.from("2026-05-12"),
+          })
+        )
+      ).toStrictEqual([["rules", 0, "timeWindow", "end"]]);
     });
 
-    it("throws when effectiveTo is before effectiveFrom", () => {
+    it("reports effectiveTo is before effectiveFrom", () => {
       const rule: AvailabilityRule = {
         ...baseRule,
         effectiveFrom: Temporal.PlainDate.from("2026-06-01"),
         effectiveTo: Temporal.PlainDate.from("2026-05-01"),
       };
 
-      expect(() =>
-        expandRules({
-          from: Temporal.PlainDate.from("2026-05-12"),
-          rules: [rule],
-          to: Temporal.PlainDate.from("2026-05-12"),
-        })
-      ).toThrow(/effectiveTo/u);
+      expect(
+        issuePaths(
+          expandRules({
+            from: Temporal.PlainDate.from("2026-05-12"),
+            rules: [rule],
+            to: Temporal.PlainDate.from("2026-05-12"),
+          })
+        )
+      ).toStrictEqual([["rules", 0, "effectiveTo"]]);
     });
 
-    it("throws when daysOfWeek is empty", () => {
+    it("reports daysOfWeek is empty", () => {
       const rule: AvailabilityRule = {
         ...baseRule,
         recurrence: { daysOfWeek: [], frequency: "weekly", interval: 1 },
       };
 
-      expect(() =>
-        expandRules({
-          from: Temporal.PlainDate.from("2026-05-12"),
-          rules: [rule],
-          to: Temporal.PlainDate.from("2026-05-12"),
-        })
-      ).toThrow(/daysOfWeek/u);
+      expect(
+        issuePaths(
+          expandRules({
+            from: Temporal.PlainDate.from("2026-05-12"),
+            rules: [rule],
+            to: Temporal.PlainDate.from("2026-05-12"),
+          })
+        )
+      ).toStrictEqual([["rules", 0, "recurrence", "daysOfWeek"]]);
     });
 
     it.each([0, 8, -1, 1.5])(
-      "throws when daysOfWeek contains invalid value %s",
+      "reports daysOfWeek contains invalid value %s",
       (value) => {
         const rule: AvailabilityRule = {
           ...baseRule,
           recurrence: { daysOfWeek: [value], frequency: "weekly", interval: 1 },
         };
 
-        expect(() =>
-          expandRules({
-            from: Temporal.PlainDate.from("2026-05-12"),
-            rules: [rule],
-            to: Temporal.PlainDate.from("2026-05-12"),
-          })
-        ).toThrow(/daysOfWeek/u);
+        expect(
+          issuePaths(
+            expandRules({
+              from: Temporal.PlainDate.from("2026-05-12"),
+              rules: [rule],
+              to: Temporal.PlainDate.from("2026-05-12"),
+            })
+          )
+        ).toStrictEqual([["rules", 0, "recurrence", "daysOfWeek", 0]]);
       }
     );
 
-    it("throws when daysOfWeek contains duplicates", () => {
+    it("reports daysOfWeek contains duplicates", () => {
       const rule: AvailabilityRule = {
         ...baseRule,
         recurrence: { daysOfWeek: [2, 2], frequency: "weekly", interval: 1 },
       };
 
-      expect(() =>
-        expandRules({
-          from: Temporal.PlainDate.from("2026-05-12"),
-          rules: [rule],
-          to: Temporal.PlainDate.from("2026-05-12"),
-        })
-      ).toThrow(/daysOfWeek/u);
+      expect(
+        issuePaths(
+          expandRules({
+            from: Temporal.PlainDate.from("2026-05-12"),
+            rules: [rule],
+            to: Temporal.PlainDate.from("2026-05-12"),
+          })
+        )
+      ).toStrictEqual([["rules", 0, "recurrence", "daysOfWeek", 1]]);
     });
 
     it.each([0, -1, 1.5])(
-      "throws when recurrence.interval is invalid (%s)",
+      "reports recurrence.interval is invalid (%s)",
       (value) => {
         const rule: AvailabilityRule = {
           ...baseRule,
           recurrence: { daysOfWeek: [2], frequency: "weekly", interval: value },
         };
 
-        expect(() =>
-          expandRules({
-            from: Temporal.PlainDate.from("2026-05-12"),
-            rules: [rule],
-            to: Temporal.PlainDate.from("2026-05-12"),
-          })
-        ).toThrow(/recurrence\.interval/u);
+        expect(
+          issuePaths(
+            expandRules({
+              from: Temporal.PlainDate.from("2026-05-12"),
+              rules: [rule],
+              to: Temporal.PlainDate.from("2026-05-12"),
+            })
+          )
+        ).toStrictEqual([["rules", 0, "recurrence", "interval"]]);
       }
     );
 
-    it("throws when params.from is after params.to", () => {
-      expect(() =>
-        expandRules({
-          from: Temporal.PlainDate.from("2026-05-13"),
-          rules: [baseRule],
-          to: Temporal.PlainDate.from("2026-05-12"),
-        })
-      ).toThrow(/from/u);
+    it("reports params.from is after params.to", () => {
+      expect(
+        issuePaths(
+          expandRules({
+            from: Temporal.PlainDate.from("2026-05-13"),
+            rules: [baseRule],
+            to: Temporal.PlainDate.from("2026-05-12"),
+          })
+        )
+      ).toStrictEqual([["to"]]);
     });
 
     it("allows params.from equal to params.to (single-day query)", () => {
-      const result = expandRules({
-        from: Temporal.PlainDate.from("2026-05-12"),
-        rules: [baseRule],
-        to: Temporal.PlainDate.from("2026-05-12"),
-      });
+      const result = unwrap(
+        expandRules({
+          from: Temporal.PlainDate.from("2026-05-12"),
+          rules: [baseRule],
+          to: Temporal.PlainDate.from("2026-05-12"),
+        })
+      );
 
       expect(result).toHaveLength(1);
     });
 
-    it("throws when timeWindow.start is after timeWindow.end", () => {
+    it("reports timeWindow.start is after timeWindow.end", () => {
       const rule: AvailabilityRule = {
         ...baseRule,
         timeWindow: {
@@ -405,13 +440,15 @@ describe(expandRules, () => {
         },
       };
 
-      expect(() =>
-        expandRules({
-          from: Temporal.PlainDate.from("2026-05-12"),
-          rules: [rule],
-          to: Temporal.PlainDate.from("2026-05-12"),
-        })
-      ).toThrow(/timeWindow\.start/u);
+      expect(
+        issuePaths(
+          expandRules({
+            from: Temporal.PlainDate.from("2026-05-12"),
+            rules: [rule],
+            to: Temporal.PlainDate.from("2026-05-12"),
+          })
+        )
+      ).toStrictEqual([["rules", 0, "timeWindow", "end"]]);
     });
   });
 
@@ -427,12 +464,44 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = expandRules({
-      from: Temporal.PlainDate.from("2026-05-11"),
-      rules: [rule],
-      to: Temporal.PlainDate.from("2026-05-13"),
-    });
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2026-05-11"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("2026-05-13"),
+      })
+    );
 
     expect(result).toStrictEqual([]);
+  });
+});
+
+describe(`${expandRules.name} issues`, () => {
+  it("reports issues from every rule, prefixed by the rule's index", () => {
+    const rule: AvailabilityRule = {
+      recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
+      resourceId: "doc-1",
+      timeWindow: {
+        end: Temporal.PlainTime.from("17:00"),
+        start: Temporal.PlainTime.from("09:00"),
+      },
+      timezone: "Europe/Lisbon",
+    };
+
+    const result = expandRules({
+      from: Temporal.PlainDate.from("2026-05-13"),
+      rules: [
+        { ...rule, timezone: "Nowhere/Land" },
+        rule,
+        { ...rule, recurrence: { ...rule.recurrence, daysOfWeek: [] } },
+      ],
+      to: Temporal.PlainDate.from("2026-05-12"),
+    });
+
+    expect(issuePaths(result)).toStrictEqual([
+      ["rules", 0, "timezone"],
+      ["rules", 2, "recurrence", "daysOfWeek"],
+      ["to"],
+    ]);
   });
 });

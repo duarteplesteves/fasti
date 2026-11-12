@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { unwrap, issuePaths } from "../test-utils/results.js";
 import { detectConflicts } from "./detect-conflicts.js";
 import type { Booking } from "./types.js";
 
@@ -33,21 +34,23 @@ describe(detectConflicts, () => {
       start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
     };
 
-    const result = detectConflicts({
-      bookings: [booking],
-      candidate: {
-        end: Temporal.Instant.from("2026-05-12T09:45:00Z"),
-        start: Temporal.Instant.from("2026-05-12T09:30:00Z"),
-      },
-      resourceId: "doc-1",
-    });
+    const result = unwrap(
+      detectConflicts({
+        bookings: [booking],
+        candidate: {
+          end: Temporal.Instant.from("2026-05-12T09:45:00Z"),
+          start: Temporal.Instant.from("2026-05-12T09:30:00Z"),
+        },
+        resourceId: "doc-1",
+      })
+    );
 
     expect(result).toStrictEqual([booking]);
   });
 
   it("returns an empty array when bookings is empty", () => {
     expect(
-      detectConflicts({ bookings: [], candidate, resourceId: "doc-1" })
+      unwrap(detectConflicts({ bookings: [], candidate, resourceId: "doc-1" }))
     ).toStrictEqual([]);
   });
 
@@ -60,11 +63,13 @@ describe(detectConflicts, () => {
     );
 
     expect(
-      detectConflicts({
-        bookings: [nonBlocking],
-        candidate,
-        resourceId: "doc-1",
-      })
+      unwrap(
+        detectConflicts({
+          bookings: [nonBlocking],
+          candidate,
+          resourceId: "doc-1",
+        })
+      )
     ).toStrictEqual([]);
   });
 
@@ -84,11 +89,13 @@ describe(detectConflicts, () => {
     );
 
     expect(
-      detectConflicts({
-        bookings: [touchAtStart, touchAtEnd],
-        candidate,
-        resourceId: "doc-1",
-      })
+      unwrap(
+        detectConflicts({
+          bookings: [touchAtStart, touchAtEnd],
+          candidate,
+          resourceId: "doc-1",
+        })
+      )
     ).toStrictEqual([]);
   });
 
@@ -107,11 +114,13 @@ describe(detectConflicts, () => {
       true
     );
 
-    const result = detectConflicts({
-      bookings: [later, earlier],
-      candidate,
-      resourceId: "doc-1",
-    });
+    const result = unwrap(
+      detectConflicts({
+        bookings: [later, earlier],
+        candidate,
+        resourceId: "doc-1",
+      })
+    );
 
     expect(result.map((b) => b.id)).toStrictEqual(["earlier", "later"]);
   });
@@ -132,11 +141,13 @@ describe(detectConflicts, () => {
     );
 
     expect(
-      detectConflicts({
-        bookings: [before, after],
-        candidate,
-        resourceId: "doc-1",
-      })
+      unwrap(
+        detectConflicts({
+          bookings: [before, after],
+          candidate,
+          resourceId: "doc-1",
+        })
+      )
     ).toStrictEqual([]);
   });
 
@@ -162,16 +173,18 @@ describe(detectConflicts, () => {
       true
     );
 
-    const result = detectConflicts({
-      bookings: [overlapEnd, overlapMiddle, overlapStart],
-      candidate,
-      resourceId: "doc-1",
-    });
+    const result = unwrap(
+      detectConflicts({
+        bookings: [overlapEnd, overlapMiddle, overlapStart],
+        candidate,
+        resourceId: "doc-1",
+      })
+    );
 
     expect(result.map((b) => b.id)).toStrictEqual(["start", "middle", "end"]);
   });
 
-  it("throws when a booking's resourceId does not match params.resourceId", () => {
+  it("reports a booking's resourceId does not match params.resourceId", () => {
     const stray = bookingAt(
       "b1",
       "2026-05-12T09:00:00Z",
@@ -180,12 +193,46 @@ describe(detectConflicts, () => {
     );
 
     const wrongResource: Booking = { ...stray, resourceId: "doc-2" };
-    expect(() =>
-      detectConflicts({
-        bookings: [wrongResource],
-        candidate,
-        resourceId: "doc-1",
-      })
-    ).toThrow(/resourceId/u);
+    expect(
+      issuePaths(
+        detectConflicts({
+          bookings: [wrongResource],
+          candidate,
+          resourceId: "doc-1",
+        })
+      )
+    ).toStrictEqual([["bookings", 0, "resourceId"]]);
+  });
+});
+
+describe(`${detectConflicts.name} issues`, () => {
+  it("reports a candidate and every booking whose end isn't after its start", () => {
+    const result = detectConflicts({
+      bookings: [
+        bookingAt("ok", "2026-05-12T09:00:00Z", "2026-05-12T10:00:00Z", true),
+        bookingAt("bad", "2026-05-12T10:00:00Z", "2026-05-12T10:00:00Z", true),
+        {
+          ...bookingAt(
+            "b",
+            "2026-05-12T11:00:00Z",
+            "2026-05-12T10:00:00Z",
+            true
+          ),
+          resourceId: "doc-2",
+        },
+      ],
+      candidate: {
+        end: Temporal.Instant.from("2026-05-12T09:00:00Z"),
+        start: Temporal.Instant.from("2026-05-12T10:00:00Z"),
+      },
+      resourceId: "doc-1",
+    });
+
+    expect(issuePaths(result)).toStrictEqual([
+      ["candidate", "end"],
+      ["bookings", 2, "resourceId"],
+      ["bookings", 1, "end"],
+      ["bookings", 2, "end"],
+    ]);
   });
 });

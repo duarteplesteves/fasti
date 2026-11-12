@@ -1,24 +1,19 @@
-import { detectConflicts } from "./detect-conflicts.js";
-import { expandRules } from "./expand-rules.js";
+import { checkInstantRange, checkResourceInputs } from "./checks.js";
+import { detectConflictsUnchecked } from "./detect-conflicts.js";
+import { expandRulesUnchecked } from "./expand-rules.js";
+import { checked } from "./result.js";
+import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
 export interface IsSlotValidParams {
   resourceId: string;
   slot: { start: Temporal.Instant; end: Temporal.Instant };
-  rules: AvailabilityRule[];
-  bookings: Booking[];
+  rules: readonly AvailabilityRule[];
+  bookings: readonly Booking[];
 }
 
-export function isSlotValid(params: IsSlotValidParams): boolean {
-  const { bookings, resourceId, rules, slot } = params;
-
-  for (const r of rules) {
-    if (r.resourceId !== resourceId) {
-      throw new Error(
-        `Invalid input: rule has resourceId '${r.resourceId}' but params.resourceId is '${resourceId}'.`
-      );
-    }
-  }
+function isSlotValidUnchecked(params: IsSlotValidParams): boolean {
+  const { bookings, rules, slot } = params;
 
   // Pad the expansion range by ±1 day to cover any rule timezone vs slot UTC mismatch.
   const slotStartUtc = slot.start.toZonedDateTimeISO("UTC");
@@ -26,7 +21,7 @@ export function isSlotValid(params: IsSlotValidParams): boolean {
   const expansionFrom = slotStartUtc.toPlainDate().subtract({ days: 1 });
   const expansionTo = slotEndUtc.toPlainDate().add({ days: 1 });
 
-  const windows = expandRules({
+  const windows = expandRulesUnchecked({
     from: expansionFrom,
     rules,
     to: expansionTo,
@@ -46,11 +41,18 @@ export function isSlotValid(params: IsSlotValidParams): boolean {
     return false;
   }
 
-  const conflicts = detectConflicts({
-    bookings,
-    candidate: slot,
-    resourceId,
-  });
+  return detectConflictsUnchecked({ bookings, candidate: slot }).length === 0;
+}
 
-  return conflicts.length === 0;
+export function isSlotValid(
+  params: IsSlotValidParams
+): Result<boolean, InvalidParams> {
+  const { bookings, resourceId, rules, slot } = params;
+
+  const issues = [
+    ...checkInstantRange(slot, ["slot"]),
+    ...checkResourceInputs({ bookings, resourceId, rules }),
+  ];
+
+  return checked(issues, () => isSlotValidUnchecked(params));
 }
