@@ -1,4 +1,4 @@
-import { checkRule } from "./check-rule.js";
+import { checkOrder, checkRule } from "./check-rule.js";
 import type { Path } from "./check-rule.js";
 import type { Issue } from "./result.js";
 import type { AvailabilityRule, Booking } from "./types.js";
@@ -7,14 +7,13 @@ export function checkInstantRange(
   range: { readonly start: Temporal.Instant; readonly end: Temporal.Instant },
   path: Path
 ): Issue[] {
-  return Temporal.Instant.compare(range.start, range.end) < 0
-    ? []
-    : [
-        {
-          message: `end (${range.end.toString()}) must be after start (${range.start.toString()}).`,
-          path: [...path, "end"],
-        },
-      ];
+  return checkOrder(
+    Temporal.Instant.compare,
+    { label: "start", value: range.start },
+    { label: "end", value: range.end },
+    "after",
+    [...path, "end"]
+  );
 }
 
 // shortcut: no upper bound, so a huge value can still overflow Temporal's range and throw; cap it if #29/#31 settle a limit.

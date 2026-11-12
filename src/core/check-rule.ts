@@ -3,6 +3,32 @@ import type { AvailabilityRule } from "./types.js";
 
 export type Path = readonly (string | number)[];
 
+interface Bound<T> {
+  readonly label: string;
+  readonly value: T;
+}
+
+/** One issue at `path` unless `start` comes before `end` (or equals it, for "onOrAfter"). */
+export function checkOrder<T extends { toString: () => string }>(
+  compare: (a: T, b: T) => number,
+  start: Bound<T>,
+  end: Bound<T>,
+  relation: "after" | "onOrAfter",
+  path: Path
+): Issue[] {
+  const cmp = compare(start.value, end.value);
+  const ok = cmp < 0 || (relation === "onOrAfter" && cmp === 0);
+
+  return ok
+    ? []
+    : [
+        {
+          message: `${end.label} (${end.value.toString()}) must be ${relation === "after" ? "after" : "on or after"} ${start.label} (${start.value.toString()}).`,
+          path,
+        },
+      ];
+}
+
 /** IANA names only: fixed offsets like "+01:00" don't follow DST. */
 export function checkTimeZone(timeZone: string, path: Path): Issue[] {
   let canonical: string;
@@ -38,22 +64,29 @@ export function checkRule(rule: AvailabilityRule): readonly Issue[] {
   const { timeWindow, effectiveFrom, effectiveTo } = rule;
   const { daysOfWeek, interval } = rule.recurrence;
 
-  if (Temporal.PlainTime.compare(timeWindow.start, timeWindow.end) >= 0) {
-    issues.push({
-      message: `timeWindow.end (${timeWindow.end.toString()}) must be after timeWindow.start (${timeWindow.start.toString()}). Cross-day windows are not supported; split into two rules.`,
-      path: ["timeWindow", "end"],
-    });
-  }
+  issues.push(
+    ...checkOrder(
+      Temporal.PlainTime.compare,
+      { label: "timeWindow.start", value: timeWindow.start },
+      { label: "timeWindow.end", value: timeWindow.end },
+      "after",
+      ["timeWindow", "end"]
+    ).map((issue) => ({
+      ...issue,
+      message: `${issue.message} Cross-day windows are not supported; split into two rules.`,
+    }))
+  );
 
-  if (
-    effectiveFrom &&
-    effectiveTo &&
-    Temporal.PlainDate.compare(effectiveTo, effectiveFrom) < 0
-  ) {
-    issues.push({
-      message: `effectiveTo (${effectiveTo.toString()}) must be on or after effectiveFrom (${effectiveFrom.toString()}).`,
-      path: ["effectiveTo"],
-    });
+  if (effectiveFrom && effectiveTo) {
+    issues.push(
+      ...checkOrder(
+        Temporal.PlainDate.compare,
+        { label: "effectiveFrom", value: effectiveFrom },
+        { label: "effectiveTo", value: effectiveTo },
+        "onOrAfter",
+        ["effectiveTo"]
+      )
+    );
   }
 
   if (daysOfWeek.length === 0) {

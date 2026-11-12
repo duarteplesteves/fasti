@@ -1,3 +1,4 @@
+import { checkOrder } from "./check-rule.js";
 import {
   checkBookings,
   checkPositiveInteger,
@@ -7,7 +8,7 @@ import {
 import { detectConflictsUnchecked } from "./detect-conflicts.js";
 import { expandRulesUnchecked } from "./expand-rules.js";
 import { checked } from "./result.js";
-import type { InvalidParams, Issue, Result } from "./result.js";
+import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, Booking, Slot } from "./types.js";
 
 export interface FindFreeSlotsParams {
@@ -91,7 +92,7 @@ export function findFreeSlots(
 ): Result<Slot[], InvalidParams> {
   const { bookings, duration, from, options, resourceId, rules, to } = params;
 
-  const issues: Issue[] = [
+  const issues = [
     ...checkPositiveInteger(duration, ["duration"]),
     // Skipped when defaulted from duration: a bad duration is already reported.
     ...(options?.interval === undefined
@@ -100,14 +101,14 @@ export function findFreeSlots(
     ...checkRules(rules),
     ...checkSameResource(rules, "rules", resourceId),
     ...checkBookings(bookings, resourceId),
+    ...checkOrder(
+      Temporal.Instant.compare,
+      { label: "from", value: from },
+      { label: "to", value: to },
+      "after",
+      ["to"]
+    ),
   ];
-
-  if (Temporal.Instant.compare(from, to) >= 0) {
-    issues.push({
-      message: `to (${to.toString()}) must be after from (${from.toString()}).`,
-      path: ["to"],
-    });
-  }
 
   return checked(issues, () => findFreeSlotsUnchecked(params));
 }

@@ -1,6 +1,7 @@
+import { checkOrder } from "./check-rule.js";
 import { checkRules } from "./checks.js";
 import { checked } from "./result.js";
-import type { InvalidParams, Issue, Result } from "./result.js";
+import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";
 
 export interface ExpandRulesParams {
@@ -85,14 +86,17 @@ export function expandRules(
   params: ExpandRulesParams
 ): Result<ExpandedWindow[], InvalidParams> {
   const { from, rules, to } = params;
-  const issues: Issue[] = checkRules(rules);
 
-  if (Temporal.PlainDate.compare(from, to) > 0) {
-    issues.push({
-      message: `to (${to.toString()}) must be on or after from (${from.toString()}).`,
-      path: ["to"],
-    });
-  }
+  const issues = [
+    ...checkRules(rules),
+    ...checkOrder(
+      Temporal.PlainDate.compare,
+      { label: "from", value: from },
+      { label: "to", value: to },
+      "onOrAfter",
+      ["to"]
+    ),
+  ];
 
   return checked(issues, () => expandRulesUnchecked(params));
 }
