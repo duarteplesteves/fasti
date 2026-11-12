@@ -8,6 +8,8 @@ import type {
   AvailabilityViolation,
   Booking,
   BookingId,
+  CorePolicy,
+  CoreViolations,
   Issue,
   Recurrence,
   Slot,
@@ -131,6 +133,10 @@ describe("export surface", () => {
     expectTypeOf<
       AvailabilityViolation["policy"]
     >().toEqualTypeOf<"availability">();
+    expectTypeOf<CorePolicy>().toEqualTypeOf<"availability">();
+    expectTypeOf<
+      CoreViolations["availability"]
+    >().toEqualTypeOf<AvailabilityViolation>();
 
     // @ts-expect-error only Policies the Core knows can be relaxed
     core.findFreeSlots({ ...params, relax: ["notice"] });

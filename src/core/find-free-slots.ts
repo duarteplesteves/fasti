@@ -1,11 +1,10 @@
+import { availableWindows, fitsInSomeWindow } from "./availability.js";
 import {
-  checkOrder,
   checkPositiveInteger,
   checkResourceInputs,
   checkTimeZone,
 } from "./checks.js";
-import { detectConflictsUnchecked } from "./detect-conflicts.js";
-import { expandRulesUnchecked } from "./expand-rules.js";
+import { overlapsBlockingBooking } from "./detect-conflicts.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type {
@@ -42,35 +41,19 @@ const outsideAvailability: AvailabilityViolation = {
   policy: "availability",
 };
 
-/** `minutes` after midnight on `date`, or undefined in a DST gap; a repeated time is its first occurrence (ADR 005). */
-function gridTime(
-  date: Temporal.PlainDate,
-  minutes: number,
+/**
+ * The grid starts in `[from, to)`: local midnight in `timezone` plus whole `interval`s (ADR 014).
+ * A time in a DST gap is dropped; a repeated time is its first occurrence (ADR 005).
+ *
+ * @yields {Temporal.ZonedDateTime} Each grid start, in order, zoned in `timezone`.
+ */
+function* gridStarts(
+  from: Temporal.Instant,
+  to: Temporal.Instant,
+  interval: number,
   timezone: string
-): Temporal.ZonedDateTime | undefined {
-  const local = date.toPlainDateTime().add({ minutes });
-  const zoned = local.toZonedDateTime(timezone, { disambiguation: "earlier" });
-
-  return zoned.toPlainDateTime().equals(local) ? zoned : undefined;
-}
-
-function findFreeSlotsUnchecked(
-  params: FindFreeSlotsParams
-): Slot<AvailabilityViolation>[] {
-  const { duration, from, interval, relax, resourceId, rules, timezone, to } =
-    params;
-
-  const relaxAvailability = relax?.includes("availability") ?? false;
-
-  // ±1 day covers every rule timezone's dates that overlap [from, to).
-  const windows = expandRulesUnchecked({
-    from: from.toZonedDateTimeISO("UTC").toPlainDate().subtract({ days: 1 }),
-    rules,
-    to: to.toZonedDateTimeISO("UTC").toPlainDate().add({ days: 1 }),
-  }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
-
+): Generator<Temporal.ZonedDateTime> {
   const lastDate = to.toZonedDateTimeISO(timezone).toPlainDate();
-  const slots: Slot<AvailabilityViolation>[] = [];
 
   for (
     let date = from.toZonedDateTimeISO(timezone).toPlainDate();
@@ -78,40 +61,64 @@ function findFreeSlotsUnchecked(
     date = date.add({ days: 1 })
   ) {
     for (let minutes = 0; minutes < 24 * 60; minutes += interval) {
-      const start = gridTime(date, minutes, timezone);
+      const local = date.toPlainDateTime().add({ minutes });
 
-      if (start === undefined) {
-        continue;
-      }
+      const start = local.toZonedDateTime(timezone, {
+        disambiguation: "earlier",
+      });
 
-      const startInstant = start.toInstant();
-      const endInstant = startInstant.add({ minutes: duration });
-
-      const inRange =
-        Temporal.Instant.compare(startInstant, from) >= 0 &&
-        Temporal.Instant.compare(startInstant, to) < 0;
-
-      const available = windows.some(
-        (w) =>
-          Temporal.Instant.compare(w.start, startInstant) <= 0 &&
-          Temporal.Instant.compare(endInstant, w.end) <= 0
-      );
+      const instant = start.toInstant();
 
       if (
-        inRange &&
-        (available || relaxAvailability) &&
-        detectConflictsUnchecked({
-          ...params,
-          candidate: { end: endInstant, start: startInstant },
-        }).length === 0
+        start.toPlainDateTime().equals(local) &&
+        Temporal.Instant.compare(instant, from) >= 0 &&
+        Temporal.Instant.compare(instant, to) < 0
       ) {
-        slots.push({
-          end: endInstant.toZonedDateTimeISO(timezone),
-          resourceId,
-          start,
-          waived: available ? [] : [outsideAvailability],
-        });
+        yield start;
       }
+    }
+  }
+}
+
+function findFreeSlotsUnchecked(
+  params: FindFreeSlotsParams
+): Slot<AvailabilityViolation>[] {
+  const {
+    bookings,
+    duration,
+    excludeBookingId,
+    from,
+    interval,
+    relax,
+    resourceId,
+    rules,
+    timezone,
+    to,
+  } = params;
+
+  const relaxAvailability = relax?.includes("availability") ?? false;
+  const windows = availableWindows(rules, { end: to, start: from });
+  const slots: Slot<AvailabilityViolation>[] = [];
+
+  for (const start of gridStarts(from, to, interval, timezone)) {
+    const range = {
+      end: start.toInstant().add({ minutes: duration }),
+      start: start.toInstant(),
+    };
+
+    if (overlapsBlockingBooking(bookings, range, excludeBookingId)) {
+      continue;
+    }
+
+    const available = fitsInSomeWindow(windows, range);
+
+    if (available || relaxAvailability) {
+      slots.push({
+        end: range.end.toZonedDateTimeISO(timezone),
+        resourceId,
+        start,
+        waived: available ? [] : [outsideAvailability],
+      });
     }
   }
 
@@ -140,13 +147,14 @@ export function findFreeSlots<
     ...checkPositiveInteger(interval, ["interval"]),
     ...checkTimeZone(timezone, ["timezone"]),
     ...checkResourceInputs({ bookings, resourceId, rules }),
-    ...checkOrder(
-      Temporal.Instant.compare,
-      { label: "from", value: from },
-      { label: "to", value: to },
-      "after",
-      ["to"]
-    ),
+    ...(Temporal.Instant.compare(from, to) < 0
+      ? []
+      : [
+          {
+            message: `to (${to.toString()}) must be after from (${from.toString()}).`,
+            path: ["to"],
+          },
+        ]),
   ];
 
   // SAFETY: an availability violation is only added when R contains "availability".

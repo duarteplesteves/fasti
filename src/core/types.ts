@@ -33,13 +33,13 @@ export interface AvailabilityRule {
   exceptions?: readonly Temporal.PlainDate[];
 }
 
+/** A Booking id the Framework mints. A plain TypeScript brand on `string`. */
+export type BookingId = string & { readonly __brand: "BookingId" };
+
 /**
  * An existing booking that occupies a resource.
  * The engine uses `isBlocking` to determine if the booking consumes the slot.
  */
-/** A Booking id the Framework mints. A plain TypeScript brand on `string`. */
-export type BookingId = string & { readonly __brand: "BookingId" };
-
 export interface Booking<Id extends string = string> {
   id: Id;
   resourceId: string;
@@ -53,8 +53,8 @@ export interface Booking<Id extends string = string> {
 
 /** The slot lies outside the Resource's availability (ADR 014). */
 export interface AvailabilityViolation {
-  policy: "availability";
-  detail: Readonly<Record<string, never>>;
+  readonly policy: "availability";
+  readonly detail: Readonly<Record<string, never>>;
 }
 
 /** Each Policy the Core knows, by name, with the violation it reports. */
@@ -85,4 +85,10 @@ export interface ExpandedWindow {
   resourceId: string;
   start: Temporal.ZonedDateTime;
   end: Temporal.ZonedDateTime;
+}
+
+/** A half-open `[start, end)` range of instants. Internal; not exported from the Core. */
+export interface InstantRange {
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
 }

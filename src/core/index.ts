@@ -23,6 +23,8 @@ export type {
   AvailabilityViolation,
   Booking,
   BookingId,
+  CorePolicy,
+  CoreViolations,
   ExpandedWindow,
   Recurrence,
   Slot,

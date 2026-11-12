@@ -1,3 +1,4 @@
+import type { CheckIssue } from "./checks.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { Booking } from "./types.js";
@@ -24,34 +25,32 @@ export function withBlockingFlag<Id extends string = string>(
     default: "blocking" | "nonBlocking";
   }
 ): Result<Booking<Id>[], InvalidParams> {
-  const blockingSet = new Set(mapping.blocking);
-  const nonBlockingSet = new Set(mapping.nonBlocking);
-  const defaultIsBlocking = mapping.default === "blocking";
-
-  const issues = (mapping.nonBlocking ?? []).flatMap((status, j) =>
-    blockingSet.has(status)
-      ? [
-          {
-            message: `Status "${status}" is listed in both mapping.blocking and mapping.nonBlocking.`,
-            path: ["mapping", "nonBlocking", j],
-          },
-        ]
-      : []
+  const isBlockingByStatus = new Map<string, boolean>(
+    (mapping.blocking ?? []).map((status) => [status, true])
   );
 
+  const issues: CheckIssue[] = [];
+
+  for (const [j, status] of (mapping.nonBlocking ?? []).entries()) {
+    if (isBlockingByStatus.get(status) === true) {
+      issues.push({
+        message: `Status "${status}" is listed in both mapping.blocking and mapping.nonBlocking.`,
+        path: ["mapping", "nonBlocking", j],
+      });
+    } else {
+      isBlockingByStatus.set(status, false);
+    }
+  }
+
+  const fallback = mapping.default === "blocking";
+
   return checked(issues, () =>
-    bookings.map((b) => {
-      let isBlocking: boolean;
-
-      if (b.status !== undefined && blockingSet.has(b.status)) {
-        isBlocking = true;
-      } else if (b.status !== undefined && nonBlockingSet.has(b.status)) {
-        isBlocking = false;
-      } else {
-        isBlocking = defaultIsBlocking;
-      }
-
-      return { ...b, isBlocking };
-    })
+    bookings.map((b) => ({
+      ...b,
+      isBlocking:
+        b.status === undefined
+          ? fallback
+          : (isBlockingByStatus.get(b.status) ?? fallback),
+    }))
   );
 }

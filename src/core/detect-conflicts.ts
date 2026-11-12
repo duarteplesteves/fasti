@@ -1,7 +1,7 @@
 import { checkBookings, checkInstantRange } from "./checks.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
-import type { Booking } from "./types.js";
+import type { Booking, InstantRange } from "./types.js";
 
 export interface DetectConflictsParams<Id extends string = string> {
   resourceId: string;
@@ -11,37 +11,43 @@ export interface DetectConflictsParams<Id extends string = string> {
   excludeBookingId?: NoInfer<Id>;
 }
 
-/** `detectConflicts` without checks, for Core functions that already checked their params. */
-export function detectConflictsUnchecked<Id extends string>(
-  params: Omit<DetectConflictsParams<Id>, "resourceId">
-): Booking<Id>[] {
-  const { bookings, candidate, excludeBookingId } = params;
+/** Whether `booking` is blocking, not excluded, and overlaps `range`. */
+function blocks<Id extends string>(
+  booking: Booking<Id>,
+  range: InstantRange,
+  excludeBookingId: Id | undefined
+): boolean {
+  // Half-open intervals [start, end): overlap iff a.start < b.end AND b.start < a.end.
+  return (
+    booking.isBlocking &&
+    booking.id !== excludeBookingId &&
+    Temporal.Instant.compare(range.start, booking.end) < 0 &&
+    Temporal.Instant.compare(booking.start, range.end) < 0
+  );
+}
 
-  return bookings
-    .filter((b) => {
-      if (!b.isBlocking || b.id === excludeBookingId) {
-        return false;
-      }
-
-      // Half-open intervals [start, end): overlap iff a.start < b.end AND b.start < a.end.
-      const startsBeforeBookingEnds =
-        Temporal.Instant.compare(candidate.start, b.end) < 0;
-
-      const bookingStartsBeforeCandidateEnds =
-        Temporal.Instant.compare(b.start, candidate.end) < 0;
-
-      return startsBeforeBookingEnds && bookingStartsBeforeCandidateEnds;
-    })
-    .toSorted((a, b) => Temporal.Instant.compare(a.start, b.start));
+/** Whether any Booking but `excludeBookingId` blocks `range`. For Core functions that already checked their params. */
+export function overlapsBlockingBooking<Id extends string>(
+  bookings: readonly Booking<Id>[],
+  range: InstantRange,
+  excludeBookingId: Id | undefined
+): boolean {
+  return bookings.some((b) => blocks(b, range, excludeBookingId));
 }
 
 export function detectConflicts<Id extends string = string>(
   params: DetectConflictsParams<Id>
 ): Result<Booking<Id>[], InvalidParams> {
+  const { bookings, candidate, excludeBookingId, resourceId } = params;
+
   const issues = [
-    ...checkInstantRange(params.candidate, ["candidate"]),
-    ...checkBookings(params.bookings, params.resourceId),
+    ...checkInstantRange(candidate, ["candidate"]),
+    ...checkBookings(bookings, resourceId),
   ];
 
-  return checked(issues, () => detectConflictsUnchecked(params));
+  return checked(issues, () =>
+    bookings
+      .filter((b) => blocks(b, candidate, excludeBookingId))
+      .toSorted((a, b) => Temporal.Instant.compare(a.start, b.start))
+  );
 }
