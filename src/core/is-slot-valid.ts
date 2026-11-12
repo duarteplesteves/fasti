@@ -10,10 +10,12 @@ export interface IsSlotValidParams {
   slot: { start: Temporal.Instant; end: Temporal.Instant };
   rules: readonly AvailabilityRule[];
   bookings: readonly Booking[];
+  /** Leave this Booking out of the overlap check, e.g. the one being rescheduled. */
+  excludeBookingId?: string;
 }
 
 function isSlotValidUnchecked(params: IsSlotValidParams): boolean {
-  const { bookings, rules, slot } = params;
+  const { rules, slot } = params;
 
   // Pad the expansion range by ±1 day to cover any rule timezone vs slot UTC mismatch.
   const slotStartUtc = slot.start.toZonedDateTimeISO("UTC");
@@ -41,7 +43,7 @@ function isSlotValidUnchecked(params: IsSlotValidParams): boolean {
     return false;
   }
 
-  return detectConflictsUnchecked({ bookings, candidate: slot }).length === 0;
+  return detectConflictsUnchecked({ ...params, candidate: slot }).length === 0;
 }
 
 export function isSlotValid(

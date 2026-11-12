@@ -422,6 +422,47 @@ describe(findFreeSlots, () => {
       )
     ).toStrictEqual([["to"]]);
   });
+
+  describe("excludeBookingId", () => {
+    // 10:00–11:00 Lisbon = 09:00–10:00 UTC.
+    const booked: Booking = {
+      end: Temporal.Instant.from("2026-05-12T10:00:00Z"),
+      id: "b1",
+      isBlocking: true,
+      resourceId: "doc-1",
+      start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
+    };
+
+    const params = {
+      bookings: [booked],
+      duration: 60,
+      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+      resourceId: "doc-1",
+      rules: [tuesday9to17],
+      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+    };
+
+    it("shows the excluded booking's own time as a free slot", () => {
+      const included = unwrap(findFreeSlots(params));
+
+      const excluded = unwrap(
+        findFreeSlots({ ...params, excludeBookingId: "b1" })
+      );
+
+      expect(
+        included.map((s) => s.start.toPlainTime().toString())
+      ).not.toContain("10:00:00");
+      expect(excluded.map((s) => s.start.toPlainTime().toString())).toContain(
+        "10:00:00"
+      );
+    });
+
+    it("accepts an id that matches no booking", () => {
+      expect(
+        unwrap(findFreeSlots({ ...params, excludeBookingId: "nope" }))
+      ).toHaveLength(7);
+    });
+  });
 });
 
 describe(`${findFreeSlots.name} issues`, () => {

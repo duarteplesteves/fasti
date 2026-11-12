@@ -203,6 +203,41 @@ describe(detectConflicts, () => {
       )
     ).toStrictEqual([["bookings", 0, "resourceId"]]);
   });
+
+  describe("excludeBookingId", () => {
+    // A 09:00–10:00 booking shifted 15 minutes later.
+    const booked = bookingAt(
+      "b1",
+      "2026-05-12T09:00:00Z",
+      "2026-05-12T10:00:00Z",
+      true
+    );
+
+    const params = {
+      bookings: [booked],
+      candidate: {
+        end: Temporal.Instant.from("2026-05-12T10:15:00Z"),
+        start: Temporal.Instant.from("2026-05-12T09:15:00Z"),
+      },
+      resourceId: "doc-1",
+    };
+
+    it("reports the moved booking when it is not excluded", () => {
+      expect(unwrap(detectConflicts(params))).toStrictEqual([booked]);
+    });
+
+    it("leaves the excluded booking out", () => {
+      expect(
+        unwrap(detectConflicts({ ...params, excludeBookingId: "b1" }))
+      ).toStrictEqual([]);
+    });
+
+    it("accepts an id that matches no booking", () => {
+      expect(
+        unwrap(detectConflicts({ ...params, excludeBookingId: "nope" }))
+      ).toStrictEqual([booked]);
+    });
+  });
 });
 
 describe(`${detectConflicts.name} issues`, () => {

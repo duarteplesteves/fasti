@@ -186,6 +186,39 @@ describe(isSlotValid, () => {
       )
     ).toStrictEqual([["bookings", 0, "resourceId"]]);
   });
+
+  describe("excludeBookingId", () => {
+    // Booked 10:00–10:30 Lisbon (09:00–09:30 UTC), rescheduled 15 minutes later.
+    const booked = bookingAt(
+      "b1",
+      "2026-05-12T09:00:00Z",
+      "2026-05-12T09:30:00Z",
+      true
+    );
+
+    const params = {
+      bookings: [booked],
+      resourceId: "doc-1",
+      rules: [tuesdayMorning],
+      slot: slotAt("2026-05-12T09:15:00Z", "2026-05-12T09:45:00Z"),
+    };
+
+    it("conflicts with the moved booking when it is not excluded", () => {
+      expect(unwrap(isSlotValid(params))).toBeFalsy();
+    });
+
+    it("is valid when the moved booking is excluded", () => {
+      expect(
+        unwrap(isSlotValid({ ...params, excludeBookingId: "b1" }))
+      ).toBeTruthy();
+    });
+
+    it("accepts an id that matches no booking", () => {
+      expect(
+        unwrap(isSlotValid({ ...params, excludeBookingId: "nope" }))
+      ).toBeFalsy();
+    });
+  });
 });
 
 describe(`${isSlotValid.name} issues`, () => {

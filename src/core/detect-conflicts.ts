@@ -7,17 +7,19 @@ export interface DetectConflictsParams {
   resourceId: string;
   candidate: { start: Temporal.Instant; end: Temporal.Instant };
   bookings: readonly Booking[];
+  /** Leave this Booking out of the check, e.g. the one being rescheduled. */
+  excludeBookingId?: string;
 }
 
 /** `detectConflicts` without checks, for Core functions that already checked their params. */
 export function detectConflictsUnchecked(
   params: Omit<DetectConflictsParams, "resourceId">
 ): Booking[] {
-  const { bookings, candidate } = params;
+  const { bookings, candidate, excludeBookingId } = params;
 
   return bookings
     .filter((b) => {
-      if (!b.isBlocking) {
+      if (!b.isBlocking || b.id === excludeBookingId) {
         return false;
       }
 
