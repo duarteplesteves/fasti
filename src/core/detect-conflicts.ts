@@ -1,21 +1,19 @@
+import { checkBookings, checkInstantRange } from "./checks.js";
+import { checked } from "./result.js";
+import type { InvalidParams, Result } from "./result.js";
 import type { Booking } from "./types.js";
 
 export interface DetectConflictsParams {
   resourceId: string;
   candidate: { start: Temporal.Instant; end: Temporal.Instant };
-  bookings: Booking[];
+  bookings: readonly Booking[];
 }
 
-export function detectConflicts(params: DetectConflictsParams): Booking[] {
-  const { bookings, candidate, resourceId } = params;
-
-  for (const b of bookings) {
-    if (b.resourceId !== resourceId) {
-      throw new Error(
-        `Invalid input: booking '${b.id}' has resourceId '${b.resourceId}' but params.resourceId is '${resourceId}'.`
-      );
-    }
-  }
+/** `detectConflicts` without checks, for Core functions that already checked their params. */
+export function detectConflictsUnchecked(
+  params: Omit<DetectConflictsParams, "resourceId">
+): Booking[] {
+  const { bookings, candidate } = params;
 
   return bookings
     .filter((b) => {
@@ -33,4 +31,15 @@ export function detectConflicts(params: DetectConflictsParams): Booking[] {
       return startsBeforeBookingEnds && bookingStartsBeforeCandidateEnds;
     })
     .toSorted((a, b) => Temporal.Instant.compare(a.start, b.start));
+}
+
+export function detectConflicts(
+  params: DetectConflictsParams
+): Result<Booking[], InvalidParams> {
+  const issues = [
+    ...checkInstantRange(params.candidate, ["candidate"]),
+    ...checkBookings(params.bookings, params.resourceId),
+  ];
+
+  return checked(issues, () => detectConflictsUnchecked(params));
 }

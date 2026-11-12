@@ -10,7 +10,7 @@ export interface AvailabilityRule {
     /** 1 = every week, 2 = every other week, etc. */
     interval: number;
     /** Days of the week the rule applies to (1 = Monday, 7 = Sunday). */
-    daysOfWeek: number[];
+    daysOfWeek: readonly number[];
   };
   timeWindow: {
     /** Start of the daily availability window. */
@@ -25,7 +25,7 @@ export interface AvailabilityRule {
   /** Date until which this rule is effective (inclusive). */
   effectiveTo?: Temporal.PlainDate;
   /** Specific dates on which this rule should NOT apply (holidays, blocked days). */
-  exceptions?: Temporal.PlainDate[];
+  exceptions?: readonly Temporal.PlainDate[];
 }
 
 /**

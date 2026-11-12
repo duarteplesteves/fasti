@@ -10,6 +10,7 @@ import {
   arbRulesForResource,
 } from "../test-utils/arbitraries.js";
 import { propConfig } from "../test-utils/prop-config.js";
+import { unwrap } from "../test-utils/results.js";
 import { findFreeSlots } from "./find-free-slots.js";
 import { isSlotValid } from "./is-slot-valid.js";
 
@@ -29,27 +30,31 @@ describe("composition", () => {
       const finalRules = rules.map((r) => ({ ...r, resourceId }));
       const finalBooking = { ...booking, resourceId };
 
-      const slots = findFreeSlots({
-        bookings: [finalBooking],
-        duration,
-        from: range.from,
-        options: { interval: duration },
-        resourceId,
-        rules: finalRules,
-        to: range.to,
-      });
+      const slots = unwrap(
+        findFreeSlots({
+          bookings: [finalBooking],
+          duration,
+          from: range.from,
+          options: { interval: duration },
+          resourceId,
+          rules: finalRules,
+          to: range.to,
+        })
+      );
 
       for (const slot of slots) {
         expect(
-          isSlotValid({
-            bookings: [finalBooking],
-            resourceId,
-            rules: finalRules,
-            slot: {
-              end: slot.end.toInstant(),
-              start: slot.start.toInstant(),
-            },
-          })
+          unwrap(
+            isSlotValid({
+              bookings: [finalBooking],
+              resourceId,
+              rules: finalRules,
+              slot: {
+                end: slot.end.toInstant(),
+                start: slot.start.toInstant(),
+              },
+            })
+          )
         ).toBeTruthy();
       }
     }

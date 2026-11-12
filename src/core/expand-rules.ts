@@ -1,26 +1,22 @@
+import { checkRules } from "./checks.js";
+import { checked } from "./result.js";
+import type { InvalidParams, Issue, Result } from "./result.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";
-import { validateRule } from "./validate.js";
 
 export interface ExpandRulesParams {
-  rules: AvailabilityRule[];
+  rules: readonly AvailabilityRule[];
   from: Temporal.PlainDate;
   to: Temporal.PlainDate;
 }
 
-export function expandRules(params: ExpandRulesParams): ExpandedWindow[] {
-  const { rules, from, to } = params;
-
-  if (Temporal.PlainDate.compare(from, to) > 0) {
-    throw new Error(
-      `Invalid range: from (${from.toString()}) must be on or before to (${to.toString()}).`
-    );
-  }
-
+/** `expandRules` without checks, for Core functions that already checked their params. */
+export function expandRulesUnchecked(
+  params: ExpandRulesParams
+): ExpandedWindow[] {
+  const { from, rules, to } = params;
   const windows: ExpandedWindow[] = [];
 
   for (const rule of rules) {
-    validateRule(rule);
-
     const weekAnchor = rule.effectiveFrom?.subtract({
       days: rule.effectiveFrom.dayOfWeek - 1,
     });
@@ -83,4 +79,20 @@ export function expandRules(params: ExpandRulesParams): ExpandedWindow[] {
   });
 
   return windows;
+}
+
+export function expandRules(
+  params: ExpandRulesParams
+): Result<ExpandedWindow[], InvalidParams> {
+  const { from, rules, to } = params;
+  const issues: Issue[] = checkRules(rules);
+
+  if (Temporal.PlainDate.compare(from, to) > 0) {
+    issues.push({
+      message: `to (${to.toString()}) must be on or after from (${from.toString()}).`,
+      path: ["to"],
+    });
+  }
+
+  return checked(issues, () => expandRulesUnchecked(params));
 }

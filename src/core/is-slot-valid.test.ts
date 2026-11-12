@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { unwrap, issuePaths } from "../test-utils/results.js";
 import { isSlotValid } from "./is-slot-valid.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
@@ -39,67 +40,82 @@ describe(isSlotValid, () => {
   it("returns true for a slot fully inside a rule with no bookings", () => {
     // 2026-05-12 is a Tuesday. 09:30 Lisbon (WEST, UTC+1) = 08:30 UTC.
     expect(
-      isSlotValid({
-        bookings: [],
-        resourceId: "doc-1",
-        rules: [tuesdayMorning],
-        slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
-      })
+      unwrap(
+        isSlotValid({
+          bookings: [],
+          resourceId: "doc-1",
+          rules: [tuesdayMorning],
+          slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
+        })
+      )
     ).toBeTruthy();
   });
 
   it("returns false when the slot is not on a matching weekday", () => {
     // 2026-05-13 is a Wednesday, rule is Tuesday-only.
     expect(
-      isSlotValid({
-        bookings: [],
-        resourceId: "doc-1",
-        rules: [tuesdayMorning],
-        slot: slotAt("2026-05-13T08:30:00Z", "2026-05-13T09:00:00Z"),
-      })
+      unwrap(
+        isSlotValid({
+          bookings: [],
+          resourceId: "doc-1",
+          rules: [tuesdayMorning],
+          slot: slotAt("2026-05-13T08:30:00Z", "2026-05-13T09:00:00Z"),
+        })
+      )
     ).toBeFalsy();
   });
 
   it("returns false when slot exceeds the rule's window by one minute", () => {
     // Rule ends 17:00 Lisbon = 16:00 UTC. Slot ends 16:01 UTC, one minute past.
     expect(
-      isSlotValid({
-        bookings: [],
-        resourceId: "doc-1",
-        rules: [tuesdayMorning],
-        slot: slotAt("2026-05-12T15:30:00Z", "2026-05-12T16:01:00Z"),
-      })
+      unwrap(
+        isSlotValid({
+          bookings: [],
+          resourceId: "doc-1",
+          rules: [tuesdayMorning],
+          slot: slotAt("2026-05-12T15:30:00Z", "2026-05-12T16:01:00Z"),
+        })
+      )
     ).toBeFalsy();
   });
 
   it("returns false when a blocking booking overlaps the slot", () => {
     expect(
-      isSlotValid({
-        bookings: [
-          bookingAt("b1", "2026-05-12T08:45:00Z", "2026-05-12T09:15:00Z", true),
-        ],
-        resourceId: "doc-1",
-        rules: [tuesdayMorning],
-        slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
-      })
+      unwrap(
+        isSlotValid({
+          bookings: [
+            bookingAt(
+              "b1",
+              "2026-05-12T08:45:00Z",
+              "2026-05-12T09:15:00Z",
+              true
+            ),
+          ],
+          resourceId: "doc-1",
+          rules: [tuesdayMorning],
+          slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
+        })
+      )
     ).toBeFalsy();
   });
 
   it("returns true when only a non-blocking booking overlaps", () => {
     expect(
-      isSlotValid({
-        bookings: [
-          bookingAt(
-            "b1",
-            "2026-05-12T08:45:00Z",
-            "2026-05-12T09:15:00Z",
-            false
-          ),
-        ],
-        resourceId: "doc-1",
-        rules: [tuesdayMorning],
-        slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
-      })
+      unwrap(
+        isSlotValid({
+          bookings: [
+            bookingAt(
+              "b1",
+              "2026-05-12T08:45:00Z",
+              "2026-05-12T09:15:00Z",
+              false
+            ),
+          ],
+          resourceId: "doc-1",
+          rules: [tuesdayMorning],
+          slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
+        })
+      )
     ).toBeTruthy();
   });
 
@@ -124,44 +140,97 @@ describe(isSlotValid, () => {
     };
 
     expect(
-      isSlotValid({
-        bookings: [],
-        resourceId: "doc-1",
-        rules: [morningOnly, afternoon],
-        slot: slotAt("2026-05-12T10:30:00Z", "2026-05-12T11:30:00Z"),
-      })
+      unwrap(
+        isSlotValid({
+          bookings: [],
+          resourceId: "doc-1",
+          rules: [morningOnly, afternoon],
+          slot: slotAt("2026-05-12T10:30:00Z", "2026-05-12T11:30:00Z"),
+        })
+      )
     ).toBeFalsy();
   });
 
-  it("throws when a rule's resourceId does not match params.resourceId", () => {
+  it("reports a rule's resourceId does not match params.resourceId", () => {
     const stray: AvailabilityRule = {
       ...tuesdayMorning,
       resourceId: "doc-2",
     };
 
-    expect(() =>
-      isSlotValid({
-        bookings: [],
-        resourceId: "doc-1",
-        rules: [stray],
-        slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
-      })
-    ).toThrow(/resourceId/u);
+    expect(
+      issuePaths(
+        isSlotValid({
+          bookings: [],
+          resourceId: "doc-1",
+          rules: [stray],
+          slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
+        })
+      )
+    ).toStrictEqual([["rules", 0, "resourceId"]]);
   });
 
-  it("throws when a booking's resourceId does not match params.resourceId", () => {
+  it("reports a booking's resourceId does not match params.resourceId", () => {
     const stray: Booking = {
       ...bookingAt("b1", "2026-05-12T08:45:00Z", "2026-05-12T09:15:00Z", true),
       resourceId: "doc-2",
     };
 
-    expect(() =>
-      isSlotValid({
-        bookings: [stray],
-        resourceId: "doc-1",
-        rules: [tuesdayMorning],
-        slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
-      })
-    ).toThrow(/resourceId/u);
+    expect(
+      issuePaths(
+        isSlotValid({
+          bookings: [stray],
+          resourceId: "doc-1",
+          rules: [tuesdayMorning],
+          slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
+        })
+      )
+    ).toStrictEqual([["bookings", 0, "resourceId"]]);
+  });
+});
+
+describe(`${isSlotValid.name} issues`, () => {
+  const rule: AvailabilityRule = {
+    recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
+    resourceId: "doc-1",
+    timeWindow: {
+      end: Temporal.PlainTime.from("17:00"),
+      start: Temporal.PlainTime.from("09:00"),
+    },
+    timezone: "Europe/Lisbon",
+  };
+
+  it("reports a slot whose end isn't after its start", () => {
+    const result = isSlotValid({
+      bookings: [],
+      resourceId: "doc-1",
+      rules: [rule],
+      slot: slotAt("2026-05-12T09:00:00Z", "2026-05-12T08:30:00Z"),
+    });
+
+    expect(issuePaths(result)).toStrictEqual([["slot", "end"]]);
+  });
+
+  it("reports an unknown timezone instead of throwing", () => {
+    const result = isSlotValid({
+      bookings: [],
+      resourceId: "doc-1",
+      rules: [rule, { ...rule, timezone: "Europe/Lisbn" }],
+      slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
+    });
+
+    expect(issuePaths(result)).toStrictEqual([["rules", 1, "timezone"]]);
+  });
+
+  it("reports a booking whose end isn't after its start", () => {
+    const result = isSlotValid({
+      bookings: [
+        bookingAt("b", "2026-05-12T10:00:00Z", "2026-05-12T09:00:00Z", true),
+      ],
+      resourceId: "doc-1",
+      rules: [rule],
+      slot: slotAt("2026-05-12T08:30:00Z", "2026-05-12T09:00:00Z"),
+    });
+
+    expect(issuePaths(result)).toStrictEqual([["bookings", 0, "end"]]);
   });
 });

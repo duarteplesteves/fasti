@@ -4,6 +4,7 @@ import {
   constant,
   constantFrom,
   integer,
+  oneof,
   option,
   record,
   string,
@@ -299,4 +300,108 @@ export function arbDateRange(): Arbitrary<{
       to: _from.add({ milliseconds: _to }),
     }));
   });
+}
+
+// Arbitraries for any params, valid or not; most draws are valid or nearly so,
+// so each bad value also reaches the compute path on its own. Magnitudes are bounded (|n| ≤ 1e6,
+// dates 1900–2100) because Temporal overflow is an accepted gap (see checks.ts).
+
+const anyTimezones = [
+  "Europe/Lisbon",
+  "America/New_York",
+  "UTC",
+  "europe/lisbon",
+  "Europe/Lisbn",
+  "+01:00",
+  "",
+] as const;
+
+export function arbAnyCount(): Arbitrary<number> {
+  return oneof(
+    integer({ max: 240, min: 1 }),
+    integer({ max: 1e6, min: -1e6 }),
+    constantFrom(0.5, 1.5, Number.NaN, Number.POSITIVE_INFINITY)
+  );
+}
+
+function arbAnyInstant(): Arbitrary<Temporal.Instant> {
+  return arbInstantInRange(
+    Temporal.Instant.from("1900-01-01T00:00:00Z"),
+    Temporal.Instant.from("2100-01-01T00:00:00Z")
+  );
+}
+
+/** A start anywhere in 1900–2100 and an end from 3 days before to 14 days after it. */
+export function arbAnyInstantRange(): Arbitrary<{
+  start: Temporal.Instant;
+  end: Temporal.Instant;
+}> {
+  const day = 24 * 60 * 60 * 1000;
+
+  return record({
+    offset: integer({ max: 14 * day, min: -3 * day }),
+    start: arbAnyInstant(),
+  }).map(({ offset, start }) => ({
+    end: start.add({ milliseconds: offset }),
+    start,
+  }));
+}
+
+/** `arb`'s value one draw in four, otherwise null (leave the valid field alone). */
+function sometimes<T>(arb: Arbitrary<T>): Arbitrary<T | null> {
+  return oneof(
+    { arbitrary: constant(null), weight: 3 },
+    { arbitrary: arb, weight: 1 }
+  );
+}
+
+/** A valid rule with each field independently replaced by any value now and then. */
+export function arbAnyRule(): Arbitrary<AvailabilityRule> {
+  return record({
+    base: arbAvailabilityRule({ resourceId: "r1" }),
+    daysOfWeek: sometimes(
+      array(oneof(integer({ max: 9, min: -1 }), constant(1.5)), {
+        maxLength: 8,
+      })
+    ),
+    effectiveFrom: sometimes(arbPlainDate(1900, 2100)),
+    effectiveTo: sometimes(arbPlainDate(1900, 2100)),
+    exceptions: sometimes(array(arbPlainDate(1900, 2100), { maxLength: 3 })),
+    interval: sometimes(arbAnyCount()),
+    resourceId: sometimes(constant("r2")),
+    timeWindow: sometimes(
+      record({ end: arbPlainTime(), start: arbPlainTime() })
+    ),
+    timezone: sometimes(constantFrom(...anyTimezones)),
+  }).map(({ base, daysOfWeek, interval, ...fields }) => {
+    const rule: AvailabilityRule = {
+      ...base,
+      recurrence: {
+        daysOfWeek: daysOfWeek ?? base.recurrence.daysOfWeek,
+        frequency: "weekly",
+        interval: interval ?? base.recurrence.interval,
+      },
+    };
+
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== null) {
+        Object.assign(rule, { [key]: value });
+      }
+    }
+
+    return rule;
+  });
+}
+
+/** A valid booking whose range or resourceId is replaced by any value now and then. */
+export function arbAnyBooking(): Arbitrary<Booking> {
+  return record({
+    base: arbBooking({ resourceId: "r1" }),
+    range: sometimes(arbAnyInstantRange()),
+    resourceId: sometimes(constant("r2")),
+  }).map(({ base, range, resourceId }) => ({
+    ...base,
+    ...range,
+    resourceId: resourceId ?? base.resourceId,
+  }));
 }

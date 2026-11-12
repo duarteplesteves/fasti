@@ -1,11 +1,19 @@
-import { detectConflicts } from "./detect-conflicts.js";
-import { expandRules } from "./expand-rules.js";
+import {
+  checkBookings,
+  checkPositiveInteger,
+  checkRules,
+  checkSameResource,
+} from "./checks.js";
+import { detectConflictsUnchecked } from "./detect-conflicts.js";
+import { expandRulesUnchecked } from "./expand-rules.js";
+import { checked } from "./result.js";
+import type { InvalidParams, Issue, Result } from "./result.js";
 import type { AvailabilityRule, Booking, Slot } from "./types.js";
 
 export interface FindFreeSlotsParams {
   resourceId: string;
-  rules: AvailabilityRule[];
-  bookings: Booking[];
+  rules: readonly AvailabilityRule[];
+  bookings: readonly Booking[];
   duration: number;
   from: Temporal.Instant;
   to: Temporal.Instant;
@@ -17,41 +25,15 @@ export interface FindFreeSlotsParams {
   };
 }
 
-export function findFreeSlots(params: FindFreeSlotsParams): Slot[] {
+function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
   const { bookings, duration, from, options, resourceId, rules, to } = params;
   const interval = options?.interval ?? duration;
   const allowEndOverflow = options?.allowEndOverflow ?? false;
 
-  if (!Number.isInteger(duration) || duration < 1) {
-    throw new Error(
-      `Invalid input: duration must be a positive integer (minutes), got ${duration}.`
-    );
-  }
-
-  if (!Number.isInteger(interval) || interval < 1) {
-    throw new Error(
-      `Invalid input: options.interval must be a positive integer (minutes), got ${interval}.`
-    );
-  }
-
-  if (Temporal.Instant.compare(from, to) >= 0) {
-    throw new Error(
-      `Invalid range: from (${from.toString()}) must be strictly before to (${to.toString()}).`
-    );
-  }
-
-  for (const r of rules) {
-    if (r.resourceId !== resourceId) {
-      throw new Error(
-        `Invalid input: rule has resourceId '${r.resourceId}' but params.resourceId is '${resourceId}'.`
-      );
-    }
-  }
-
   const expansionFrom = from.toZonedDateTimeISO("UTC").toPlainDate();
   const expansionTo = to.toZonedDateTimeISO("UTC").toPlainDate();
 
-  const windows = expandRules({
+  const windows = expandRulesUnchecked({
     from: expansionFrom,
     rules,
     to: expansionTo,
@@ -83,10 +65,9 @@ export function findFreeSlots(params: FindFreeSlotsParams): Slot[] {
       if (!seen.has(key)) {
         seen.add(key);
 
-        const conflicts = detectConflicts({
+        const conflicts = detectConflictsUnchecked({
           bookings,
           candidate: { end: endInstant, start: startInstant },
-          resourceId,
         });
 
         if (conflicts.length === 0) {
@@ -103,4 +84,30 @@ export function findFreeSlots(params: FindFreeSlotsParams): Slot[] {
   }
 
   return slots;
+}
+
+export function findFreeSlots(
+  params: FindFreeSlotsParams
+): Result<Slot[], InvalidParams> {
+  const { bookings, duration, from, options, resourceId, rules, to } = params;
+
+  const issues: Issue[] = [
+    ...checkPositiveInteger(duration, ["duration"]),
+    // Skipped when defaulted from duration: a bad duration is already reported.
+    ...(options?.interval === undefined
+      ? []
+      : checkPositiveInteger(options.interval, ["options", "interval"])),
+    ...checkRules(rules),
+    ...checkSameResource(rules, "rules", resourceId),
+    ...checkBookings(bookings, resourceId),
+  ];
+
+  if (Temporal.Instant.compare(from, to) >= 0) {
+    issues.push({
+      message: `to (${to.toString()}) must be after from (${from.toString()}).`,
+      path: ["to"],
+    });
+  }
+
+  return checked(issues, () => findFreeSlotsUnchecked(params));
 }

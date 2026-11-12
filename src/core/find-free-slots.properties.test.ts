@@ -1,5 +1,5 @@
-import { test } from "@fast-check/vitest";
 /* eslint-disable vitest/no-standalone-expect */
+import { test } from "@fast-check/vitest";
 import { describe, expect } from "vitest";
 
 import {
@@ -10,6 +10,7 @@ import {
   arbResourceId,
 } from "../test-utils/arbitraries.js";
 import { propConfig } from "../test-utils/prop-config.js";
+import { unwrap } from "../test-utils/results.js";
 import { findFreeSlots } from "./find-free-slots.js";
 
 describe(`${findFreeSlots.name} (property)`, () => {
@@ -30,15 +31,17 @@ describe(`${findFreeSlots.name} (property)`, () => {
       const finalB1 = { ...b1, resourceId };
       const finalB2 = { ...b2, resourceId };
 
-      const slots = findFreeSlots({
-        bookings: [finalB1, finalB2],
-        duration,
-        from: range.from,
-        options: { interval: duration },
-        resourceId,
-        rules: [finalRule],
-        to: range.to,
-      });
+      const slots = unwrap(
+        findFreeSlots({
+          bookings: [finalB1, finalB2],
+          duration,
+          from: range.from,
+          options: { interval: duration },
+          resourceId,
+          rules: [finalRule],
+          to: range.to,
+        })
+      );
 
       for (const slot of slots) {
         const slotStart = slot.start.toInstant();
@@ -79,25 +82,29 @@ describe(`${findFreeSlots.name} (property)`, () => {
         resourceId,
       };
 
-      const slotsWithout = findFreeSlots({
-        bookings: [],
-        duration,
-        from: range.from,
-        options: { interval: duration },
-        resourceId,
-        rules: [finalRule],
-        to: range.to,
-      });
+      const slotsWithout = unwrap(
+        findFreeSlots({
+          bookings: [],
+          duration,
+          from: range.from,
+          options: { interval: duration },
+          resourceId,
+          rules: [finalRule],
+          to: range.to,
+        })
+      );
 
-      const slotsWith = findFreeSlots({
-        bookings: [finalNonBlocking],
-        duration,
-        from: range.from,
-        options: { interval: duration },
-        resourceId,
-        rules: [finalRule],
-        to: range.to,
-      });
+      const slotsWith = unwrap(
+        findFreeSlots({
+          bookings: [finalNonBlocking],
+          duration,
+          from: range.from,
+          options: { interval: duration },
+          resourceId,
+          rules: [finalRule],
+          to: range.to,
+        })
+      );
 
       expect(slotsWith.length).toBeGreaterThanOrEqual(slotsWithout.length);
     }

@@ -112,10 +112,10 @@ Properties of the output:
    Slots start at `ruleStart + n * interval`. The `interval` defaults to the requested `duration`.
 
 6. **Single-resource scoping is enforced.**
-   `findFreeSlots`, `isSlotValid`, and `detectConflicts` take a required `resourceId`. Every input rule and booking must match it; a mismatch is invalid input. `expandRules` is the exception — it accepts mixed `resourceId`s and groups them in its output.
+   `findFreeSlots`, `isSlotValid`, and `detectConflicts` take a required `resourceId`. Every input rule and booking must match it; a mismatch is reported as an `InvalidParams` issue at that item's `resourceId`, never thrown. `expandRules` is the exception — it accepts mixed `resourceId`s and groups them in its output.
 
 7. **Invalid input is reported, never thrown.**
-   Every entry point checks its input before computing, and reports all problems found rather than the first: a rule whose window doesn't end after it starts, `effectiveTo < effectiveFrom`, empty `daysOfWeek`, values outside 1–7, duplicates, `recurrence.interval < 1`, an unknown timezone, and any time range whose end isn't after its start. Cross-day windows (`start > end` interpreted as wrapping past midnight) are **out of scope for v0.1** — split into two rules. See ADR 011.
+   Every entry point checks its input before computing, and reports all problems found rather than the first: a rule whose window doesn't end after it starts, `effectiveTo < effectiveFrom`, empty `daysOfWeek`, values outside 1–7, duplicates, `recurrence.interval < 1`, an unknown or fixed-offset timezone, any time range whose end isn't after its start, and a `withBlockingFlag` status listed as both blocking and non-blocking. The result is `{ ok: false, error: InvalidParams }` with every issue and its path; a check is skipped only when an earlier issue makes it meaningless. `checkRule(rule)` runs the rule checks on their own. Cross-day windows (`start > end` interpreted as wrapping past midnight) are **out of scope for v0.1** — split into two rules. See ADR 011.
 
 8. **DST policy (v0.1 simplification).**
    - **Spring-forward gap** (e.g. Lisbon, last Sunday March, 01:00 → 02:00): if a grid candidate's start time falls in the gap, the slot is dropped. The next grid step is generated normally.
