@@ -13,32 +13,6 @@ export interface CheckIssue extends Issue {
   readonly path: Path;
 }
 
-interface Bound<T> {
-  readonly label: string;
-  readonly value: T;
-}
-
-/** One issue at `path` unless `start` comes before `end` (or equals it, for "onOrAfter"). */
-export function checkOrder<T extends { toString: () => string }>(
-  compare: (a: T, b: T) => number,
-  start: Bound<T>,
-  end: Bound<T>,
-  relation: "after" | "onOrAfter",
-  path: Path
-): CheckIssue[] {
-  const cmp = compare(start.value, end.value);
-  const ok = cmp < 0 || (relation === "onOrAfter" && cmp === 0);
-
-  return ok
-    ? []
-    : [
-        {
-          message: `${end.label} (${end.value.toString()}) must be ${relation === "after" ? "after" : "on or after"} ${start.label} (${start.value.toString()}).`,
-          path,
-        },
-      ];
-}
-
 /** IANA names only: fixed offsets like "+01:00" don't follow DST. */
 export function checkTimeZone(timeZone: string, path: Path): CheckIssue[] {
   let canonical: string;
@@ -127,29 +101,22 @@ export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
   const issues: CheckIssue[] = [];
   const { timeWindow, effectiveFrom, effectiveTo } = rule;
 
-  issues.push(
-    ...checkOrder(
-      Temporal.PlainTime.compare,
-      { label: "timeWindow.start", value: timeWindow.start },
-      { label: "timeWindow.end", value: timeWindow.end },
-      "after",
-      ["timeWindow", "end"]
-    ).map((issue) => ({
-      ...issue,
-      message: `${issue.message} Cross-day windows are not supported; split into two rules.`,
-    }))
-  );
+  if (Temporal.PlainTime.compare(timeWindow.start, timeWindow.end) >= 0) {
+    issues.push({
+      message: `timeWindow.end (${timeWindow.end.toString()}) must be after timeWindow.start (${timeWindow.start.toString()}). Cross-day windows are not supported; split into two rules.`,
+      path: ["timeWindow", "end"],
+    });
+  }
 
-  if (effectiveFrom && effectiveTo) {
-    issues.push(
-      ...checkOrder(
-        Temporal.PlainDate.compare,
-        { label: "effectiveFrom", value: effectiveFrom },
-        { label: "effectiveTo", value: effectiveTo },
-        "onOrAfter",
-        ["effectiveTo"]
-      )
-    );
+  if (
+    effectiveFrom &&
+    effectiveTo &&
+    Temporal.PlainDate.compare(effectiveFrom, effectiveTo) > 0
+  ) {
+    issues.push({
+      message: `effectiveTo (${effectiveTo.toString()}) must be on or after effectiveFrom (${effectiveFrom.toString()}).`,
+      path: ["effectiveTo"],
+    });
   }
 
   issues.push(
@@ -164,13 +131,14 @@ export function checkInstantRange(
   range: { readonly start: Temporal.Instant; readonly end: Temporal.Instant },
   path: Path
 ): CheckIssue[] {
-  return checkOrder(
-    Temporal.Instant.compare,
-    { label: "start", value: range.start },
-    { label: "end", value: range.end },
-    "after",
-    [...path, "end"]
-  );
+  return Temporal.Instant.compare(range.start, range.end) < 0
+    ? []
+    : [
+        {
+          message: `end (${range.end.toString()}) must be after start (${range.start.toString()}).`,
+          path: [...path, "end"],
+        },
+      ];
 }
 
 // shortcut: no upper bound, so a huge value can still overflow Temporal's range and throw; cap it if #29/#31 settle a limit.

@@ -1,6 +1,5 @@
 import { availableWindows, fitsInSomeWindow } from "./availability.js";
 import {
-  checkOrder,
   checkPositiveInteger,
   checkResourceInputs,
   checkTimeZone,
@@ -148,13 +147,14 @@ export function findFreeSlots<
     ...checkPositiveInteger(interval, ["interval"]),
     ...checkTimeZone(timezone, ["timezone"]),
     ...checkResourceInputs({ bookings, resourceId, rules }),
-    ...checkOrder(
-      Temporal.Instant.compare,
-      { label: "from", value: from },
-      { label: "to", value: to },
-      "after",
-      ["to"]
-    ),
+    ...(Temporal.Instant.compare(from, to) < 0
+      ? []
+      : [
+          {
+            message: `to (${to.toString()}) must be after from (${from.toString()}).`,
+            path: ["to"],
+          },
+        ]),
   ];
 
   // SAFETY: an availability violation is only added when R contains "availability".

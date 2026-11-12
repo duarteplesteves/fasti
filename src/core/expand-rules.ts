@@ -1,4 +1,4 @@
-import { checkOrder, checkRules } from "./checks.js";
+import { checkRules } from "./checks.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type {
@@ -123,13 +123,14 @@ export function expandRules(
 
   const issues = [
     ...checkRules(rules),
-    ...checkOrder(
-      Temporal.PlainDate.compare,
-      { label: "from", value: from },
-      { label: "to", value: to },
-      "onOrAfter",
-      ["to"]
-    ),
+    ...(Temporal.PlainDate.compare(from, to) > 0
+      ? [
+          {
+            message: `to (${to.toString()}) must be on or after from (${from.toString()}).`,
+            path: ["to"],
+          },
+        ]
+      : []),
   ];
 
   return checked(issues, () => expandRulesUnchecked(params));
