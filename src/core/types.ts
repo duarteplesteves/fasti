@@ -1,17 +1,22 @@
+/** Repeats every `interval` weeks on `daysOfWeek`. */
+export interface WeeklyRecurrence {
+  frequency: "weekly";
+  /** 1 = every week, 2 = every other week, etc. */
+  interval: number;
+  /** Days of the week the rule applies to (1 = Monday, 7 = Sunday). */
+  daysOfWeek: readonly number[];
+}
+
+/** How a rule repeats, discriminated by `frequency`. A new frequency is a new member. */
+export type Recurrence = WeeklyRecurrence;
+
 /**
  * Abstract rule defining when a resource is available.
  * The engine expands these into concrete time windows on demand.
  */
 export interface AvailabilityRule {
   resourceId: string;
-  recurrence: {
-    /** Currently supports weekly recurrence only. */
-    frequency: "weekly";
-    /** 1 = every week, 2 = every other week, etc. */
-    interval: number;
-    /** Days of the week the rule applies to (1 = Monday, 7 = Sunday). */
-    daysOfWeek: readonly number[];
-  };
+  recurrence: Recurrence;
   timeWindow: {
     /** Start of the daily availability window. */
     start: Temporal.PlainTime;
