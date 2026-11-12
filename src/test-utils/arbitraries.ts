@@ -373,24 +373,33 @@ export function arbAnyRule(): Arbitrary<AvailabilityRule> {
       record({ end: arbPlainTime(), start: arbPlainTime() })
     ),
     timezone: sometimes(constantFrom(...anyTimezones)),
-  }).map(({ base, daysOfWeek, interval, ...fields }) => {
-    const rule: AvailabilityRule = {
+  }).map(
+    ({
+      base,
+      daysOfWeek,
+      effectiveFrom,
+      effectiveTo,
+      exceptions,
+      interval,
+      resourceId,
+      timeWindow,
+      timezone,
+    }) => ({
       ...base,
       recurrence: {
         daysOfWeek: daysOfWeek ?? base.recurrence.daysOfWeek,
         frequency: "weekly",
         interval: interval ?? base.recurrence.interval,
       },
-    };
-
-    for (const [key, value] of Object.entries(fields)) {
-      if (value !== null) {
-        Object.assign(rule, { [key]: value });
-      }
-    }
-
-    return rule;
-  });
+      resourceId: resourceId ?? base.resourceId,
+      timeWindow: timeWindow ?? base.timeWindow,
+      timezone: timezone ?? base.timezone,
+      // Optional fields: only set when drawn, so exactOptionalPropertyTypes holds.
+      ...(effectiveFrom !== null && { effectiveFrom }),
+      ...(effectiveTo !== null && { effectiveTo }),
+      ...(exceptions !== null && { exceptions }),
+    })
+  );
 }
 
 /** A valid booking whose range or resourceId is replaced by any value now and then. */

@@ -11,17 +11,13 @@ export function unwrap<T>(result: Result<T, InvalidParams>): T {
   return result.value;
 }
 
-/** The issue paths of a failed result (or of an issue list); throws if the result is ok. */
+/** The issue paths of a failed result; throws (failing the test) if the result is ok. */
 export function issuePaths(
-  input: Result<unknown, InvalidParams> | readonly Issue[]
+  result: Result<unknown, InvalidParams>
 ): Issue["path"][] {
-  if ("ok" in input) {
-    if (input.ok) {
-      throw new Error("Expected InvalidParams, got ok");
-    }
-
-    return input.error.issues.map((i) => i.path);
+  if (result.ok) {
+    throw new Error("Expected InvalidParams, got ok");
   }
 
-  return input.map((i) => i.path);
+  return result.error.issues.map((i) => i.path);
 }

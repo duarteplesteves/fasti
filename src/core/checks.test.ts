@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { issuePaths } from "../test-utils/results.js";
 import { checkRule } from "./checks.js";
 import type { AvailabilityRule } from "./types.js";
+
+function rulePaths(rule: AvailabilityRule) {
+  return checkRule(rule).map((issue) => issue.path);
+}
 
 const valid: AvailabilityRule = {
   recurrence: { daysOfWeek: [1, 3], frequency: "weekly", interval: 1 },
@@ -36,9 +39,7 @@ describe(checkRule, () => {
         },
       };
 
-      expect(issuePaths(checkRule(rule))).toStrictEqual([
-        ["timeWindow", "end"],
-      ]);
+      expect(rulePaths(rule)).toStrictEqual([["timeWindow", "end"]]);
     }
   );
 
@@ -49,7 +50,7 @@ describe(checkRule, () => {
       effectiveTo: Temporal.PlainDate.from("2026-05-31"),
     };
 
-    expect(issuePaths(checkRule(rule))).toStrictEqual([["effectiveTo"]]);
+    expect(rulePaths(rule)).toStrictEqual([["effectiveTo"]]);
   });
 
   it("accepts effectiveTo equal to effectiveFrom", () => {
@@ -61,23 +62,23 @@ describe(checkRule, () => {
   });
 
   it("reports empty daysOfWeek", () => {
-    expect(
-      issuePaths(checkRule(withRecurrence({ daysOfWeek: [] })))
-    ).toStrictEqual([["recurrence", "daysOfWeek"]]);
+    expect(rulePaths(withRecurrence({ daysOfWeek: [] }))).toStrictEqual([
+      ["recurrence", "daysOfWeek"],
+    ]);
   });
 
   it.each([0, 8, -1, 1.5, Number.NaN])(
     "reports daysOfWeek value %s at its index",
     (day) => {
-      expect(
-        issuePaths(checkRule(withRecurrence({ daysOfWeek: [2, day] })))
-      ).toStrictEqual([["recurrence", "daysOfWeek", 1]]);
+      expect(rulePaths(withRecurrence({ daysOfWeek: [2, day] }))).toStrictEqual(
+        [["recurrence", "daysOfWeek", 1]]
+      );
     }
   );
 
   it("reports each repeated day at the repeat's index", () => {
     expect(
-      issuePaths(checkRule(withRecurrence({ daysOfWeek: [2, 3, 2, 2] })))
+      rulePaths(withRecurrence({ daysOfWeek: [2, 3, 2, 2] }))
     ).toStrictEqual([
       ["recurrence", "daysOfWeek", 2],
       ["recurrence", "daysOfWeek", 3],
@@ -87,18 +88,16 @@ describe(checkRule, () => {
   it.each([0, -1, 1.5, Number.POSITIVE_INFINITY])(
     "reports recurrence interval %s",
     (interval) => {
-      expect(issuePaths(checkRule(withRecurrence({ interval })))).toStrictEqual(
-        [["recurrence", "interval"]]
-      );
+      expect(rulePaths(withRecurrence({ interval }))).toStrictEqual([
+        ["recurrence", "interval"],
+      ]);
     }
   );
 
   it.each(["Europe/Lisbn", "+01:00", "-05:00", ""])(
     "reports timezone %j",
     (timezone) => {
-      expect(issuePaths(checkRule({ ...valid, timezone }))).toStrictEqual([
-        ["timezone"],
-      ]);
+      expect(rulePaths({ ...valid, timezone })).toStrictEqual([["timezone"]]);
     }
   );
 
@@ -122,7 +121,7 @@ describe(checkRule, () => {
       timezone: "Mars/Olympus",
     };
 
-    expect(issuePaths(checkRule(rule))).toStrictEqual(
+    expect(rulePaths(rule)).toStrictEqual(
       expect.arrayContaining([
         ["timeWindow", "end"],
         ["effectiveTo"],
@@ -136,9 +135,7 @@ describe(checkRule, () => {
   });
 
   it("skips the duplicate check for out-of-range days", () => {
-    expect(
-      issuePaths(checkRule(withRecurrence({ daysOfWeek: [0, 0] })))
-    ).toStrictEqual([
+    expect(rulePaths(withRecurrence({ daysOfWeek: [0, 0] }))).toStrictEqual([
       ["recurrence", "daysOfWeek", 0],
       ["recurrence", "daysOfWeek", 1],
     ]);
