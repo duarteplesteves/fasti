@@ -699,3 +699,104 @@ describe(`${findFreeSlots.name} issues`, () => {
     ]);
   });
 });
+
+describe("findFreeSlots with relax", () => {
+  const tuesday9to17: AvailabilityRule = {
+    recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
+    resourceId: "doc-1",
+    timeWindow: {
+      end: Temporal.PlainTime.from("17:00"),
+      start: Temporal.PlainTime.from("09:00"),
+    },
+    timezone: "Europe/Lisbon",
+  };
+
+  const tuesday = {
+    duration: 60,
+    from: Temporal.Instant.from("2026-05-11T23:00:00Z"),
+    interval: 60,
+    resourceId: "doc-1",
+    timezone: "Europe/Lisbon",
+    to: Temporal.Instant.from("2026-05-12T23:00:00Z"),
+  };
+
+  const outsideHours = { detail: {}, policy: "availability" };
+
+  it("returns every grid slot of the day, tagging the ones outside availability", () => {
+    const slots = unwrap(
+      findFreeSlots({
+        ...tuesday,
+        bookings: [],
+        relax: ["availability"],
+        rules: [tuesday9to17],
+      })
+    );
+
+    expect(slots).toHaveLength(24);
+    expect(slots.map((s) => [s.start.hour, s.waived.length])).toStrictEqual(
+      Array.from({ length: 24 }, (_, hour) => [
+        hour,
+        hour >= 9 && hour < 17 ? 0 : 1,
+      ])
+    );
+    expect(slots[8]?.waived).toStrictEqual([outsideHours]);
+  });
+
+  it("tags every grid slot of a Resource with no rules", () => {
+    const slots = unwrap(
+      findFreeSlots({
+        ...tuesday,
+        bookings: [],
+        relax: ["availability"],
+        rules: [],
+      })
+    );
+
+    expect(slots).toHaveLength(24);
+    expect(slots.every((s) => s.waived.length === 1)).toBeTruthy();
+  });
+
+  it("still hides a slot overlapping a blocking booking", () => {
+    // 07:00–08:00 and 10:00–11:00 Lisbon: one outside hours, one inside.
+    const bookings: Booking[] = [
+      {
+        end: Temporal.Instant.from("2026-05-12T07:00:00Z"),
+        id: "b1",
+        isBlocking: true,
+        resourceId: "doc-1",
+        start: Temporal.Instant.from("2026-05-12T06:00:00Z"),
+      },
+      {
+        end: Temporal.Instant.from("2026-05-12T10:00:00Z"),
+        id: "b2",
+        isBlocking: true,
+        resourceId: "doc-1",
+        start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
+      },
+    ];
+
+    const slots = unwrap(
+      findFreeSlots({
+        ...tuesday,
+        bookings,
+        relax: ["availability"],
+        rules: [tuesday9to17],
+      })
+    );
+
+    expect(slots.map((s) => s.start.hour)).not.toContain(7);
+    expect(slots.map((s) => s.start.hour)).not.toContain(10);
+    expect(slots).toHaveLength(22);
+  });
+
+  it("returns untagged slots inside availability only, when nothing is relaxed", () => {
+    const slots = unwrap(
+      findFreeSlots({ ...tuesday, bookings: [], rules: [tuesday9to17] })
+    );
+
+    expect(slots.map((s) => s.start.hour)).toStrictEqual([
+      9, 10, 11, 12, 13, 14, 15, 16,
+    ]);
+    expect(slots.every((s) => s.waived.length === 0)).toBeTruthy();
+  });
+});

@@ -8,9 +8,18 @@ import { detectConflictsUnchecked } from "./detect-conflicts.js";
 import { expandRulesUnchecked } from "./expand-rules.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
-import type { AvailabilityRule, Booking, Slot } from "./types.js";
+import type {
+  AvailabilityRule,
+  AvailabilityViolation,
+  Booking,
+  CorePolicy,
+  CoreViolations,
+  Slot,
+} from "./types.js";
 
-export interface FindFreeSlotsParams {
+export interface FindFreeSlotsParams<
+  R extends readonly CorePolicy[] = readonly CorePolicy[],
+> {
   resourceId: string;
   rules: readonly AvailabilityRule[];
   bookings: readonly Booking[];
@@ -23,7 +32,14 @@ export interface FindFreeSlotsParams {
   interval: number;
   /** IANA timezone whose local midnight anchors the grid; slots are zoned in it. */
   timezone: string;
+  /** Policies to relax: a slot breaking only these is returned, tagged in `waived`. */
+  relax?: R;
 }
+
+const outsideAvailability: AvailabilityViolation = {
+  detail: {},
+  policy: "availability",
+};
 
 /** `minutes` after midnight on `date`, or undefined in a DST gap; a repeated time is its first occurrence (ADR 005). */
 function gridTime(
@@ -37,8 +53,13 @@ function gridTime(
   return zoned.toPlainDateTime().equals(local) ? zoned : undefined;
 }
 
-function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
-  const { duration, from, interval, resourceId, rules, timezone, to } = params;
+function findFreeSlotsUnchecked(
+  params: FindFreeSlotsParams
+): Slot<AvailabilityViolation>[] {
+  const { duration, from, interval, relax, resourceId, rules, timezone, to } =
+    params;
+
+  const relaxAvailability = relax?.includes("availability") ?? false;
 
   // ±1 day covers every rule timezone's dates that overlap [from, to).
   const windows = expandRulesUnchecked({
@@ -48,7 +69,7 @@ function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
   }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
 
   const lastDate = to.toZonedDateTimeISO(timezone).toPlainDate();
-  const slots: Slot[] = [];
+  const slots: Slot<AvailabilityViolation>[] = [];
 
   for (
     let date = from.toZonedDateTimeISO(timezone).toPlainDate();
@@ -65,17 +86,19 @@ function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
       const startInstant = start.toInstant();
       const endInstant = startInstant.add({ minutes: duration });
 
-      const available =
+      const inRange =
         Temporal.Instant.compare(startInstant, from) >= 0 &&
-        Temporal.Instant.compare(startInstant, to) < 0 &&
-        windows.some(
-          (w) =>
-            Temporal.Instant.compare(w.start, startInstant) <= 0 &&
-            Temporal.Instant.compare(endInstant, w.end) <= 0
-        );
+        Temporal.Instant.compare(startInstant, to) < 0;
+
+      const available = windows.some(
+        (w) =>
+          Temporal.Instant.compare(w.start, startInstant) <= 0 &&
+          Temporal.Instant.compare(endInstant, w.end) <= 0
+      );
 
       if (
-        available &&
+        inRange &&
+        (available || relaxAvailability) &&
         detectConflictsUnchecked({
           ...params,
           candidate: { end: endInstant, start: startInstant },
@@ -85,6 +108,7 @@ function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
           end: endInstant.toZonedDateTimeISO(timezone),
           resourceId,
           start,
+          waived: available ? [] : [outsideAvailability],
         });
       }
     }
@@ -93,9 +117,9 @@ function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
   return slots;
 }
 
-export function findFreeSlots(
-  params: FindFreeSlotsParams
-): Result<Slot[], InvalidParams> {
+export function findFreeSlots<const R extends readonly CorePolicy[] = []>(
+  params: FindFreeSlotsParams<R>
+): Result<Slot<CoreViolations[R[number]]>[], InvalidParams> {
   const {
     bookings,
     duration,
@@ -121,5 +145,9 @@ export function findFreeSlots(
     ),
   ];
 
-  return checked(issues, () => findFreeSlotsUnchecked(params));
+  // SAFETY: an availability violation is only added when R contains "availability".
+  return checked(
+    issues,
+    () => findFreeSlotsUnchecked(params) as Slot<CoreViolations[R[number]]>[]
+  );
 }

@@ -5,6 +5,7 @@ import * as core from "./index.js";
 import { findFreeSlots, isSlotValid, withBlockingFlag } from "./index.js";
 import type {
   AvailabilityRule,
+  AvailabilityViolation,
   Booking,
   Issue,
   Recurrence,
@@ -93,6 +94,35 @@ describe("export surface", () => {
     expectTypeOf<AvailabilityRule["recurrence"]>().toEqualTypeOf<Recurrence>();
     expectTypeOf<Recurrence>().toEqualTypeOf<WeeklyRecurrence>();
     expectTypeOf<WeeklyRecurrence["frequency"]>().toEqualTypeOf<"weekly">();
+  });
+
+  it("types waived from relax: never without it, AvailabilityViolation with it", () => {
+    const params = {
+      bookings: [],
+      duration: 60,
+      from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+      interval: 60,
+      resourceId: "doc-1",
+      rules: [],
+      timezone: "Europe/Lisbon",
+      to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+    };
+
+    const strict = unwrap(core.findFreeSlots(params));
+
+    const relaxed = unwrap(
+      core.findFreeSlots({ ...params, relax: ["availability"] })
+    );
+
+    expectTypeOf(strict).toEqualTypeOf<Slot[]>();
+    expectTypeOf<Slot["waived"]>().toEqualTypeOf<readonly never[]>();
+    expectTypeOf(relaxed).toEqualTypeOf<Slot<AvailabilityViolation>[]>();
+    expectTypeOf<
+      AvailabilityViolation["policy"]
+    >().toEqualTypeOf<"availability">();
+
+    // @ts-expect-error only Policies the Core knows can be relaxed
+    core.findFreeSlots({ ...params, relax: ["notice"] });
   });
 
   it("Issue matches the Standard Schema issue structurally", () => {

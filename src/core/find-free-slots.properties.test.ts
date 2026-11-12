@@ -6,6 +6,7 @@ import { describe, expect } from "vitest";
 import {
   arbAvailabilityRule,
   arbBooking,
+  arbBookingIn,
   arbDateRange,
   arbDuration,
   arbInterval,
@@ -15,6 +16,7 @@ import {
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
 import { findFreeSlots } from "./find-free-slots.js";
+import { isSlotValid } from "./is-slot-valid.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
 /** Slots for `rule` and `booking` on one grid, all on the rule's resource. */
@@ -45,6 +47,29 @@ function slotsIn(
   );
 }
 
+/** `slotsIn`, relaxing availability. */
+function relaxedSlotsIn(
+  grid: Parameters<typeof slotsIn>[0],
+  from: Temporal.Instant,
+  to: Temporal.Instant
+) {
+  const { booking, duration, interval, rule, timezone } = grid;
+
+  return unwrap(
+    findFreeSlots({
+      bookings: [{ ...booking, resourceId: rule.resourceId }],
+      duration,
+      from,
+      interval,
+      relax: ["availability"],
+      resourceId: rule.resourceId,
+      rules: [rule],
+      timezone,
+      to,
+    })
+  );
+}
+
 const arbGrid = arbAvailabilityRule().chain((rule) =>
   arbBooking().chain((booking) =>
     arbDuration().chain((duration) =>
@@ -59,6 +84,25 @@ const arbGrid = arbAvailabilityRule().chain((rule) =>
       )
     )
   )
+);
+
+const day = 24 * 60 * 60 * 1000;
+
+/** A grid and a range of at most a day with the booking inside it: relaxed queries return every grid slot, so ranges stay short. */
+const arbRelaxed = arbGrid.chain((grid) =>
+  arbDateRange().chain(({ from, to }) => {
+    const range = {
+      from,
+      to: Temporal.Instant.fromEpochMilliseconds(
+        Math.min(to.epochMilliseconds, from.epochMilliseconds + day)
+      ),
+    };
+
+    return arbBookingIn(range, grid.rule.resourceId).map((booking) => ({
+      grid: { ...grid, booking },
+      range,
+    }));
+  })
 );
 
 describe(`${findFreeSlots.name} (property)`, () => {
@@ -217,6 +261,55 @@ describe(`${findFreeSlots.name} (property)`, () => {
         ...slotsIn(grid, from, mid),
         ...slotsIn(grid, mid, to),
       ]);
+    }
+  );
+
+  test.prop([arbRelaxed], propConfig)(
+    "relaxed slots with an empty waived are exactly the unrelaxed slots",
+    ({ grid, range: { from, to } }) => {
+      expect(
+        relaxedSlotsIn(grid, from, to).filter((s) => s.waived.length === 0)
+      ).toStrictEqual(slotsIn(grid, from, to));
+    }
+  );
+
+  test.prop([arbRelaxed], propConfig)(
+    "every relaxed slot with a non-empty waived fails isSlotValid",
+    ({ grid, range: { from, to } }) => {
+      const bookings = [{ ...grid.booking, resourceId: grid.rule.resourceId }];
+
+      for (const slot of relaxedSlotsIn(grid, from, to)) {
+        if (slot.waived.length === 0) {
+          continue;
+        }
+
+        const valid = unwrap(
+          isSlotValid({
+            bookings,
+            resourceId: grid.rule.resourceId,
+            rules: [grid.rule],
+            slot: { end: slot.end.toInstant(), start: slot.start.toInstant() },
+          })
+        );
+
+        expect(valid).toBeFalsy();
+      }
+    }
+  );
+
+  test.prop([arbRelaxed], propConfig)(
+    "no relaxed slot overlaps a blocking booking",
+    ({ grid, range: { from, to } }) => {
+      const { booking } = grid;
+
+      for (const slot of relaxedSlotsIn(grid, from, to)) {
+        const overlaps =
+          booking.isBlocking &&
+          Temporal.Instant.compare(slot.start.toInstant(), booking.end) < 0 &&
+          Temporal.Instant.compare(booking.start, slot.end.toInstant()) < 0;
+
+        expect(overlaps).toBeFalsy();
+      }
     }
   );
 });
