@@ -44,8 +44,10 @@ describe("public API surface", () => {
         bookings,
         duration: 60,
         from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        interval: 60,
         resourceId: "doc-1",
         rules: [tuesday9to17],
+        timezone: "Europe/Lisbon",
         to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
       })
     );

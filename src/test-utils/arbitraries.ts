@@ -292,6 +292,11 @@ export function arbDuration(): Arbitrary<number> {
   return integer({ max: 240, min: 5 });
 }
 
+/** A grid step in minutes, including ones that don't divide a day. */
+export function arbInterval(): Arbitrary<number> {
+  return integer({ max: 240, min: 5 });
+}
+
 const dstDates = [
   Temporal.PlainDate.from("2024-03-10"),
   Temporal.PlainDate.from("2024-03-31"),

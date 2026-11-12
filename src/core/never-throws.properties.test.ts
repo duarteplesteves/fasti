@@ -91,22 +91,21 @@ describe("no Core function throws on any params, and none mutates them", () => {
       arbBookings(),
       arbAnyInstantRange(),
       arbAnyCount(),
-      constantFrom(undefined, 1, 0, 15, -7, 2.5),
+      constantFrom(1, 0, 15, -7, 2.5),
+      constantFrom("Europe/Lisbon", "UTC", "Europe/Lisbn", "+01:00"),
     ],
     propConfig
-  )("findFreeSlots", (rules, bookings, range, duration, interval) => {
+  )("findFreeSlots", (rules, bookings, range, duration, interval, timezone) => {
     const params: FindFreeSlotsParams = {
       bookings,
       duration,
       from: range.start,
+      interval,
       resourceId: "r1",
       rules,
+      timezone,
       to: range.end,
     };
-
-    if (interval !== undefined) {
-      params.options = { interval };
-    }
 
     expect([true, false]).toContain(findFreeSlots(deepFreeze(params)).ok);
   });

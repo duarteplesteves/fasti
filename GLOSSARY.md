@@ -36,10 +36,10 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **Resource** | Anything that can be booked (person, room, machine, doctor, etc.). | Treated as an opaque, globally unique identifier (`resourceId`). The engine does not understand resource taxonomy; namespacing is the caller's responsibility. |
 | **AvailabilityRule** | An abstract, recurring pattern defining when a Resource is available for booking. | Expressed as a recurrence, time window, timezone, and effective date range. The recurrence is one value discriminated by `frequency` (only `weekly` today: interval and days of the week), so a new frequency is a new kind of recurrence, not a data migration. Concrete windows are generated on demand. |
 | **Booking** | An existing reservation that occupies a Resource for a specific time range. | The engine uses `isBlocking` (not `status`) to determine if a booking consumes capacity. The engine knows nothing about booking lifecycle or business consequences. |
-| **Slot** | A candidate time window returned by the engine that is both within an AvailabilityRule and free of conflicting Bookings. | Represents a bookable window. Returned with zoned start/end so the caller knows local wall-clock time. |
+| **Slot** | A candidate time window on the query's Grid, starting in the queried `[from, to)`, that fits inside an expanded AvailabilityRule window and is free of conflicting Bookings. | Represents a bookable window. Returned with start/end zoned in the query `timezone`, so the caller knows local wall-clock time. Its end may pass `to`. |
 | **Capacity** | The number of simultaneous bookings a Resource can host. | **v0.1 constraint: capacity is always 1.** Multi-booking resources (classes, group events) are out of scope for the core engine. |
 | **Blocking** | Whether a booking prevents another booking from occupying the same slot. | Determined by `isBlocking: boolean` on the Booking primitive. Defaults to `true`. The engine ignores `status` for conflict detection. |
-| **Grid / Interval** | The fixed step size at which candidate slots are generated from an AvailabilityRule. | Defaults to the requested booking `duration`, but can be overridden (e.g., 15-minute grid for 30-minute bookings). |
+| **Grid / Interval** | The candidate slot starts of a query: local midnight in the query's required `timezone` plus whole steps of the required `interval` (minutes), each day. | One Grid per query, whatever rules made the slots (ADR 014). Independent of `duration` (e.g., a 15-minute grid for 30-minute bookings). A rule starting off the Grid (09:10 on a 15-minute grid) gets its first slot at the next Grid time (09:15). |
 | **Recurrence Expansion** | The process of converting an abstract AvailabilityRule into concrete, calendar-specific time windows. | Performed by `expandRules()` and exposed as a standalone utility. v0.1 query functions accept abstract `AvailabilityRule[]` only — pre-expanded input is not a supported entry point. |
 | **ExpandedWindow** | One concrete application of one `AvailabilityRule` on one calendar date in that rule's timezone. Carries `resourceId`, zoned `start`, and zoned `end`. | Output of `expandRules()`. Not accepted as input to query functions in v0.1. See "Expansion Semantics" below for properties. |
 
@@ -95,8 +95,8 @@ Properties of the output:
 ## Business Rules / Invariants
 
 1. **A slot is free iff:**
-   - Its start time falls within an expanded AvailabilityRule window for the Resource.
-   - Its entire duration fits within that window.
+   - Its start is a Grid time and falls in the queried `[from, to)`.
+   - Its entire duration (start to start + `duration`, by instant) fits within one expanded AvailabilityRule window for the Resource, in any rule timezone.
    - It does not overlap with any Booking where `isBlocking === true`.
 
 2. **Capacity is always 1 in v0.1.**
@@ -108,8 +108,8 @@ Properties of the output:
 4. **AvailabilityRules are abstract and timezone-aware.**
    A rule declares its own IANA timezone. When comparing bookings (absolute Instants) against rules (local time + zone), the engine converts consistently.
 
-5. **Slot generation uses a fixed grid.**
-   Slots start at `ruleStart + n * interval`. The `interval` defaults to the requested `duration`.
+5. **Slot generation uses one fixed grid.**
+   Candidate starts are `00:00 + n × interval` wall-clock in the query `timezone`, on each local date overlapping `[from, to)`, stopping before the next local midnight. `interval` and `timezone` are required; `interval` does not default to `duration`. At most one slot per Grid instant, sorted by start.
 
 6. **Single-resource scoping is enforced.**
    `findFreeSlots`, `isSlotValid`, and `detectConflicts` take a required `resourceId`. Every input rule and booking must match it; a mismatch is reported as an `InvalidParams` issue at that item's `resourceId`, never thrown. `expandRules` is the exception — it accepts mixed `resourceId`s and groups them in its output.
@@ -118,8 +118,9 @@ Properties of the output:
    Every entry point checks its input before computing, and reports all problems found rather than the first: a rule whose window doesn't end after it starts, `effectiveTo < effectiveFrom`, empty `daysOfWeek`, values outside 1–7, duplicates, `recurrence.interval < 1`, an unknown or fixed-offset timezone, any time range whose end isn't after its start, and a `withBlockingFlag` status listed as both blocking and non-blocking. The result is `{ ok: false, error: InvalidParams }` with every issue and its path; a check is skipped only when an earlier issue makes it meaningless. `checkRule(rule)` runs the rule checks on their own. Cross-day windows (`start > end` interpreted as wrapping past midnight) are **out of scope for v0.1** — split into two rules. See ADR 011.
 
 8. **DST policy (v0.1 simplification).**
-   - **Spring-forward gap** (e.g. Lisbon, last Sunday March, 01:00 → 02:00): if a grid candidate's start time falls in the gap, the slot is dropped. The next grid step is generated normally.
-   - **Fall-back overlap** (e.g. last Sunday October, 02:00 → 01:00): only the **first occurrence** of the repeated wall-clock hour generates slots. The second occurrence's real-time bookable hour is lost in v0.1. Documented limitation; revisit in v0.2 if real usage requires double-occurrence slots.
+   Applied to the Grid in the query `timezone` (ADR 014), not to each rule's timezone.
+   - **Spring-forward gap** (e.g. Lisbon, last Sunday March, 01:00 → 02:00): if a Grid time falls in the gap, it is dropped. The next grid step is generated normally.
+   - **Fall-back overlap** (e.g. last Sunday October, 02:00 → 01:00): only the **first occurrence** of the repeated wall-clock hour is a Grid time. The second occurrence's real-time bookable hour is lost in v0.1. Documented limitation; revisit in v0.2 if real usage requires double-occurrence slots.
    - `exceptions: PlainDate[]` are interpreted as dates in the **rule's `timezone`**, not UTC.
 
 ---

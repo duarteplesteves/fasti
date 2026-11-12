@@ -57,8 +57,10 @@ describe("excludeBookingId (property)", () => {
       const params = {
         duration,
         from: range.from,
+        interval: duration,
         resourceId,
         rules,
+        timezone: "Europe/Lisbon",
         to: range.to,
       };
 

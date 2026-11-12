@@ -34,3 +34,7 @@ Both behaviours are documented in GLOSSARY.md as a v0.1 simplification.
 - **Positive:** No "phantom duplicate" slots on fall-back day. UIs rendering a `09:00–10:00` slot column don't see two slots at `01:30` and have to disambiguate.
 - **Negative:** Up to one hour of bookable real time on each fall-back day is invisible to the engine. Only matters for rules whose window includes the affected wall-clock range — typically `00:00–02:00` local. Most rules (business hours) are unaffected.
 - **Future:** A v0.2 option (or a flag on `findFreeSlots`) can opt into approach 1 — `includeDstOverlap: true` — when callers care about every real-time bookable hour. Easy to add backwards-compatibly because the current behaviour is the strict subset.
+
+## Amendment (2026-11-12)
+
+Since ADR 014, `findFreeSlots` walks one Grid from local midnight in the query's required `timezone`, not a grid inside each rule's window. The two rules above now apply to that Grid in the query `timezone`: a Grid time in a spring-forward gap is dropped, and a repeated fall-back time is used only at its first occurrence. A rule's own timezone only decides its expanded windows, which are compared to Grid candidates by instant. The `disambiguation: 'reject'` construction is replaced by `'earlier'` plus a check that the wall-clock time survived, since `'reject'` also throws on the fall-back overlap.
