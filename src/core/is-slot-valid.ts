@@ -1,9 +1,4 @@
-import {
-  checkBookings,
-  checkInstantRange,
-  checkRules,
-  checkSameResource,
-} from "./checks.js";
+import { checkInstantRange, checkResourceInputs } from "./checks.js";
 import { detectConflictsUnchecked } from "./detect-conflicts.js";
 import { expandRulesUnchecked } from "./expand-rules.js";
 import { checked } from "./result.js";
@@ -56,9 +51,7 @@ export function isSlotValid(
 
   const issues = [
     ...checkInstantRange(slot, ["slot"]),
-    ...checkRules(rules),
-    ...checkSameResource(rules, "rules", resourceId),
-    ...checkBookings(bookings, resourceId),
+    ...checkResourceInputs({ bookings, resourceId, rules }),
   ];
 
   return checked(issues, () => isSlotValidUnchecked(params));

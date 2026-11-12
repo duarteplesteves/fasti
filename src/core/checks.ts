@@ -160,7 +160,7 @@ export function checkRules(rules: readonly AvailabilityRule[]): CheckIssue[] {
   );
 }
 
-export function checkSameResource(
+function checkSameResource(
   items: readonly { readonly resourceId: string }[],
   key: "rules" | "bookings",
   resourceId: string
@@ -184,5 +184,20 @@ export function checkBookings(
   return [
     ...checkSameResource(bookings, "bookings", resourceId),
     ...bookings.flatMap((b, i) => checkInstantRange(b, ["bookings", i])),
+  ];
+}
+
+/** Rules and bookings for one resource: each valid and all on `resourceId`. */
+export function checkResourceInputs(inputs: {
+  readonly resourceId: string;
+  readonly rules: readonly AvailabilityRule[];
+  readonly bookings: readonly Booking[];
+}): CheckIssue[] {
+  const { bookings, resourceId, rules } = inputs;
+
+  return [
+    ...checkRules(rules),
+    ...checkSameResource(rules, "rules", resourceId),
+    ...checkBookings(bookings, resourceId),
   ];
 }
