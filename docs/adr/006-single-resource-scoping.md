@@ -33,3 +33,7 @@ Three options were considered:
 - **Positive:** Caller mistakes (mixing resources in one call) fail loudly at the engine boundary rather than producing subtly-wrong results downstream.
 - **Negative:** Slight syntactic redundancy — the resource is named at the top level and also present on every rule/booking in the input. Acceptable cost for the guarantee.
 - **Future:** When a framework layer introduces multi-resource convenience APIs (`findFirstAvailableSlot(resources[], ...)`), it does so as a separate function that calls the single-resource core multiple times. The core's invariant is preserved.
+
+## Amendment (2026-11-12)
+
+Since ADR 011, a mismatched `resourceId` is no longer thrown. It is reported as an `InvalidParams` issue at that rule's or booking's `resourceId`, alongside every other problem in the params.

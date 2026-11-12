@@ -38,7 +38,7 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **Booking** | An existing reservation that occupies a Resource for a specific time range. | The engine uses `isBlocking` (not `status`) to determine if a booking consumes capacity. The engine knows nothing about booking lifecycle or business consequences. |
 | **Slot** | A candidate time window on the query's Grid, starting in the queried `[from, to)`, that fits inside an expanded AvailabilityRule window and is free of conflicting Bookings. | Represents a bookable window. Returned with start/end zoned in the query `timezone`, so the caller knows local wall-clock time. Its end may pass `to`. Carries `waived`: the relaxed Policies it breaks (e.g. `availability` when listed with `relax: ["availability"]`), empty otherwise; never an Invariant such as overlap. |
 | **Capacity** | The number of simultaneous bookings a Resource can host. | **v0.1 constraint: capacity is always 1.** Multi-booking resources (classes, group events) are out of scope for the core engine. |
-| **Blocking** | Whether a booking prevents another booking from occupying the same slot. | Determined by `isBlocking: boolean` on the Booking primitive. Defaults to `true`. The engine ignores `status` for conflict detection. |
+| **Blocking** | Whether a booking prevents another booking from occupying the same slot. | Determined by `isBlocking: boolean` on the Booking primitive. Required, with no default (ADR 004). The engine ignores `status` for conflict detection. |
 | **Grid / Interval** | The candidate slot starts of a query: local midnight in the query's required `timezone` plus whole steps of the required `interval` (minutes), each day. | One Grid per query, whatever rules made the slots (ADR 014). Independent of `duration` (e.g., a 15-minute grid for 30-minute bookings). A rule starting off the Grid (09:10 on a 15-minute grid) gets its first slot at the next Grid time (09:15). |
 | **Recurrence Expansion** | The process of converting an abstract AvailabilityRule into concrete, calendar-specific time windows. | Performed by `expandRules()` and exposed as a standalone utility. v0.1 query functions accept abstract `AvailabilityRule[]` only — pre-expanded input is not a supported entry point. |
 | **ExpandedWindow** | One concrete application of one `AvailabilityRule` on one calendar date in that rule's timezone. Carries `resourceId`, zoned `start`, and zoned `end`. | Output of `expandRules()`. Not accepted as input to query functions in v0.1. See "Expansion Semantics" below for properties. |
@@ -97,7 +97,7 @@ Properties of the output:
 1. **A slot is free iff:**
    - Its start is a Grid time and falls in the queried `[from, to)`.
    - Its entire duration (start to start + `duration`, by instant) fits within one expanded AvailabilityRule window for the Resource, in any rule timezone.
-   - It does not overlap with any Booking where `isBlocking === true`.
+   - It does not overlap with any Booking where `isBlocking === true`, other than the one named by `excludeBookingId`.
 
 2. **Capacity is always 1 in v0.1.**
    Two bookings for the same Resource at overlapping times is always a conflict.
