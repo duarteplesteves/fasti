@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "better-schedule",
+      "name": "@fastijs/scheduler",
       "devDependencies": {
         "@arethetypeswrong/cli": "^0.18.5",
         "@fast-check/vitest": "^0.5.0",
