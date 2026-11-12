@@ -72,11 +72,9 @@ const slots = findFreeSlots({
   bookings,
   duration: 30,
   from: Temporal.Instant.from("2026-06-01T00:00:00Z"),
-  to: Temporal.Instant.from("2026-06-30T23:59:59Z"),
-  options: {
-    interval: 15, // candidate cadence in minutes (defaults to `duration`)
-    allowEndOverflow: false, // drop slots whose end exceeds the window (default)
-  },
+  to: Temporal.Instant.from("2026-07-01T00:00:00Z"), // slots start in [from, to)
+  interval: 15, // grid step in minutes, from local midnight in `timezone`
+  timezone: "Europe/Lisbon", // anchors the grid and zones the returned slots
 });
 ```
 

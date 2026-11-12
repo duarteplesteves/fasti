@@ -6,8 +6,10 @@ import {
   arbBooking,
   arbDateRange,
   arbDuration,
+  arbInterval,
   arbResourceId,
   arbRulesForResource,
+  arbTimezone,
 } from "../test-utils/arbitraries.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
@@ -22,11 +24,13 @@ describe("composition", () => {
       arbBooking(),
       arbDuration(),
       arbDateRange(),
+      arbInterval(),
+      arbTimezone(),
     ],
     propConfig
   )(
     "every slot from findFreeSlots passes isSlotValid",
-    (resourceId, rules, booking, duration, range) => {
+    (resourceId, rules, booking, duration, range, interval, timezone) => {
       const finalRules = rules.map((r) => ({ ...r, resourceId }));
       const finalBooking = { ...booking, resourceId };
 
@@ -35,9 +39,10 @@ describe("composition", () => {
           bookings: [finalBooking],
           duration,
           from: range.from,
-          options: { interval: duration },
+          interval,
           resourceId,
           rules: finalRules,
+          timezone,
           to: range.to,
         })
       );

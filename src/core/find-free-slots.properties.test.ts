@@ -1,5 +1,6 @@
 /* eslint-disable vitest/no-standalone-expect */
 import { test } from "@fast-check/vitest";
+import { integer } from "fast-check";
 import { describe, expect } from "vitest";
 
 import {
@@ -7,11 +8,58 @@ import {
   arbBooking,
   arbDateRange,
   arbDuration,
+  arbInterval,
   arbResourceId,
+  arbTimezone,
 } from "../test-utils/arbitraries.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
 import { findFreeSlots } from "./find-free-slots.js";
+import type { AvailabilityRule, Booking } from "./types.js";
+
+/** Slots for `rule` and `booking` on one grid, all on the rule's resource. */
+function slotsIn(
+  grid: {
+    rule: AvailabilityRule;
+    booking: Booking;
+    duration: number;
+    interval: number;
+    timezone: string;
+  },
+  from: Temporal.Instant,
+  to: Temporal.Instant
+) {
+  const { booking, duration, interval, rule, timezone } = grid;
+
+  return unwrap(
+    findFreeSlots({
+      bookings: [{ ...booking, resourceId: rule.resourceId }],
+      duration,
+      from,
+      interval,
+      resourceId: rule.resourceId,
+      rules: [rule],
+      timezone,
+      to,
+    })
+  );
+}
+
+const arbGrid = arbAvailabilityRule().chain((rule) =>
+  arbBooking().chain((booking) =>
+    arbDuration().chain((duration) =>
+      arbInterval().chain((interval) =>
+        arbTimezone().map((timezone) => ({
+          booking,
+          duration,
+          interval,
+          rule,
+          timezone,
+        }))
+      )
+    )
+  )
+);
 
 describe(`${findFreeSlots.name} (property)`, () => {
   test.prop(
@@ -36,9 +84,10 @@ describe(`${findFreeSlots.name} (property)`, () => {
           bookings: [finalB1, finalB2],
           duration,
           from: range.from,
-          options: { interval: duration },
+          interval: duration,
           resourceId,
           rules: [finalRule],
+          timezone: "Europe/Lisbon",
           to: range.to,
         })
       );
@@ -87,9 +136,10 @@ describe(`${findFreeSlots.name} (property)`, () => {
           bookings: [],
           duration,
           from: range.from,
-          options: { interval: duration },
+          interval: duration,
           resourceId,
           rules: [finalRule],
+          timezone: "Europe/Lisbon",
           to: range.to,
         })
       );
@@ -99,14 +149,74 @@ describe(`${findFreeSlots.name} (property)`, () => {
           bookings: [finalNonBlocking],
           duration,
           from: range.from,
-          options: { interval: duration },
+          interval: duration,
           resourceId,
           rules: [finalRule],
+          timezone: "Europe/Lisbon",
           to: range.to,
         })
       );
 
       expect(slotsWith.length).toBeGreaterThanOrEqual(slotsWithout.length);
+    }
+  );
+
+  test.prop([arbGrid, arbDateRange()], propConfig)(
+    "every slot starts in [from, to)",
+    (grid, { from, to }) => {
+      for (const slot of slotsIn(grid, from, to)) {
+        expect(
+          Temporal.Instant.compare(slot.start.toInstant(), from)
+        ).toBeGreaterThanOrEqual(0);
+        expect(
+          Temporal.Instant.compare(slot.start.toInstant(), to)
+        ).toBeLessThan(0);
+      }
+    }
+  );
+
+  test.prop([arbGrid, arbDateRange()], propConfig)(
+    "every slot starts a whole number of intervals after local midnight",
+    (grid, { from, to }) => {
+      for (const { start } of slotsIn(grid, from, to)) {
+        expect(start.timeZoneId).toBe(grid.timezone);
+        expect([
+          start.second,
+          start.millisecond,
+          start.microsecond,
+          start.nanosecond,
+        ]).toStrictEqual([0, 0, 0, 0]);
+        expect((start.hour * 60 + start.minute) % grid.interval).toBe(0);
+      }
+    }
+  );
+
+  test.prop(
+    [
+      arbGrid,
+      arbDateRange()
+        .filter(
+          ({ from, to }) => to.epochMilliseconds - from.epochMilliseconds >= 2
+        )
+        .chain(({ from, to }) =>
+          integer({
+            max: to.epochMilliseconds - from.epochMilliseconds - 1,
+            min: 1,
+          }).map((offset) => ({
+            from,
+            mid: from.add({ milliseconds: offset }),
+            to,
+          }))
+        ),
+    ],
+    propConfig
+  )(
+    "[a, c) returns the slots of [a, b) followed by those of [b, c)",
+    (grid, { from, mid, to }) => {
+      expect(slotsIn(grid, from, to)).toStrictEqual([
+        ...slotsIn(grid, from, mid),
+        ...slotsIn(grid, mid, to),
+      ]);
     }
   );
 });
