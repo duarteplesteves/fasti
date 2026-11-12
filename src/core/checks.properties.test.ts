@@ -4,7 +4,7 @@ import { describe, expect } from "vitest";
 
 import { arbAvailabilityRule } from "../test-utils/arbitraries.js";
 import { propConfig } from "../test-utils/prop-config.js";
-import { checkRule } from "./check-rule.js";
+import { checkRule } from "./checks.js";
 
 describe("checkRule properties", () => {
   test.prop([arbAvailabilityRule()], propConfig)(

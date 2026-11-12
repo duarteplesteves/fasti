@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { issuePaths } from "../test-utils/results.js";
-import { checkRule } from "./check-rule.js";
+import { checkRule } from "./checks.js";
 import type { AvailabilityRule } from "./types.js";
 
 const valid: AvailabilityRule = {

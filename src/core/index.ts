@@ -1,4 +1,4 @@
-export { checkRule } from "./check-rule.js";
+export { checkRule } from "./checks.js";
 
 export { detectConflicts } from "./detect-conflicts.js";
 

@@ -1,5 +1,4 @@
-import { checkOrder } from "./check-rule.js";
-import { checkRules } from "./checks.js";
+import { checkOrder, checkRules } from "./checks.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";

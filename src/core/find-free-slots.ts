@@ -1,6 +1,6 @@
-import { checkOrder } from "./check-rule.js";
 import {
   checkBookings,
+  checkOrder,
   checkPositiveInteger,
   checkRules,
   checkSameResource,
