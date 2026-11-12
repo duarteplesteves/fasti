@@ -22,6 +22,7 @@ export type {
   AvailabilityRule,
   AvailabilityViolation,
   Booking,
+  BookingId,
   ExpandedWindow,
   Recurrence,
   Slot,

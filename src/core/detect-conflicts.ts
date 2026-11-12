@@ -3,18 +3,18 @@ import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { Booking } from "./types.js";
 
-export interface DetectConflictsParams {
+export interface DetectConflictsParams<Id extends string = string> {
   resourceId: string;
   candidate: { start: Temporal.Instant; end: Temporal.Instant };
-  bookings: readonly Booking[];
+  bookings: readonly Booking<Id>[];
   /** Leave this Booking out of the check, e.g. the one being rescheduled. */
-  excludeBookingId?: string;
+  excludeBookingId?: NoInfer<Id>;
 }
 
 /** `detectConflicts` without checks, for Core functions that already checked their params. */
-export function detectConflictsUnchecked(
-  params: Omit<DetectConflictsParams, "resourceId">
-): Booking[] {
+export function detectConflictsUnchecked<Id extends string>(
+  params: Omit<DetectConflictsParams<Id>, "resourceId">
+): Booking<Id>[] {
   const { bookings, candidate, excludeBookingId } = params;
 
   return bookings
@@ -35,9 +35,9 @@ export function detectConflictsUnchecked(
     .toSorted((a, b) => Temporal.Instant.compare(a.start, b.start));
 }
 
-export function detectConflicts(
-  params: DetectConflictsParams
-): Result<Booking[], InvalidParams> {
+export function detectConflicts<Id extends string = string>(
+  params: DetectConflictsParams<Id>
+): Result<Booking<Id>[], InvalidParams> {
   const issues = [
     ...checkInstantRange(params.candidate, ["candidate"]),
     ...checkBookings(params.bookings, params.resourceId),

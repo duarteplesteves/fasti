@@ -5,13 +5,13 @@ import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
-export interface IsSlotValidParams {
+export interface IsSlotValidParams<Id extends string = string> {
   resourceId: string;
   slot: { start: Temporal.Instant; end: Temporal.Instant };
   rules: readonly AvailabilityRule[];
-  bookings: readonly Booking[];
+  bookings: readonly Booking<Id>[];
   /** Leave this Booking out of the overlap check, e.g. the one being rescheduled. */
-  excludeBookingId?: string;
+  excludeBookingId?: NoInfer<Id>;
 }
 
 function isSlotValidUnchecked(params: IsSlotValidParams): boolean {
@@ -46,8 +46,8 @@ function isSlotValidUnchecked(params: IsSlotValidParams): boolean {
   return detectConflictsUnchecked({ ...params, candidate: slot }).length === 0;
 }
 
-export function isSlotValid(
-  params: IsSlotValidParams
+export function isSlotValid<Id extends string = string>(
+  params: IsSlotValidParams<Id>
 ): Result<boolean, InvalidParams> {
   const { bookings, resourceId, rules, slot } = params;
 
