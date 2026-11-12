@@ -20,6 +20,7 @@ export type { InvalidParams, Issue, Result } from "./result.js";
 
 export type {
   AvailabilityRule,
+  AvailabilityViolation,
   Booking,
   ExpandedWindow,
   Recurrence,

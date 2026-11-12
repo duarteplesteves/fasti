@@ -48,14 +48,30 @@ export interface Booking {
   status?: string;
 }
 
+/** The slot lies outside the Resource's availability (ADR 014). */
+export interface AvailabilityViolation {
+  policy: "availability";
+  detail: Readonly<Record<string, never>>;
+}
+
+/** Each Policy the Core knows, by name, with the violation it reports. */
+export interface CoreViolations {
+  availability: AvailabilityViolation;
+}
+
+/** A Policy name the Core knows, which a caller may relax. */
+export type CorePolicy = keyof CoreViolations;
+
 /**
  * A candidate time slot returned by the engine.
  * Includes zoned start/end so the caller knows local wall-clock time.
+ * `waived` lists the relaxed Policies this slot breaks; empty for a slot that breaks none.
  */
-export interface Slot {
+export interface Slot<W = never> {
   start: Temporal.ZonedDateTime;
   end: Temporal.ZonedDateTime;
   resourceId: string;
+  waived: readonly W[];
 }
 
 /**
