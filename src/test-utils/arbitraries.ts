@@ -9,6 +9,7 @@ import {
   record,
   string,
   tuple,
+  uniqueArray,
 } from "fast-check";
 import type { Arbitrary } from "fast-check";
 
@@ -231,6 +232,40 @@ export function arbBooking(opts?: {
       });
     })
     .filter((b): b is Booking => b !== null);
+}
+
+/** A booking on `resourceId` starting inside `range`, lasting up to 4 hours. */
+export function arbBookingIn(
+  range: { from: Temporal.Instant; to: Temporal.Instant },
+  resourceId: string
+): Arbitrary<Booking> {
+  return record({
+    durationMs: integer({ max: 4 * 60 * 60 * 1000, min: 1 }),
+    id: constantFrom("b1", "b2", "b3", "b4", "b5"),
+    isBlocking: boolean(),
+    start: arbInstantInRange(range.from, range.to),
+  }).map(({ durationMs, id, isBlocking, start }) => ({
+    end: start.add({ milliseconds: durationMs }),
+    id,
+    isBlocking,
+    resourceId,
+    start,
+  }));
+}
+
+/** Bookings with distinct ids inside `range`, and an id to exclude: one of theirs, or one matching none. */
+export function arbBookingsToExclude(
+  range: { from: Temporal.Instant; to: Temporal.Instant },
+  resourceId: string
+): Arbitrary<{ bookings: Booking[]; excludeBookingId: string }> {
+  return uniqueArray(arbBookingIn(range, resourceId), {
+    maxLength: 5,
+    selector: (b) => b.id,
+  }).chain((bookings) =>
+    constantFrom(...bookings.map((b) => b.id), "missing").map(
+      (excludeBookingId) => ({ bookings, excludeBookingId })
+    )
+  );
 }
 
 export function arbTimeRange(): Arbitrary<{

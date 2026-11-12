@@ -16,6 +16,8 @@ export interface FindFreeSlotsParams {
   duration: number;
   from: Temporal.Instant;
   to: Temporal.Instant;
+  /** Leave this Booking out of the overlap check, e.g. the one being rescheduled. */
+  excludeBookingId?: string;
   options?: {
     /** Candidate cadence in minutes. Defaults to `duration`. */
     interval?: number;
@@ -25,7 +27,7 @@ export interface FindFreeSlotsParams {
 }
 
 function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
-  const { bookings, duration, from, options, resourceId, rules, to } = params;
+  const { duration, from, options, resourceId, rules, to } = params;
   const interval = options?.interval ?? duration;
   const allowEndOverflow = options?.allowEndOverflow ?? false;
 
@@ -65,7 +67,7 @@ function findFreeSlotsUnchecked(params: FindFreeSlotsParams): Slot[] {
         seen.add(key);
 
         const conflicts = detectConflictsUnchecked({
-          bookings,
+          ...params,
           candidate: { end: endInstant, start: startInstant },
         });
 
