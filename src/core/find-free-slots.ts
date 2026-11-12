@@ -19,15 +19,16 @@ import type {
 
 export interface FindFreeSlotsParams<
   R extends readonly CorePolicy[] = readonly CorePolicy[],
+  Id extends string = string,
 > {
   resourceId: string;
   rules: readonly AvailabilityRule[];
-  bookings: readonly Booking[];
+  bookings: readonly Booking<Id>[];
   duration: number;
   from: Temporal.Instant;
   to: Temporal.Instant;
   /** Leave this Booking out of the overlap check, e.g. the one being rescheduled. */
-  excludeBookingId?: string;
+  excludeBookingId?: NoInfer<Id>;
   /** Grid step in whole minutes, counted from local midnight in `timezone`. */
   interval: number;
   /** IANA timezone whose local midnight anchors the grid; slots are zoned in it. */
@@ -117,8 +118,11 @@ function findFreeSlotsUnchecked(
   return slots;
 }
 
-export function findFreeSlots<const R extends readonly CorePolicy[] = []>(
-  params: FindFreeSlotsParams<R>
+export function findFreeSlots<
+  const R extends readonly CorePolicy[] = [],
+  Id extends string = string,
+>(
+  params: FindFreeSlotsParams<R, Id>
 ): Result<Slot<CoreViolations[R[number]]>[], InvalidParams> {
   const {
     bookings,

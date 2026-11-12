@@ -37,8 +37,11 @@ export interface AvailabilityRule {
  * An existing booking that occupies a resource.
  * The engine uses `isBlocking` to determine if the booking consumes the slot.
  */
-export interface Booking {
-  id: string;
+/** A Booking id the Framework mints. A plain TypeScript brand on `string`. */
+export type BookingId = string & { readonly __brand: "BookingId" };
+
+export interface Booking<Id extends string = string> {
+  id: Id;
   resourceId: string;
   start: Temporal.Instant;
   end: Temporal.Instant;

@@ -7,11 +7,22 @@ import type {
   AvailabilityRule,
   AvailabilityViolation,
   Booking,
+  BookingId,
   Issue,
   Recurrence,
   Slot,
   WeeklyRecurrence,
 } from "./index.js";
+
+function booking<Id extends string>(id: Id): Booking<Id> {
+  return {
+    end: Temporal.Instant.from("2026-05-12T10:00:00Z"),
+    id,
+    isBlocking: true,
+    resourceId: "doc-1",
+    start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
+  };
+}
 
 describe("public API surface", () => {
   it("composes withBlockingFlag → findFreeSlots → isSlotValid round-trip via the fasti/core entry", () => {
@@ -123,6 +134,56 @@ describe("export surface", () => {
 
     // @ts-expect-error only Policies the Core knows can be relaxed
     core.findFreeSlots({ ...params, relax: ["notice"] });
+  });
+
+  it("keeps Booking id types through the Core; resourceId stays a plain string", () => {
+    const candidate = {
+      end: Temporal.Instant.from("2026-05-12T10:00:00Z"),
+      start: Temporal.Instant.from("2026-05-12T09:00:00Z"),
+    };
+
+    // SAFETY: test fixture; the Framework mints real BookingIds.
+    const branded = [booking("b1" as BookingId)];
+
+    expectTypeOf(
+      unwrap(
+        core.detectConflicts({
+          bookings: branded,
+          candidate,
+          resourceId: "doc-1",
+        })
+      )
+    ).toEqualTypeOf<Booking<BookingId>[]>();
+
+    type MyId = string & { readonly __mine: true };
+
+    // SAFETY: test fixture standing in for a developer-minted id.
+    const mine = [booking("m1" as MyId)];
+
+    expectTypeOf(
+      unwrap(
+        core.detectConflicts({
+          bookings: mine,
+          candidate,
+          resourceId: "doc-1",
+        })
+      )
+    ).toEqualTypeOf<Booking<MyId>[]>();
+
+    expectTypeOf(
+      unwrap(core.withBlockingFlag(branded, { default: "blocking" }))
+    ).toEqualTypeOf<Booking<BookingId>[]>();
+
+    core.detectConflicts({
+      bookings: branded,
+      candidate,
+      // @ts-expect-error a plain string is not a BookingId
+      excludeBookingId: "b1",
+      resourceId: "doc-1",
+    });
+
+    expectTypeOf<Booking["id"]>().toEqualTypeOf<string>();
+    expectTypeOf<Booking<BookingId>["resourceId"]>().toEqualTypeOf<string>();
   });
 
   it("Issue matches the Standard Schema issue structurally", () => {

@@ -16,14 +16,14 @@ import type { Booking } from "./types.js";
  *   default: "blocking",
  * });
  */
-export function withBlockingFlag(
-  bookings: readonly Omit<Booking, "isBlocking">[],
+export function withBlockingFlag<Id extends string = string>(
+  bookings: readonly Omit<Booking<Id>, "isBlocking">[],
   mapping: {
     blocking?: readonly string[];
     nonBlocking?: readonly string[];
     default: "blocking" | "nonBlocking";
   }
-): Result<Booking[], InvalidParams> {
+): Result<Booking<Id>[], InvalidParams> {
   const blockingSet = new Set(mapping.blocking);
   const nonBlockingSet = new Set(mapping.nonBlocking);
   const defaultIsBlocking = mapping.default === "blocking";
