@@ -100,7 +100,7 @@ export function arbDaysOfWeek(): Arbitrary<number[]> {
     const days: number[] = [];
 
     for (let i = 0; i < 7; i += 1) {
-      if (flags[i]) {
+      if (flags[i] === true) {
         days.push(i + 1);
       }
     }
@@ -150,7 +150,7 @@ export function arbAvailabilityRule(opts?: {
           const timezone = opts?.timezone ?? _timezone;
 
           const sortedEffective = [_effectiveFrom, _effectiveTo].toSorted(
-            Temporal.PlainDate.compare
+            (a, b) => Temporal.PlainDate.compare(a, b)
           );
 
           const [earlier, later] = sortedEffective;

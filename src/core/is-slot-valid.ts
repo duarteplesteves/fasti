@@ -5,6 +5,7 @@ import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
+/** One proposed `slot` on one Resource, checked against its rules and Bookings. */
 export interface IsSlotValidParams<Id extends string = string> {
   resourceId: string;
   slot: { start: Temporal.Instant; end: Temporal.Instant };
@@ -14,6 +15,7 @@ export interface IsSlotValidParams<Id extends string = string> {
   excludeBookingId?: NoInfer<Id>;
 }
 
+/** Whether `slot` fits inside an availability window and overlaps no blocking Booking. */
 export function isSlotValid<Id extends string = string>(
   params: IsSlotValidParams<Id>
 ): Result<boolean, InvalidParams> {

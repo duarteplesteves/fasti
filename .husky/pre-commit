@@ -4,4 +4,4 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qvE '(\.md$|^docs/)
 fi
 
 # ultracite
-bun x lint-staged
+bunx lint-staged

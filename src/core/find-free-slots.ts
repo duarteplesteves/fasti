@@ -16,6 +16,7 @@ import type {
   Slot,
 } from "./types.js";
 
+/** A search for `duration`-minute Slots on one Resource, starting on the Grid in `[from, to)`. */
 export interface FindFreeSlotsParams<
   R extends readonly CorePolicy[] = readonly CorePolicy[],
   Id extends string = string,
@@ -45,7 +46,7 @@ const outsideAvailability: AvailabilityViolation = {
  * The grid starts in `[from, to)`: local midnight in `timezone` plus whole `interval`s (ADR 014).
  * A time in a DST gap is dropped; a repeated time is its first occurrence (ADR 005).
  *
- * @yields {Temporal.ZonedDateTime} Each grid start, in order, zoned in `timezone`.
+ * @returns Each grid start, in order, zoned in `timezone`.
  */
 function* gridStarts(
   from: Temporal.Instant,
@@ -125,6 +126,10 @@ function findFreeSlotsUnchecked(
   return slots;
 }
 
+/**
+ * The Grid starts whose slot overlaps no blocking Booking and fits availability.
+ * With `relax: ["availability"]`, slots outside it are kept and marked `waived`.
+ */
 export function findFreeSlots<
   const R extends readonly CorePolicy[] = [],
   Id extends string = string,

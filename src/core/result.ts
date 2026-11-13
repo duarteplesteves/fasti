@@ -1,3 +1,4 @@
+/** An `ok` value, or an expected failure as `error`; Core functions return this instead of throwing. */
 export type Result<T, E> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: E };
