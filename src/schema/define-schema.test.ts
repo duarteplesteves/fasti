@@ -54,6 +54,18 @@ describe(defineSchema, () => {
     ).toThrow(/stored value "cancelled"/u);
   });
 
+  it("names a Developer Field called `constructor` after itself", () => {
+    const schema = defineSchema({
+      booking: {
+        fields: { constructor: { required: true, type: column.text() } },
+      },
+      // @ts-expect-error TS sees the inherited Object#constructor; JS callers still reach this
+      names: { columns: { booking: { start: "starts_at" } } },
+    });
+
+    expect(schema.names.columns.booking.constructor).toBe("constructor");
+  });
+
   it("names Developer Field columns logically unless renamed", () => {
     const schema = defineSchema({
       booking: {

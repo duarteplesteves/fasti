@@ -114,7 +114,11 @@ function physicalNames<K extends PropertyKey>(
 ): Record<K, string> {
   // SAFETY: the entries cover every key in `logical`, which is all of K.
   return Object.fromEntries(
-    logical.map((name) => [name, renamed?.[name] ?? String(name)])
+    logical.map((name) => [
+      name,
+      (renamed && Object.hasOwn(renamed, name) ? renamed[name] : undefined) ??
+        String(name),
+    ])
   ) as Record<K, string>;
 }
 
