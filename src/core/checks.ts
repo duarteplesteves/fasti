@@ -2,6 +2,7 @@ import { checkRecurrence } from "./recurrence.js";
 import type { Issue } from "./result.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
+/** Where an issue sits in the params, e.g. `["rules", 0, "end"]`. */
 export type Path = readonly (string | number)[];
 
 /** An `Issue` whose path is always set: every check knows where its problem is. */
@@ -69,6 +70,7 @@ export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
   return issues;
 }
 
+/** `end` must be strictly after `start`. */
 export function checkInstantRange(
   range: { readonly start: Temporal.Instant; readonly end: Temporal.Instant },
   path: Path
@@ -84,12 +86,14 @@ export function checkInstantRange(
 }
 
 // shortcut: no upper bound, so a huge value can still overflow Temporal's range and throw; cap it if #29/#31 settle a limit.
+/** A whole number of minutes, at least 1. */
 export function checkPositiveInteger(n: number, path: Path): CheckIssue[] {
   return Number.isInteger(n) && n >= 1
     ? []
     : [{ message: `Must be a positive integer (minutes), got ${n}.`, path }];
 }
 
+/** Every rule's issues, with paths under `rules[i]`. */
 export function checkRules(rules: readonly AvailabilityRule[]): CheckIssue[] {
   return rules.flatMap((rule, i) =>
     checkRule(rule).map((issue) => ({
@@ -116,6 +120,7 @@ function checkSameResource(
   );
 }
 
+/** Each booking is on `resourceId` and ends after it starts. */
 export function checkBookings(
   bookings: readonly Booking[],
   resourceId: string

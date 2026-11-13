@@ -3,6 +3,7 @@ import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { Booking, InstantRange } from "./types.js";
 
+/** A `candidate` range on one Resource, checked against its Bookings. */
 export interface DetectConflictsParams<Id extends string = string> {
   resourceId: string;
   candidate: { start: Temporal.Instant; end: Temporal.Instant };
@@ -35,6 +36,7 @@ export function overlapsBlockingBooking<Id extends string>(
   return bookings.some((b) => blocks(b, range, excludeBookingId));
 }
 
+/** The blocking Bookings that overlap `candidate`, sorted by start. */
 export function detectConflicts<Id extends string = string>(
   params: DetectConflictsParams<Id>
 ): Result<Booking<Id>[], InvalidParams> {

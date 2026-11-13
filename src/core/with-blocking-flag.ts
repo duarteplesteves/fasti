@@ -11,11 +11,13 @@ import type { Booking } from "./types.js";
  * listed in both is reported as invalid.
  *
  * @example
+ * ```ts
  * const result = withBlockingFlag(rawBookings, {
  *   blocking: ["CONFIRMED", "PENDING"],
  *   nonBlocking: ["CANCELLED", "MISSED"],
  *   default: "blocking",
  * });
+ * ```
  */
 export function withBlockingFlag<Id extends string = string>(
   bookings: readonly Omit<Booking<Id>, "isBlocking">[],

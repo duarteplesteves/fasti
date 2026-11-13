@@ -4,6 +4,7 @@ import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";
 
+/** Rules to expand over every date in `[from, to]`, both ends included. */
 export interface ExpandRulesParams {
   rules: readonly AvailabilityRule[];
   from: Temporal.PlainDate;
@@ -31,7 +32,7 @@ export function expandRulesUnchecked(
         !!rule.effectiveTo &&
         Temporal.PlainDate.compare(date, rule.effectiveTo) > 0;
 
-      const isException = rule.exceptions?.some((e) => e.equals(date));
+      const isException = rule.exceptions?.some((e) => e.equals(date)) ?? false;
 
       if (
         !beforeEffective &&
@@ -69,6 +70,10 @@ export function expandRulesUnchecked(
   return windows;
 }
 
+/**
+ * One ExpandedWindow per rule per matching date in `[from, to]`, in each rule's
+ * timezone: unmerged, multi-resource, sorted by start then `resourceId`.
+ */
 export function expandRules(
   params: ExpandRulesParams
 ): Result<ExpandedWindow[], InvalidParams> {
