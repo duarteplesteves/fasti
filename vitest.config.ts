@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+const conformance = "src/**/conformance.test.ts";
+
 export default defineConfig({
   test: {
     coverage: {
@@ -8,7 +10,17 @@ export default defineConfig({
       reporter: ["text", "json", "html"],
     },
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    projects: [
+      {
+        extends: true,
+        test: {
+          exclude: [conformance],
+          include: ["src/**/*.test.ts"],
+          name: "unit",
+        },
+      },
+      { extends: true, test: { include: [conformance], name: "conformance" } },
+    ],
     testTimeout: process.env.CI === undefined ? 60_000 : 120_000,
   },
 });

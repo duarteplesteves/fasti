@@ -21,6 +21,12 @@
         "ultracite": "8.2.0",
         "vitest": "^5.1.0",
       },
+      "peerDependencies": {
+        "vitest": "^5.1.0",
+      },
+      "optionalPeers": [
+        "vitest",
+      ],
     },
   },
   "packages": {
