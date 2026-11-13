@@ -32,3 +32,11 @@ We adopt the hybrid model:
 - **Positive:** Columns and types cannot drift apart, because both come from one `defineSchema` value.
 - **Negative:** Every schema change between versions must ship as a builder change or a versioned migration, flagged in the changelog.
 - **Negative:** Without a runtime check, a schema mismatch is only found on the first call that touches it.
+
+## Amendment (2026-11-13): the Resource foreign key moves to the ORM's schema builder
+
+`references` leaves `defineSchema`. `resource` keeps only `idType`, which sets the `resourceId` column type and its TypeScript type. A developer who wants the database to reject Bookings and rules for unknown Resources declares the link in their ORM's own schema builder, pointing at their real column, for example `bookingTable(schema, { references: () => staff.id })` and the same on `availabilityRuleTable`. The builder still adds `ON DELETE RESTRICT`.
+
+Why: an ORM-free `defineSchema` can only name the target as strings, which get no autocomplete and no type check, and Drizzle can only build a foreign key from a column object. The builder argument is checked against the developer's own tables and against `idType`, follows a renamed table, and is the form ORM users already write. Nothing outside the builders reads the link: the Framework reports a broken link as an `AdapterError` either way, the in-memory Adapter has no foreign keys, and custom Adapters manage their own tables.
+
+Cost: the link is declared per ORM (Prisma uses its own relation syntax) and, in Drizzle, once per table builder.
