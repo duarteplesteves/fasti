@@ -6,6 +6,26 @@ import vitest from "ultracite/oxlint/vitest";
 
 const jsPlugins = selectJsPlugins(["jsdoc-js", "tsdoc"]);
 
+const noVitest = {
+  group: ["vitest", "vitest/*"],
+  message: "Only testing and test files import vitest (ADR 012).",
+};
+
+const noDrizzle = {
+  group: ["drizzle-orm", "drizzle-orm/*"],
+  message: "Only drizzle/pg imports drizzle-orm (ADR 012).",
+};
+
+const noEffect = {
+  group: ["effect", "effect/*"],
+  message: "Only the Effect layer imports effect (ADR 012).",
+};
+
+/** Builds a no-restricted-imports rule from pattern groups. */
+function restrict(patterns: object[]) {
+  return { "no-restricted-imports": ["error", { patterns }] };
+}
+
 export default defineConfig({
   env: core.env,
   extends: [antiSlop, core, vitest, jsPlugins],
@@ -18,10 +38,28 @@ export default defineConfig({
       files: ["**/*.ts"],
       rules: { "jsdoc/require-param": "off", "jsdoc/require-returns": "off" },
     },
+    // ADR 012 import boundaries. The last matching override wins for each file.
+    { files: ["src/**"], rules: restrict([noVitest, noDrizzle]) },
+    {
+      files: ["src/{schema,adapter,memory,drizzle,testing}/**"],
+      rules: restrict([noVitest, noDrizzle, noEffect]),
+    },
+    { files: ["src/drizzle/pg/**"], rules: restrict([noVitest, noEffect]) },
+    { files: ["src/testing/**"], rules: restrict([noDrizzle, noEffect]) },
+    {
+      files: ["src/core/**"],
+      rules: restrict([
+        {
+          group: ["*", "!./*"],
+          message: "The Core imports only from itself (ADR 012).",
+        },
+      ]),
+    },
     {
       files: ["**/*.test.ts", "src/test-utils/**"],
       rules: {
         "jsdoc-js/require-jsdoc": "off",
+        "no-restricted-imports": "off",
         "typescript/no-unsafe-type-assertion": "off",
       },
     },
