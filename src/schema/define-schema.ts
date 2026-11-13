@@ -38,8 +38,8 @@ export type BaseStatus = "booked" | "cancelled";
 /**
  * Input to {@link defineSchema}. Every option has a default.
  *
- * @template R - The Resource id column.
- * @template F - The Developer Fields.
+ * @typeParam R - The Resource id column.
+ * @typeParam F - The Developer Fields.
  */
 export interface DefineSchemaParams<
   R extends ResourceIdColumn,
@@ -49,9 +49,9 @@ export interface DefineSchemaParams<
   readonly resource?: { readonly idType: R };
   /** Developer Fields on the Booking; a name that collides with a Booking column is a type error. */
   readonly booking?: {
-    readonly fields?: F & { readonly [K in BookingColumn]?: never };
+    readonly fields?: F & Partial<Readonly<Record<BookingColumn, never>>>;
   };
-  /** Physical names; each defaults to its logical name. */
+  /** Physical names; each defaults to its logical name, and names of one kind must be distinct. */
   readonly names?: {
     readonly tables?: {
       readonly booking?: string;
@@ -65,7 +65,7 @@ export interface DefineSchemaParams<
         Record<AvailabilityRuleColumn, string>
       >;
     };
-    /** Stored Status values; each must be distinct. */
+    /** Stored Status values. */
     readonly statuses?: Partial<Record<BaseStatus, string>>;
   };
 }
@@ -73,9 +73,9 @@ export interface DefineSchemaParams<
 /**
  * A resolved schema: every default filled in, so nothing downstream handles a missing option.
  *
- * @template R - The Resource id column.
- * @template F - The Developer Fields.
- * @template St - The Statuses.
+ * @typeParam R - The Resource id column.
+ * @typeParam F - The Developer Fields.
+ * @typeParam St - The Statuses.
  */
 export interface Schema<
   R extends ResourceIdColumn = ResourceIdColumn,
@@ -87,9 +87,9 @@ export interface Schema<
   /** The Developer Fields. */
   readonly booking: { readonly fields: F };
   /** Each Status: whether it blocks the slot, and its stored value. */
-  readonly statuses: {
-    readonly [K in St]: { readonly blocking: boolean; readonly stored: string };
-  };
+  readonly statuses: Readonly<
+    Record<St, { readonly blocking: boolean; readonly stored: string }>
+  >;
   /** Physical names, keyed by logical name. */
   readonly names: {
     readonly tables: {
@@ -113,6 +113,7 @@ function physicalNames<K extends PropertyKey>(
   renamed: Partial<Record<K, string>> | undefined
 ): Record<K, string> {
   // SAFETY: the entries cover every key in `logical`, which is all of K.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries can't keep the key type.
   return Object.fromEntries(
     logical.map((name) => [
       name,
@@ -122,46 +123,69 @@ function physicalNames<K extends PropertyKey>(
   ) as Record<K, string>;
 }
 
+/** Throw when two logical names share one physical name: a definition-time defect. */
+function assertDistinct(
+  kind: string,
+  names: Readonly<Record<string, string>>
+): void {
+  const seen = new Map<string, string>();
+
+  for (const [logical, physical] of Object.entries(names)) {
+    const other = seen.get(physical);
+
+    if (other !== undefined) {
+      throw new Error(
+        `defineSchema: "${other}" and "${logical}" share the ${kind} "${physical}"; each must have its own.`
+      );
+    }
+
+    seen.set(physical, logical);
+  }
+}
+
 /**
  * Resolve a schema definition: physical names, the Resource id type, Developer Fields and Statuses.
  *
- * @template R - The Resource id column; defaults to `column.text()`.
- * @template F - The Developer Fields.
- * @param params - The schema definition.
- * @returns The resolved schema.
- * @throws {Error} When two Statuses share a stored value: a definition-time defect.
+ * @typeParam R - The Resource id column; defaults to `column.text()`.
+ * @typeParam F - The Developer Fields.
+ * @throws When two Statuses share a stored value (I6), or two columns of one table, or the two tables, share a physical name.
  */
 export function defineSchema<
   R extends ResourceIdColumn = Column<"text", string>,
+  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no Developer Fields" is exactly `{}`.
   F extends Fields = Record<never, never>,
 >(params: DefineSchemaParams<R, F>): Schema<R, F> {
   const { names } = params;
   // SAFETY: R falls back to its default, Column<"text", string>, exactly when `resource` is absent.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the default can't be tied to absence in the signature.
   const idType = (params.resource?.idType ?? column.text()) as R;
   // SAFETY: F falls back to its default, no fields, exactly when `fields` is absent.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above, for F.
   const fields = (params.booking?.fields ?? {}) as F;
   const stored = physicalNames(["booked", "cancelled"], names?.statuses);
 
-  if (stored.booked === stored.cancelled) {
-    throw new Error(
-      `defineSchema: Statuses "booked" and "cancelled" share the stored value "${stored.booked}"; each stored value must belong to one Status.`
-    );
-  }
+  const bookingColumns = physicalNames<BookingColumn | keyof F>(
+    [...BOOKING_COLUMNS, ...Object.keys(fields)],
+    names?.columns?.booking
+  );
+
+  const ruleColumns = physicalNames(
+    AVAILABILITY_RULE_COLUMNS,
+    names?.columns?.availabilityRule
+  );
+
+  const tables = physicalNames(["booking", "availabilityRule"], names?.tables);
+
+  assertDistinct("stored value", stored);
+  assertDistinct("column name", bookingColumns);
+  assertDistinct("column name", ruleColumns);
+  assertDistinct("table name", tables);
 
   return {
     booking: { fields },
     names: {
-      columns: {
-        availabilityRule: physicalNames(
-          AVAILABILITY_RULE_COLUMNS,
-          names?.columns?.availabilityRule
-        ),
-        booking: physicalNames<BookingColumn | keyof F>(
-          [...BOOKING_COLUMNS, ...Object.keys(fields)],
-          names?.columns?.booking
-        ),
-      },
-      tables: physicalNames(["booking", "availabilityRule"], names?.tables),
+      columns: { availabilityRule: ruleColumns, booking: bookingColumns },
+      tables,
     },
     resource: { idType },
     statuses: {

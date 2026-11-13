@@ -35,8 +35,13 @@ export default defineConfig({
   overrides: [
     {
       // Types already document params/returns; one-line summaries are the house style.
+      // TSDoc's `@throws` takes no `{Type}`, so the jsdoc rule demanding one conflicts with tsdoc/syntax.
       files: ["**/*.ts"],
-      rules: { "jsdoc/require-param": "off", "jsdoc/require-returns": "off" },
+      rules: {
+        "jsdoc/require-param": "off",
+        "jsdoc/require-returns": "off",
+        "jsdoc/require-throws-type": "off",
+      },
     },
     // ADR 012 import boundaries. The last matching override wins for each file.
     { files: ["src/**"], rules: restrict([noVitest, noDrizzle]) },

@@ -6,8 +6,8 @@ export type ColumnKind = "text" | "uuid" | "integer" | "boolean" | "instant";
 /**
  * A column of kind `K` whose TypeScript type is `T`.
  *
- * @template K - The storage kind.
- * @template T - The TypeScript type of the column's values; may be a developer brand.
+ * @typeParam K - The storage kind.
+ * @typeParam T - The TypeScript type of the column's values; may be a developer brand.
  */
 export interface Column<K extends ColumnKind, T> {
   /** The storage kind. */

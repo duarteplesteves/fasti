@@ -54,6 +54,27 @@ describe(defineSchema, () => {
     ).toThrow(/stored value "cancelled"/u);
   });
 
+  it("throws when two columns or tables share a physical name", () => {
+    expect(() =>
+      defineSchema({
+        booking: {
+          fields: { notes: { required: false, type: column.text() } },
+        },
+        names: { columns: { booking: { start: "notes" } } },
+      })
+    ).toThrow(/column name "notes"/u);
+    expect(() =>
+      defineSchema({
+        names: { columns: { availabilityRule: { windowEnd: "windowStart" } } },
+      })
+    ).toThrow(/column name "windowStart"/u);
+    expect(() =>
+      defineSchema({
+        names: { tables: { availabilityRule: "x", booking: "x" } },
+      })
+    ).toThrow(/table name "x"/u);
+  });
+
   it("names a Developer Field called `constructor` after itself", () => {
     const schema = defineSchema({
       booking: {
