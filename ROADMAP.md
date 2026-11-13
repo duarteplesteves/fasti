@@ -52,7 +52,8 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Scope:**
 
-- `@fastijs/scheduler/adapter`: the contract types ([ADR 008](./docs/adr/008-adapter-contract.md)) and `defineSchema`.
+- `@fastijs/scheduler`: `defineSchema` and the `column` helpers.
+- `@fastijs/scheduler/adapter`: the contract types ([ADR 008](./docs/adr/008-adapter-contract.md)).
 - `@fastijs/scheduler/memory`: the in-memory Adapter.
 - `@fastijs/scheduler/testing`: the Conformance Suite.
 - `@fastijs/scheduler/drizzle/pg`: the Drizzle Adapter on Postgres.
