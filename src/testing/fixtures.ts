@@ -1,5 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 
+import { expect } from "vitest";
+
+import type { SchemaAdapter } from "../adapter/contract.js";
 import type {
   BookingRecord,
   ResourceIdOf,
@@ -87,4 +90,17 @@ export function newBooking<S extends AnySchema>(
     start,
     status,
   } as BookingRecord<S>;
+}
+
+/** Insert a Booking in its own unit of work and assert it succeeded. */
+export async function insert<S extends AnySchema, Tx>(
+  adapter: SchemaAdapter<S, Tx>,
+  booking: BookingRecord<S>
+): Promise<void> {
+  const result = await adapter.withResourceLock(
+    booking.resourceId,
+    async (locked) => await locked.insertBooking(booking)
+  );
+
+  expect(result).toStrictEqual({ ok: true });
 }
