@@ -158,11 +158,12 @@ export const searchCases: readonly ConformanceCase[] = [
         "1"
       );
 
+      // Cancelled, so the tie is a legal overlap where a backstop forbids two blocking Bookings.
       const tieB = withId(
         bookingAt(ctx, {
           from: "09:00",
           resource: 0,
-          status: "booked",
+          status: "cancelled",
           to: "09:30",
         }),
         "2"

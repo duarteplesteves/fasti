@@ -1,3 +1,5 @@
+export { backstopSql } from "./backstop.js";
+
 export { drizzleAdapter } from "./drizzle-adapter.js";
 
 export { availabilityRuleTable, bookingTable } from "./tables.js";

@@ -18,6 +18,7 @@ import type {
 } from "../../adapter/contract.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
+import { noOverlapConstraint } from "./backstop.js";
 import {
   decodeBooking,
   decodeRule,
@@ -67,6 +68,7 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
       const columns: Readonly<Record<string, AnyPgColumn>> = getColumns(table);
       const rules = availabilityRuleTable(schema);
       const codec = statusCodec(schema);
+      const noOverlap = noOverlapConstraint(schema);
 
       function reads(q: AnyPgDatabase): AdapterReads<S> {
         return {
@@ -126,6 +128,32 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
               });
             }
 
+            /** Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable. */
+            async function backstopped<T>(
+              verb: string,
+              write: (sp: typeof tx) => Promise<T>
+            ): Promise<T | "conflict"> {
+              return await query(verb, async () => {
+                try {
+                  return await tx.transaction(async (sp) => await write(sp));
+                } catch (error) {
+                  // The backstop (I8) refusing an overlap: Postgres's exclusion_violation on fasti's constraint.
+                  if (
+                    error instanceof DrizzleQueryError &&
+                    error.cause !== undefined &&
+                    "code" in error.cause &&
+                    error.cause.code === "23P01" &&
+                    "constraint" in error.cause &&
+                    error.cause.constraint === noOverlap
+                  ) {
+                    return "conflict";
+                  }
+
+                  throw error;
+                }
+              });
+            }
+
             return await work({
               ...reads(tx),
               insertBooking: async (booking) => {
@@ -136,11 +164,16 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
                   booking
                 ) as typeof table.$inferInsert;
 
-                await query("insertBooking", async () => {
-                  await tx.insert(table).values(row);
-                });
+                const inserted = await backstopped(
+                  "insertBooking",
+                  async (sp) => {
+                    await sp.insert(table).values(row);
+                  }
+                );
 
-                return { ok: true };
+                return inserted === "conflict"
+                  ? { ok: false, reason: "conflict" }
+                  : { ok: true };
               },
               replaceRules: async ({ resourceId, rules: next }) => {
                 await query("replaceRules", async () => {
@@ -178,10 +211,10 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
                   return sql`${col} is not distinct from ${sql.param(value, col)}`;
                 });
 
-                const updated = await query(
+                const updated = await backstopped(
                   "updateBooking",
-                  async () =>
-                    await tx
+                  async (sp) =>
+                    await sp
                       .update(table)
                       // `id` never changes; setting it keeps the SET non-empty when `changes` is.
                       .set({
@@ -191,6 +224,10 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
                       .where(and(...unchanged))
                       .returning({ id: table.id })
                 );
+
+                if (updated === "conflict") {
+                  return { ok: false, reason: "conflict" };
+                }
 
                 return updated.length === 1
                   ? { ok: true }

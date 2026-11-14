@@ -4,6 +4,7 @@ import { integer, pgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { AnySchema } from "../../schema/define-schema.js";
+import { statusCodec } from "../../schema/status-codec.js";
 import {
   integerIdResources,
   integerIdSchema,
@@ -14,12 +15,14 @@ import {
 } from "../../test-utils/conformance-schemas.js";
 import { postgresUrl, testDatabase } from "../../test-utils/postgres.js";
 import type { TestDatabase } from "../../test-utils/postgres.js";
-import { insert, newBooking } from "../../testing/fixtures.js";
+import { bookingId, insert, newBooking } from "../../testing/fixtures.js";
 import { conformanceCases, runCase, testAdapter } from "../../testing/index.js";
 import type { TestAdapterParams } from "../../testing/index.js";
+import { encodeBooking } from "./codec.js";
 import { createDrizzleAdapter } from "./drizzle-adapter.js";
 import {
   availabilityRuleTable,
+  backstopSql,
   bookingTable,
   drizzleAdapter,
 } from "./index.js";
@@ -57,8 +60,7 @@ function suite<S extends AnySchema>(
   resources: TestAdapterParams<S, unknown>["resources"]
 ): void {
   const params: TestAdapterParams<S, unknown> = {
-    // shortcut: no backstop constraint is pushed yet; opt in with #49.
-    groups: { backstop: false },
+    groups: { backstop: true },
     makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       await database.db.execute(sql`truncate ${booking}, ${rule}`);
@@ -98,6 +100,32 @@ function suite<S extends AnySchema>(
         message: "drizzleAdapter: insertBooking failed",
       });
     });
+
+    it("an overlap the backstop refuses has the driver error shape the 23P01 mapping reads", async () => {
+      await params.reset();
+
+      const adapter = drizzleAdapter(database.db)(schema);
+
+      const b = newBooking(schema, {
+        optionalFields: "null",
+        resourceId: resources[0],
+        status: "booked",
+      });
+
+      await insert(adapter, b);
+
+      // Through Drizzle directly: the RC's error shape that isOverlap reads (DrizzleQueryError.cause).
+      await expect(
+        database.db
+          .insert(booking)
+          .values(encodeBooking(statusCodec(schema), { ...b, id: bookingId() }))
+      ).rejects.toMatchObject({
+        cause: {
+          code: "23P01",
+          constraint: `${schema.names.tables.booking}_no_overlap`,
+        },
+      });
+    });
   });
 }
 
@@ -108,6 +136,14 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
     await database.db
       .insert(testStaff)
       .values(integerIdResources.map((id) => ({ id })));
+
+    // As a developer would: backstopSql in a custom migration after drizzle-kit's own.
+    for (const schema of [textIdSchema, uuidIdSchema, integerIdSchema]) {
+      for (const statement of backstopSql(schema)) {
+        // oxlint-disable-next-line no-await-in-loop -- in order: the extension before the constraint that needs it.
+        await database.db.execute(sql.raw(statement));
+      }
+    }
   });
 
   afterAll(async () => {
