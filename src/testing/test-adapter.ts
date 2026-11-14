@@ -4,6 +4,8 @@ import type { Adapter } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { changeCases } from "./cases/change.js";
+import { lockCases } from "./cases/lock.js";
+import { rollbackCases } from "./cases/rollback.js";
 import { roundTripCases } from "./cases/round-trips.js";
 import { ruleCases } from "./cases/rules.js";
 import { searchCases } from "./cases/search.js";
@@ -29,6 +31,8 @@ export const conformanceCases: readonly ConformanceCase[] = [
   ...ruleCases,
   ...searchCases,
   ...changeCases,
+  ...rollbackCases,
+  ...lockCases,
 ];
 
 /** Run one case: reset, make a fresh Adapter for the schema, run it. Rejects when the case fails. */
