@@ -42,3 +42,12 @@ An Adapter connects the Framework to the developer's database (ADR 007). The Fra
 - **Negative:** Each new entity widens the contract, and custom Adapters must add its verb group to use it.
 - **Negative:** Databases without interactive transactions, such as Cloudflare D1, can't implement the lock as specified.
 - **Negative:** Writes the developer makes to the bookings table outside the Framework don't take the lock. Only a database backstop catches them.
+
+## Amendment (2026-11-14): the contract as built in checkpoint 3
+
+The contract now exists as types in `@fastijs/scheduler/adapter`. Building it settled four details the decision left open:
+
+- **Per-verb results.** Each write verb returns only the outcomes it can have: `insertBooking` returns `{ ok: true }` or `conflict`; `updateBooking` returns `{ ok: true }`, `conflict` or `changed`; `replaceRules` resolves with nothing. Everything else (a duplicate id, a stored Status not in the schema, a lost connection) rejects with a plain `Error`; when a driver failed, its `cause` is the driver error. The Framework wraps rejections as `AdapterError` in checkpoint 4.
+- **Object-param writes.** `updateBooking({ expected, changes })` takes the id from `expected`, so the id and the compare-and-set row can't disagree. `replaceRules({ resourceId, rules })` takes rules without a `resourceId`, so a rule can't name another Resource than the call.
+- **Transient-error retries are deferred to checkpoint 6.** Under an advisory lock at READ COMMITTED, fasti's own statements can't raise a serialization failure; a deadlock needs the developer's writes in `tx`, which arrive with `also` in checkpoint 6. Until then Adapters don't retry, and "Adapters retry their own transient errors" applies from checkpoint 6.
+- **The in-memory Adapter uses one global queue.** Every locked unit of work, on any Resource, runs in turn, with copy-on-write so a rejected unit leaves nothing behind. The Resource Lock is promised per Resource only, and locking more broadly is allowed, so this conforms. The cost: the in-memory Adapter can never show parallelism across Resources, which the contract doesn't require.
