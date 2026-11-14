@@ -92,7 +92,7 @@ function resourceIdColumn<S extends AnySchema, C extends AnyPgColumn>(
 }
 
 /** A SQL string literal, for DDL, where values can't be parameters. */
-function literal(value: string): string {
+export function literal(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 

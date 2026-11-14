@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import type { Adapter } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import { backstopCases } from "./cases/backstop.js";
 import { changeCases } from "./cases/change.js";
 import { lockCases } from "./cases/lock.js";
 import { rollbackCases } from "./cases/rollback.js";
@@ -33,6 +34,7 @@ export const conformanceCases: readonly ConformanceCase[] = [
   ...changeCases,
   ...rollbackCases,
   ...lockCases,
+  ...backstopCases,
 ];
 
 /** Run one case: reset, make a fresh Adapter for the schema, run it. Rejects when the case fails. */
