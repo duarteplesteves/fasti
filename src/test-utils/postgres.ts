@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { on } from "node:events";
 
 import { pushSchema } from "drizzle-kit/api-postgres";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -53,7 +54,23 @@ export async function testDatabase(
   const db = drizzle({ client: pool });
 
   async function drop(): Promise<void> {
+    // pool.end() resolves before its clients' sockets close; each emits `remove` once closed.
+    // Dropping earlier makes `with (force)` kill them mid-close: an unhandled 57P01.
+    let open = pool.totalCount;
+    const removed = on(pool, "remove");
+
     await pool.end();
+
+    if (open > 0) {
+      for await (const _ of removed) {
+        open -= 1;
+
+        if (open === 0) {
+          break;
+        }
+      }
+    }
+
     await admin.query(`drop database ${name} with (force)`);
     await admin.end();
   }
