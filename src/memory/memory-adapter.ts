@@ -105,7 +105,7 @@ export function createMemoryAdapter({
 }: CreateMemoryAdapterParams): Adapter<undefined> {
   // One store per call, however many times it is bound to a schema. Unlocked reads see only committed state.
   let store: Store = { bookings: new Map(), rules: new Map() };
-  // One global queue for every locked unit of work: locking more broadly than one Resource is allowed (J5).
+  // One global queue for every locked unit of work: locking more broadly than one Resource is allowed (ADR 008).
   let queue: Promise<unknown> = Promise.resolve();
 
   // shortcut: O(n) copy per unit of work; fine for tests, replace with a write log if anyone benchmarks it.

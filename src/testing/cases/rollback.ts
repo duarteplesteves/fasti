@@ -31,7 +31,7 @@ async function throwAfter<S extends AnySchema, Tx>(
   ).rejects.toBe(reason);
 }
 
-/** Undo on failure (I3): a unit of work that rejects leaves nothing behind and releases the lock. */
+/** Undo on failure (ADR 008): a unit of work that rejects leaves nothing behind and releases the lock. */
 export const rollbackCases: readonly ConformanceCase[] = [
   {
     name: "a throw after an insert, an update or a replaceRules leaves nothing behind, keeps the reason, and the next unit of work runs",
@@ -57,10 +57,13 @@ export const rollbackCases: readonly ConformanceCase[] = [
       const changes = { status: "cancelled" } as BookingChanges<typeof schema>;
 
       await throwAfter(ctx, async (l) => {
-        await l.insertBooking(fresh);
+        expect(await l.insertBooking(fresh)).toStrictEqual({ ok: true });
       });
       await throwAfter(ctx, async (l) => {
-        await l.updateBooking({ changes, expected: existing });
+        // The update must apply, or there would be nothing to undo.
+        expect(
+          await l.updateBooking({ changes, expected: existing })
+        ).toStrictEqual({ ok: true });
       });
       await throwAfter(ctx, async (l) => {
         await l.replaceRules({ resourceId: resources[0], rules: [rule] });

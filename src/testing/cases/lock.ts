@@ -26,18 +26,13 @@ interface Slot {
   readonly end: Temporal.Instant;
 }
 
-/** A fresh one-hour slot. */
-function freshSlot<S extends AnySchema>(
-  schema: S,
-  resourceId: ResourceIdOf<S>
-): Slot {
-  const { end, start } = newBooking(schema, {
-    optionalFields: "null",
-    resourceId,
-    status: "booked",
+/** Repetition `rep`'s one-hour slot; slots of different repetitions never overlap. */
+function slotFor(rep: number): Slot {
+  const start = Temporal.Instant.from("2030-06-03T09:00:00Z").add({
+    hours: 2 * rep,
   });
 
-  return { end, start };
+  return { end: start.add({ hours: 1 }), start };
 }
 
 /** A new blocking Booking at `slot`. */
@@ -119,7 +114,7 @@ async function blockingAt<S extends AnySchema, Tx>(
   return bookings.filter((b) => codec.isBlocking(b.status));
 }
 
-/** The Resource Lock (I2). Each case fails against an Adapter that skips it. */
+/** The Resource Lock (ADR 008): locked units of work on one Resource never interleave. Each case fails against an Adapter that skips it. */
 export const lockCases: readonly ConformanceCase[] = [
   {
     name: "locked units of work on one Resource never run at the same time",
@@ -149,7 +144,7 @@ export const lockCases: readonly ConformanceCase[] = [
       const [r0] = resources;
 
       for (let rep = 0; rep < repetitions; rep += 1) {
-        const slot = freshSlot(schema, r0);
+        const slot = slotFor(rep);
 
         // oxlint-disable-next-line no-await-in-loop -- each repetition is its own race.
         const results = await Promise.all(
@@ -193,7 +188,7 @@ export const lockCases: readonly ConformanceCase[] = [
         // oxlint-disable-next-line no-await-in-loop -- each repetition is its own race.
         await insert(adapter, moving);
 
-        const slot = freshSlot(schema, to);
+        const slot = slotFor(rep);
 
         // SAFETY: the change moves base fields to values valid in every schema.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript can't check a literal against Partial of a generic record.
