@@ -60,6 +60,8 @@ export default defineConfig({
         },
       ]),
     },
+    // The in-memory Adapter implements an async contract with synchronous work.
+    { files: ["src/memory/**"], rules: { "require-await": "off" } },
     {
       files: ["**/*.test.ts", "src/test-utils/**"],
       rules: {
