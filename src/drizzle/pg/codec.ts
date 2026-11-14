@@ -1,4 +1,8 @@
-import type { BookingRecord, RuleRecord } from "../../adapter/records.js";
+import type {
+  BookingChanges,
+  BookingRecord,
+  RuleRecord,
+} from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { StatusCodec } from "../../schema/status-codec.js";
 
@@ -26,15 +30,15 @@ function toDriver(
 
 /**
  * Record → row: Instants become `Date`s (milliseconds, I7), the Status its stored value.
- * A partial record (an update's changes) gives a partial row.
+ * An update's changes give a partial row.
  */
 export function encodeBooking<S extends AnySchema>(
   codec: StatusCodec<string>,
-  record: Partial<BookingRecord<S>>
+  record: BookingRecord<S> | BookingChanges<S>
 ): BookingRow {
   return Object.fromEntries(
     Object.entries<RecordValue | undefined>(record)
-      // A partial record's absent keys: nothing to write.
+      // Keys the changes leave out: nothing to write.
       .filter((entry): entry is [string, RecordValue] => entry[1] !== undefined)
       .map(([key, value]) => [key, toDriver(codec, key, value)])
   );
