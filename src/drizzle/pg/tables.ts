@@ -3,16 +3,24 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   boolean,
   check,
+  date,
   integer,
+  jsonb,
   pgTable,
   text,
+  time,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
 
 import type { ResourceIdOf } from "../../adapter/records.js";
+import type { Recurrence } from "../../core/types.js";
 import type { AnyColumn } from "../../schema/column.js";
-import type { AnySchema, BookingColumn } from "../../schema/define-schema.js";
+import type {
+  AnySchema,
+  AvailabilityRuleColumn,
+  BookingColumn,
+} from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 
 /** Resolves to `unknown` when a column of data type `D` can hold every `T`; otherwise to an error-carrying type. */
@@ -68,6 +76,21 @@ function pgColumn(type: AnyColumn, name: string) {
   }
 }
 
+/** The `NOT NULL` Resource id column, with its foreign key when `references` is given. */
+function resourceIdColumn<S extends AnySchema, C extends AnyPgColumn>(
+  schema: S,
+  name: string,
+  options: TableOptions<S, C>
+) {
+  const col = pgColumn(schema.resource.idType, name).notNull();
+
+  if (options.references !== undefined) {
+    col.references(options.references, { onDelete: "restrict" });
+  }
+
+  return col;
+}
+
 /** A SQL string literal, for DDL, where values can't be parameters. */
 function literal(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -87,14 +110,7 @@ export function bookingTable<
     Record<BookingColumn, string> & Partial<Record<string, string>>
   >;
 
-  const resourceId = pgColumn(
-    schema.resource.idType,
-    names.resourceId
-  ).notNull();
-
-  if (options.references !== undefined) {
-    resourceId.references(options.references, { onDelete: "restrict" });
-  }
+  const resourceId = resourceIdColumn(schema, names.resourceId, options);
 
   const fields = Object.fromEntries(
     Object.entries(schema.booking.fields).map(([field, def]) => {
@@ -120,4 +136,28 @@ export function bookingTable<
     // DDL takes no bind parameters, so the stored values go in as escaped literals.
     check(`${table}_status_check`, sql`${self.status} in (${sql.raw(stored)})`),
   ]);
+}
+
+/**
+ * The AvailabilityRule table of `schema`, with your physical names, for your drizzle-kit schema file.
+ * Its primary key is generated and private; dates are `date` strings, the window `time`.
+ */
+export function availabilityRuleTable<
+  S extends AnySchema,
+  C extends AnyPgColumn = AnyPgColumn,
+>(schema: S, options: TableOptions<S, C> = {}) {
+  const names: Readonly<Record<AvailabilityRuleColumn, string>> =
+    schema.names.columns.availabilityRule;
+
+  return pgTable(schema.names.tables.availabilityRule, {
+    id: uuid(names.id).primaryKey().defaultRandom(),
+    resourceId: resourceIdColumn(schema, names.resourceId, options),
+    recurrence: jsonb(names.recurrence).$type<Recurrence>().notNull(),
+    windowStart: time(names.windowStart).notNull(),
+    windowEnd: time(names.windowEnd).notNull(),
+    timezone: text(names.timezone).notNull(),
+    effectiveFrom: date(names.effectiveFrom, { mode: "string" }),
+    effectiveTo: date(names.effectiveTo, { mode: "string" }),
+    exceptions: date(names.exceptions, { mode: "string" }).array().notNull(),
+  });
 }
