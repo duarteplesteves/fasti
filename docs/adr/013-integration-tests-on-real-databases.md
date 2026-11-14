@@ -36,3 +36,7 @@ We choose option 4.
 - **Positive:** The schema builders are exercised under non-default names on every run.
 - **Negative:** Running integration tests locally needs a Postgres the developer starts, and Node rather than Bun.
 - **Negative:** Default names aren't covered by the suite, only by the `examples/` app.
+
+## Amendment (2026-11-14): the negative control replaces asserting the pool size
+
+The suite does not assert that `makeAdapter` supplies at least N connections. No Adapter-agnostic check exists: the contract has no notion of a pool, and a pool smaller than N makes units of work queue for a connection, which still serializes them. The negative control already covers the failure that matters: if a small pool, or anything else, kept calls from overlapping, the lock-off concurrency cases would pass, their `it.fails` would fail, and CI would turn red. `TestAdapterParams.makeAdapter` documents the requirement of 20 concurrent units of work instead.

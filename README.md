@@ -19,7 +19,18 @@ bun add @fastijs/scheduler@next
 
 > **Prerelease.** Until `0.1.0` ships, every published version is an internal `0.1.0-next.N` prerelease, and npm's `latest` tag points at one of them. Expect breaking changes between them. See the [roadmap](./ROADMAP.md).
 
-Everything is imported from `@fastijs/scheduler/core`. The package has no root export yet.
+One package, several entry points:
+
+| Import                         | What it holds                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| `@fastijs/scheduler/core`      | The Core: the stateless functions below. No runtime dependencies.                     |
+| `@fastijs/scheduler`           | `defineSchema` and the `column` helpers: your names, Resource id type and fields.     |
+| `@fastijs/scheduler/adapter`   | The Adapter contract types and `defineAdapter`, for writing your own Adapter.         |
+| `@fastijs/scheduler/memory`    | `memoryAdapter`, for tests and prototypes.                                            |
+| `@fastijs/scheduler/drizzle/pg` | `drizzleAdapter`, the table builders and `backstopSql` (needs `drizzle-orm` 1.0 RC.5+). |
+| `@fastijs/scheduler/testing`   | `testAdapter`, the Conformance Suite every Adapter must pass (needs `vitest`).         |
+
+> **The Framework isn't there yet.** `createScheduler` and its Actions (booking, cancelling, rescheduling) arrive in a later checkpoint. Today the storage entry points give you the schema, the Adapters and the suite that proves them; nothing calls an Adapter for you yet. See the [roadmap](./ROADMAP.md).
 
 fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without native Temporal, install a global polyfill before importing the package.
 
@@ -144,6 +155,104 @@ Stored `AvailabilityRule` and `Booking` data keeps the same shape.
 - **Fall-back overlap** — only the first occurrence of an ambiguous wall-clock time is emitted.
 
 See [ADR 005](./docs/adr/005-dst-policy.md) for the rationale.
+
+## Storage (preview)
+
+### Defining your schema
+
+`defineSchema` is the one place you name your tables, columns and stored Status values, pick the Resource id type and declare Developer Fields. Every option has a default.
+
+```typescript
+import { column, defineSchema } from "@fastijs/scheduler";
+
+type StaffId = number & { readonly __brand: "StaffId" };
+
+export const schema = defineSchema({
+  resource: { idType: column.integer<StaffId>() },
+  booking: {
+    fields: { customerId: { type: column.uuid(), required: true } },
+  },
+  names: {
+    tables: { booking: "appointments" },
+    columns: { booking: { start: "starts_at", end: "ends_at" } },
+    statuses: { booked: "CONFIRMED", cancelled: "CANCELLED" },
+  },
+});
+```
+
+### Drizzle on Postgres
+
+Build your tables from the schema and let your own drizzle-kit migrate them; fasti never runs DDL. `references` adds a foreign key to your own Resource table.
+
+```typescript
+import { pgTable, integer } from "drizzle-orm/pg-core";
+import {
+  availabilityRuleTable,
+  bookingTable,
+  drizzleAdapter,
+} from "@fastijs/scheduler/drizzle/pg";
+
+export const staff = pgTable("staff", { id: integer().primaryKey() });
+export const appointments = bookingTable(schema, { references: () => staff.id });
+export const hours = availabilityRuleTable(schema, { references: () => staff.id });
+
+const adapter = drizzleAdapter(db);
+```
+
+**The backstop.** `backstopSql(schema)` returns the statements for an `EXCLUDE` constraint so no two blocking Bookings overlap on one Resource, even when a write skips fasti's lock. Drizzle can't express `EXCLUDE`, so add it as a custom migration after the one that creates the tables:
+
+```bash
+npx drizzle-kit generate --custom --name=fasti-backstop
+```
+
+Then paste each statement from `backstopSql(schema)` into the generated file, separated by `--> statement-breakpoint`. drizzle-kit doesn't know about this constraint: later generated migrations neither include nor drop it. If you rename the Booking table, its columns or a blocking Status, drop the old constraint and add a new one yourself. The constraint assumes a capacity of one Booking per Resource at a time.
+
+### Writing a custom Adapter
+
+If your tables differ from fasti's by more than names, write your own Adapter against the contract in `@fastijs/scheduler/adapter` ([ADR 008](./docs/adr/008-adapter-contract.md)). It is a few `async` verbs over whole records, plus `withResourceLock`, which runs a unit of work in one transaction that excludes every other locked unit on the same Resource. Writes exist only on the handle passed into that unit of work. A sketch, with the bodies left out:
+
+```typescript
+import { defineAdapter } from "@fastijs/scheduler/adapter";
+
+export const myAdapter = defineAdapter<MyTx>((schema) => ({
+  getBooking: async (id) => /* BookingRecord | null */,
+  listBookings: async ({ resourceId, overlapping }) => /* sorted by start, then id */,
+  getRules: async (resourceId) => /* RuleRecord[] */,
+  withResourceLock: async (resourceId, work) =>
+    db.transaction(async (tx) => {
+      await lock(tx, resourceId);
+      return work({
+        tx,
+        getBooking, listBookings, getRules, // the same reads, through tx
+        insertBooking: async (booking) => /* { ok: true } or { ok: false, reason: "conflict" } */,
+        updateBooking: async ({ expected, changes }) => /* compare-and-set; "changed" if the row moved on */,
+        replaceRules: async ({ resourceId, rules }) => { /* replace the whole set */ },
+      });
+    }),
+}));
+```
+
+Expected outcomes (`conflict`, `changed`) are returned as values; anything else rejects with an `Error`, carrying your driver's error as `cause` when the driver failed. Records use logical names (`start`, `"booked"`); map them to your columns and stored values inside the Adapter.
+
+### Running the Conformance Suite
+
+Prove your Adapter with `testAdapter` in a Vitest file, against a real database:
+
+```typescript
+import { testAdapter } from "@fastijs/scheduler/testing";
+
+testAdapter({
+  schema,
+  makeAdapter: () => myAdapter, // called per case; must allow 20 concurrent units of work
+  reset: async () => {
+    /* empty the fasti tables; keep your Resource rows */
+  },
+  resources: [staffA, staffB], // two Resource ids that exist in your database
+  groups: { backstop: false }, // true only if your database has a constraint like backstopSql
+});
+```
+
+It registers one test per case, including the concurrency cases that catch a missing or broken lock. To run a subset, filter `conformanceCases` by `tags` and call `runCase` yourself.
 
 ## Architecture Decisions
 

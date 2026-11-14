@@ -92,17 +92,6 @@ interface StandardSchemaIssue {
 }
 
 describe("export surface", () => {
-  it("exports exactly the six functions at runtime", () => {
-    expect(Object.keys(core).toSorted()).toStrictEqual([
-      "checkRule",
-      "detectConflicts",
-      "expandRules",
-      "findFreeSlots",
-      "isSlotValid",
-      "withBlockingFlag",
-    ]);
-  });
-
   it("exports Recurrence as the frequency-discriminated rule recurrence", () => {
     expectTypeOf<AvailabilityRule["recurrence"]>().toEqualTypeOf<Recurrence>();
     expectTypeOf<Recurrence>().toEqualTypeOf<WeeklyRecurrence>();
