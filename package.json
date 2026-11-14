@@ -27,16 +27,28 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./adapter": {
+      "types": "./dist/adapter/index.d.ts",
+      "default": "./dist/adapter/index.js"
+    },
     "./core": {
       "types": "./dist/core/index.d.ts",
       "default": "./dist/core/index.js"
+    },
+    "./memory": {
+      "types": "./dist/memory/index.d.ts",
+      "default": "./dist/memory/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
     },
     "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest",
-    "test:ci": "vitest run",
+    "test": "vitest --project unit",
+    "test:ci": "vitest run --project unit",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
     "prepublishOnly": "bun run clean && bun run build",
@@ -45,7 +57,8 @@
     "fix": "ultracite fix",
     "typecheck": "tsc",
     "publint": "publint",
-    "attw": "attw --pack --profile esm-only"
+    "attw": "attw --pack --profile esm-only",
+    "test:integration": "vitest run --project conformance"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
@@ -63,6 +76,14 @@
     "typescript": "^7.1.0-beta",
     "ultracite": "8.2.0",
     "vitest": "^5.1.0"
+  },
+  "peerDependencies": {
+    "vitest": "^5.1.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
