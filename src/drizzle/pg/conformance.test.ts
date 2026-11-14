@@ -15,17 +15,17 @@ import {
 import { postgresUrl, testDatabase } from "../../test-utils/postgres.js";
 import type { TestDatabase } from "../../test-utils/postgres.js";
 import { insert, newBooking } from "../../testing/fixtures.js";
-import { conformanceCases, runCase } from "../../testing/index.js";
+import { conformanceCases, runCase, testAdapter } from "../../testing/index.js";
 import type { TestAdapterParams } from "../../testing/index.js";
+import { createDrizzleAdapter } from "./drizzle-adapter.js";
 import {
   availabilityRuleTable,
   bookingTable,
   drizzleAdapter,
 } from "./index.js";
 
-// shortcut: the concurrency and backstop cases don't pass on Postgres yet; switch to testAdapter once they do (#48, #49).
-const cases = conformanceCases.filter(
-  (c) => !c.tags.includes("concurrency") && !c.tags.includes("backstop")
+const concurrencyCases = conformanceCases.filter((c) =>
+  c.tags.includes("concurrency")
 );
 
 /** The developer's own Resource table, which the integer-id schema references. */
@@ -49,7 +49,7 @@ const url = postgresUrl();
 
 let database: TestDatabase;
 
-/** Register the ready cases for one schema, each on emptied tables. */
+/** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
 function suite<S extends AnySchema>(
   schema: S,
   booking: AnyPgTable,
@@ -57,7 +57,8 @@ function suite<S extends AnySchema>(
   resources: TestAdapterParams<S, unknown>["resources"]
 ): void {
   const params: TestAdapterParams<S, unknown> = {
-    groups: { backstop: true },
+    // shortcut: no backstop constraint is pushed yet; opt in with #49.
+    groups: { backstop: false },
     makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       await database.db.execute(sql`truncate ${booking}, ${rule}`);
@@ -67,8 +68,16 @@ function suite<S extends AnySchema>(
   };
 
   describe(schema.names.tables.booking, () => {
-    it.each(cases)("$name", async (c) => {
-      await expect(runCase(c, params)).resolves.toBeUndefined();
+    testAdapter(params);
+
+    // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
+    it.fails.each(concurrencyCases)("[lock off] $name", async (c) => {
+      await expect(
+        runCase(c, {
+          ...params,
+          makeAdapter: () => createDrizzleAdapter(database.db, { lock: false }),
+        })
+      ).resolves.toBeUndefined();
     });
 
     it("a driver error rejects with the driver's error as cause", async () => {

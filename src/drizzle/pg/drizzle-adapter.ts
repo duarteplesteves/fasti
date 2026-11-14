@@ -47,12 +47,19 @@ async function query<T>(verb: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
-/**
- * The Drizzle Postgres Adapter, over your tables made with {@link bookingTable} and
- * {@link availabilityRuleTable}. `tx` is Drizzle's own transaction, for your writes in the same unit of work.
- */
-export function drizzleAdapter<DB extends AnyPgDatabase>(
-  db: DB
+/** The first key of every fasti advisory lock ("fsti" in ASCII), so other advisory locks in the database don't collide. */
+const LOCK_NAMESPACE = 0x66_73_74_69;
+
+/** Params of {@link createDrizzleAdapter}. */
+export interface CreateDrizzleAdapterParams {
+  /** `false` skips the Resource Lock: only for the negative control, never exported publicly. */
+  readonly lock: boolean;
+}
+
+/** The Drizzle Postgres Adapter, with the lock switchable for the negative control. Internal: use {@link drizzleAdapter}. */
+export function createDrizzleAdapter<DB extends AnyPgDatabase>(
+  db: DB,
+  { lock }: CreateDrizzleAdapterParams
 ): Adapter<TxOf<DB>> {
   return defineAdapter(
     <S extends AnySchema>(schema: S): SchemaAdapter<S, TxOf<DB>> => {
@@ -108,83 +115,100 @@ export function drizzleAdapter<DB extends AnyPgDatabase>(
 
       return {
         ...reads(db),
-        // shortcut: a plain transaction; the advisory lock arrives with #48.
-        withResourceLock: async (_resourceId, work) =>
-          await db.transaction(
-            async (tx) =>
-              await work({
-                ...reads(tx),
-                insertBooking: async (booking) => {
-                  // SAFETY: encodeBooking writes one value per column of bookingTable(schema).
-                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row is built from the schema at runtime.
-                  const row = encodeBooking(
-                    codec,
-                    booking
-                  ) as typeof table.$inferInsert;
+        withResourceLock: async (lockedId, work) =>
+          await db.transaction(async (tx) => {
+            if (lock) {
+              // The Resource Lock (I2): held until COMMIT or ROLLBACK, so the transaction ending releases it.
+              await query("withResourceLock", async () => {
+                await tx.execute(
+                  sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${String(lockedId)}::text))`
+                );
+              });
+            }
 
-                  await query("insertBooking", async () => {
-                    await tx.insert(table).values(row);
-                  });
+            return await work({
+              ...reads(tx),
+              insertBooking: async (booking) => {
+                // SAFETY: encodeBooking writes one value per column of bookingTable(schema).
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row is built from the schema at runtime.
+                const row = encodeBooking(
+                  codec,
+                  booking
+                ) as typeof table.$inferInsert;
 
-                  return { ok: true };
-                },
-                replaceRules: async ({ resourceId, rules: next }) => {
-                  await query("replaceRules", async () => {
+                await query("insertBooking", async () => {
+                  await tx.insert(table).values(row);
+                });
+
+                return { ok: true };
+              },
+              replaceRules: async ({ resourceId, rules: next }) => {
+                await query("replaceRules", async () => {
+                  await tx
+                    .delete(rules)
+                    .where(eq(rules.resourceId, resourceId));
+
+                  // Drizzle refuses an insert of no rows.
+                  if (next.length > 0) {
+                    await tx.insert(rules).values(
+                      next.map((rule) => ({
+                        ...encodeRule(rule),
+                        resourceId,
+                      }))
+                    );
+                  }
+                });
+              },
+              // SAFETY: `tx` is what DB's own transaction callback receives, which TxOf<DB> names.
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve TxOf<DB> for a generic DB.
+              tx: tx as TxOf<DB>,
+              updateBooking: async ({ changes, expected }) => {
+                // Compare-and-set (I4): every stored column must still equal `expected`, nulls included.
+                const unchanged = Object.entries(
+                  encodeBooking(codec, expected)
+                ).map(([key, value]) => {
+                  const col = columns[key];
+
+                  if (col === undefined) {
+                    throw new Error(
+                      `drizzleAdapter: Booking has no column "${key}"`
+                    );
+                  }
+
+                  return sql`${col} is not distinct from ${sql.param(value, col)}`;
+                });
+
+                const updated = await query(
+                  "updateBooking",
+                  async () =>
                     await tx
-                      .delete(rules)
-                      .where(eq(rules.resourceId, resourceId));
+                      .update(table)
+                      // `id` never changes; setting it keeps the SET non-empty when `changes` is.
+                      .set({
+                        ...encodeBooking(codec, changes),
+                        id: expected.id,
+                      })
+                      .where(and(...unchanged))
+                      .returning({ id: table.id })
+                );
 
-                    // Drizzle refuses an insert of no rows.
-                    if (next.length > 0) {
-                      await tx.insert(rules).values(
-                        next.map((rule) => ({
-                          ...encodeRule(rule),
-                          resourceId,
-                        }))
-                      );
-                    }
-                  });
-                },
-                // SAFETY: `tx` is what DB's own transaction callback receives, which TxOf<DB> names.
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve TxOf<DB> for a generic DB.
-                tx: tx as TxOf<DB>,
-                updateBooking: async ({ changes, expected }) => {
-                  // Compare-and-set (I4): every stored column must still equal `expected`, nulls included.
-                  const unchanged = Object.entries(
-                    encodeBooking(codec, expected)
-                  ).map(([key, value]) => {
-                    const col = columns[key];
-
-                    if (col === undefined) {
-                      throw new Error(
-                        `drizzleAdapter: Booking has no column "${key}"`
-                      );
-                    }
-
-                    return sql`${col} is not distinct from ${sql.param(value, col)}`;
-                  });
-
-                  const updated = await query(
-                    "updateBooking",
-                    async () =>
-                      await tx
-                        .update(table)
-                        // `id` never changes; setting it keeps the SET non-empty when `changes` is.
-                        .set({
-                          ...encodeBooking(codec, changes),
-                          id: expected.id,
-                        })
-                        .where(and(...unchanged))
-                        .returning({ id: table.id })
-                  );
-
-                  return updated.length === 1
-                    ? { ok: true }
-                    : { ok: false, reason: "changed" };
-                },
-              })
-          ),
+                return updated.length === 1
+                  ? { ok: true }
+                  : { ok: false, reason: "changed" };
+              },
+            });
+          }),
       };
     }
   );
+}
+
+/**
+ * The Drizzle Postgres Adapter, over your tables made with {@link bookingTable} and
+ * {@link availabilityRuleTable}. `tx` is Drizzle's own transaction, for your writes in the same unit of work.
+ */
+export function drizzleAdapter<DB extends AnyPgDatabase>(
+  db: DB
+): Adapter<TxOf<DB>> {
+  return createDrizzleAdapter(db, { lock: true });
 }
