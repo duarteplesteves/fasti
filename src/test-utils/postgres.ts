@@ -52,16 +52,21 @@ export async function testDatabase(
   const pool = new Pool({ connectionString: dbUrl.toString(), max: 25 });
   const db = drizzle({ client: pool });
 
-  const push = await pushSchema(tables, db);
+  async function drop(): Promise<void> {
+    await pool.end();
+    await admin.query(`drop database ${name} with (force)`);
+    await admin.end();
+  }
 
-  await push.apply();
+  try {
+    const push = await pushSchema(tables, db);
 
-  return {
-    db,
-    drop: async () => {
-      await pool.end();
-      await admin.query(`drop database ${name} with (force)`);
-      await admin.end();
-    },
-  };
+    await push.apply();
+  } catch (error) {
+    // Don't leave a fasti_* database behind when the push fails.
+    await drop();
+    throw error;
+  }
+
+  return { db, drop };
 }

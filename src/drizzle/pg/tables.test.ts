@@ -9,8 +9,8 @@ type StaffId = number & { readonly __brand: "StaffId" };
 
 const staff = pgTable("staff", { id: integer().primaryKey(), slug: text() });
 
-describe("bookingTable references", () => {
-  it("accepts a column that holds the Resource id type, brand included", () => {
+describe("bookingTable references (type tests: the @ts-expect-error lines are the assertions)", () => {
+  it("type-checks a column that holds the Resource id type, brand included", () => {
     const schema = defineSchema({
       resource: { idType: column.integer<StaffId>() },
     });
@@ -20,7 +20,7 @@ describe("bookingTable references", () => {
     ).not.toThrow();
   });
 
-  it("rejects a text column for an integer idType", () => {
+  it("does not type-check a text column for an integer idType", () => {
     const schema = defineSchema({
       resource: { idType: column.integer() },
     });
@@ -31,7 +31,7 @@ describe("bookingTable references", () => {
     ).not.toThrow();
   });
 
-  it("rejects an integer column for a text idType", () => {
+  it("does not type-check an integer column for a text idType", () => {
     const schema = defineSchema({});
 
     expect(() =>
