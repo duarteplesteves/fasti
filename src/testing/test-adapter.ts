@@ -3,7 +3,10 @@ import { describe, it } from "vitest";
 import type { Adapter } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import { changeCases } from "./cases/change.js";
 import { roundTripCases } from "./cases/round-trips.js";
+import { ruleCases } from "./cases/rules.js";
+import { searchCases } from "./cases/search.js";
 import type { ConformanceCase } from "./conformance-case.js";
 
 /** Params of {@link testAdapter} and {@link runCase}. */
@@ -21,7 +24,12 @@ export interface TestAdapterParams<S extends AnySchema, Tx> {
 }
 
 /** Every Conformance Suite case. Filter by `tags` and run one with {@link runCase}. */
-export const conformanceCases: readonly ConformanceCase[] = [...roundTripCases];
+export const conformanceCases: readonly ConformanceCase[] = [
+  ...roundTripCases,
+  ...ruleCases,
+  ...searchCases,
+  ...changeCases,
+];
 
 /** Run one case: reset, make a fresh Adapter for the schema, run it. Rejects when the case fails. */
 export async function runCase<S extends AnySchema, Tx>(

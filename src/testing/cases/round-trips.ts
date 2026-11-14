@@ -1,22 +1,7 @@
 import { expect } from "vitest";
 
-import type { SchemaAdapter } from "../../adapter/contract.js";
-import type { BookingRecord } from "../../adapter/records.js";
-import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
-import { bookingId, newBooking } from "../fixtures.js";
-
-async function insert<S extends AnySchema, Tx>(
-  adapter: SchemaAdapter<S, Tx>,
-  booking: BookingRecord<S>
-): Promise<void> {
-  const result = await adapter.withResourceLock(
-    booking.resourceId,
-    async (locked) => await locked.insertBooking(booking)
-  );
-
-  expect(result).toStrictEqual({ ok: true });
-}
+import { bookingId, insert, newBooking } from "../fixtures.js";
 
 /** Save and read back. */
 export const roundTripCases: readonly ConformanceCase[] = [
