@@ -39,6 +39,10 @@
       "types": "./dist/drizzle/pg/index.d.ts",
       "default": "./dist/drizzle/pg/index.js"
     },
+    "./effect": {
+      "types": "./dist/effect/index.d.ts",
+      "default": "./dist/effect/index.js"
+    },
     "./memory": {
       "types": "./dist/memory/index.d.ts",
       "default": "./dist/memory/index.js"

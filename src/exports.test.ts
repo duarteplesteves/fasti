@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import * as adapter from "./adapter/index.js";
 import * as core from "./core/index.js";
 import * as drizzlePg from "./drizzle/pg/index.js";
+import * as effect from "./effect/index.js";
 import * as root from "./index.js";
 import * as memory from "./memory/index.js";
 import * as testing from "./testing/index.js";
@@ -62,6 +63,7 @@ const surface = [
     ],
     source: "drizzle/pg/index.js",
   },
+  { module: effect, names: ["Scheduler"], source: "effect/index.js" },
   { module: memory, names: ["memoryAdapter"], source: "memory/index.js" },
   {
     module: testing,
