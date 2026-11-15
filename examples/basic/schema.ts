@@ -13,12 +13,16 @@ export const schema = defineSchema({
   },
 });
 
+/** The tables to migrate, built from `schema`. */
 export const tables = {
   availabilityRule: availabilityRuleTable(schema),
   booking: bookingTable(schema),
 };
 
+/** The connection pool, from `DATABASE_URL`. */
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+/** The Drizzle database the Adapter runs on. */
 export const db = drizzle({ client: pool });
 
 /** Weekdays 09:00–17:00 in Lisbon. */

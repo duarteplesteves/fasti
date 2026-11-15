@@ -36,7 +36,7 @@ fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without na
 
 The full, runnable version is [`examples/basic`](./examples/basic), which CI runs against Postgres on every push.
 
-**1. Define your schema and tables.** `defineSchema` names your tables, columns and Statuses and declares your own Booking fields. Every option has a default; see [Defining your schema](#defining-your-schema).
+**1. Define your schema and tables.** `defineSchema` names your tables, columns and Statuses and declares your Developer Fields: your own columns on each Booking. Every option has a default; see [Defining your schema](#defining-your-schema).
 
 ```typescript
 import { column, createScheduler, defineSchema } from "@fastijs/scheduler";

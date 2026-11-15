@@ -66,7 +66,7 @@ assert.ok(!again.ok);
 assert.equal(again.error._tag, "SlotConflict");
 
 assert.deepEqual(
-  again.error.conflicts.map((c) => c.id),
+  again.error.conflicts.map((conflict) => conflict.id),
   [booking.id]
 );
 
