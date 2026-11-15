@@ -56,7 +56,7 @@ export default defineConfig({
       rules: restrict([noVitest, noDrizzle, noEffect]),
     },
     {
-      files: ["src/framework/**", "src/index.ts"],
+      files: ["src/{framework,effect}/**", "src/index.ts"],
       rules: restrict([noVitest, noDrizzle, noAdaptersOrTesting]),
     },
     { files: ["src/drizzle/pg/**"], rules: restrict([noVitest, noEffect]) },
