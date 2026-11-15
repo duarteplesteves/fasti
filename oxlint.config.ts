@@ -35,7 +35,8 @@ function restrict(patterns: object[]) {
 export default defineConfig({
   env: core.env,
   extends: [antiSlop, core, vitest, jsPlugins],
-  ignorePatterns: core.ignorePatterns,
+  // The examples import the built package, which the lint job doesn't install; CI typechecks them in `integration`.
+  ignorePatterns: [...core.ignorePatterns, "examples/**"],
   jsPlugins: jsPlugins.jsPlugins,
   options: { typeAware: true },
   overrides: [

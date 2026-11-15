@@ -12,38 +12,165 @@ A type-safe, stateless scheduling engine for TypeScript.
 ## Installation
 
 ```bash
-npm install @fastijs/scheduler@next
+npm install @fastijs/scheduler
 # or
-bun add @fastijs/scheduler@next
+bun add @fastijs/scheduler
 ```
-
-> **Prerelease.** Until `0.1.0` ships, every published version is an internal `0.1.0-next.N` prerelease, and npm's `latest` tag points at one of them. Expect breaking changes between them. See the [roadmap](./ROADMAP.md).
 
 One package, several entry points:
 
-| Import                         | What it holds                                                                         |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| `@fastijs/scheduler/core`      | The Core: the stateless functions below. No runtime dependencies.                     |
-| `@fastijs/scheduler`           | `defineSchema` and the `column` helpers: your names, Resource id type and fields.     |
-| `@fastijs/scheduler/adapter`   | The Adapter contract types and `defineAdapter`, for writing your own Adapter.         |
-| `@fastijs/scheduler/memory`    | `memoryAdapter`, for tests and prototypes.                                            |
+| Import                          | What it holds                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------- |
+| `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, the `column` helpers and the error types.            |
+| `@fastijs/scheduler/effect`     | `Scheduler`, the Effect form of the Actions.                                            |
 | `@fastijs/scheduler/drizzle/pg` | `drizzleAdapter`, the table builders and `backstopSql` (needs `drizzle-orm` 1.0 RC.5+). |
-| `@fastijs/scheduler/testing`   | `testAdapter`, the Conformance Suite every Adapter must pass (needs `vitest`).         |
-
-> **The Framework isn't there yet.** `createScheduler` and its Actions (booking, cancelling, rescheduling) arrive in a later checkpoint. Today the storage entry points give you the schema, the Adapters and the suite that proves them; nothing calls an Adapter for you yet. See the [roadmap](./ROADMAP.md).
+| `@fastijs/scheduler/memory`     | `memoryAdapter`, for tests and prototypes.                                              |
+| `@fastijs/scheduler/adapter`    | The Adapter contract types and `defineAdapter`, for writing your own Adapter.           |
+| `@fastijs/scheduler/testing`    | `testAdapter`, the Conformance Suite every Adapter must pass (needs `vitest`).          |
+| `@fastijs/scheduler/core`       | The Core: the stateless functions under [The Core](#the-core). No runtime dependencies. |
 
 fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without native Temporal, install a global polyfill before importing the package.
 
-## Core Concepts
 
-### Primitives
+## Quickstart
+
+The full, runnable version is [`examples/basic`](./examples/basic), which CI runs against Postgres on every push.
+
+**1. Define your schema and tables.** `defineSchema` names your tables, columns and Statuses and declares your Developer Fields: your own columns on each Booking. Every option has a default; see [Defining your schema](#defining-your-schema).
+
+```typescript
+import { column, createScheduler, defineSchema } from "@fastijs/scheduler";
+import {
+  availabilityRuleTable,
+  bookingTable,
+  drizzleAdapter,
+} from "@fastijs/scheduler/drizzle/pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+
+export const schema = defineSchema({
+  booking: {
+    fields: { customerName: { required: true, type: column.text() } },
+  },
+});
+
+export const tables = {
+  availabilityRule: availabilityRuleTable(schema),
+  booking: bookingTable(schema),
+};
+```
+
+**2. Migrate.** fasti never runs DDL. Add `tables` to your drizzle-kit schema and migrate them as usual, then add the statements from `backstopSql(schema)` as a custom migration ([the backstop](#drizzle-on-postgres)).
+
+**3. Book.** Every Action returns `{ ok: true, value }` or `{ ok: false, error }`. Only bugs reject the promise.
+
+```typescript
+const db = drizzle({ client: new Pool({ connectionString: process.env.DATABASE_URL }) });
+const scheduler = createScheduler({ adapter: drizzleAdapter(db), schema });
+
+await scheduler.availability.set({
+  resourceId: "room-1",
+  rules: [
+    {
+      recurrence: { daysOfWeek: [1, 2, 3, 4, 5], frequency: "weekly", interval: 1 },
+      timeWindow: {
+        end: Temporal.PlainTime.from("17:00"),
+        start: Temporal.PlainTime.from("09:00"),
+      },
+      timezone: "Europe/Lisbon",
+    },
+  ],
+});
+
+const slots = await scheduler.findSlots({
+  duration: 30, // minutes
+  from: Temporal.Instant.from("2030-06-03T00:00:00+01:00"),
+  interval: 30, // grid step in minutes, from local midnight in `timezone`
+  resourceId: "room-1",
+  timezone: "Europe/Lisbon", // anchors the grid and zones the returned slots
+  to: Temporal.Instant.from("2030-06-04T00:00:00+01:00"),
+});
+
+const result = await scheduler.book({
+  end: Temporal.Instant.from("2030-06-03T09:30:00+01:00"),
+  fields: { customerName: "Ada" },
+  resourceId: "room-1",
+  start: Temporal.Instant.from("2030-06-03T09:00:00+01:00"),
+});
+
+if (!result.ok) {
+  switch (result.error._tag) {
+    case "SlotConflict": // result.error.conflicts: [{ id, start, end }]
+    case "PolicyViolation": // outside availability
+    case "InvalidParams": // result.error.issues, each with a `path`
+    case "AdapterError": // the database failed; result.error.cause
+  }
+} else {
+  await scheduler.cancel({ id: result.value.id });
+}
+```
+
+| Action             | Value                                    | Errors (`_tag`)                                                       |
+| ------------------ | ---------------------------------------- | --------------------------------------------------------------------- |
+| `book`             | the `Booking`, `status: "booked"`        | `InvalidParams`, `SlotConflict`, `PolicyViolation`, `AdapterError`    |
+| `cancel`           | `{ booking, alreadyCancelled }`          | `BookingNotFound`, `AdapterError`                                     |
+| `findSlots`        | `Slot[]`, zoned in `timezone`            | `InvalidParams`, `AdapterError`                                       |
+| `availability.set` | `{ rules }`, replacing the whole set     | `InvalidParams`, `AdapterError`                                       |
+| `availability.get` | the stored rules                         | `AdapterError`                                                        |
+
+- An overlap is checked before availability, so an overlapping Booking outside hours is a `SlotConflict` alone ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)).
+- Domain errors are plain objects with no `message`, safe to send to a client as JSON. `AdapterError` is an `Error` whose `cause` is your driver's error ([ADR 010](./docs/adr/010-action-results-and-two-forms.md)).
+- `cancel` is idempotent. `book` is not: each call mints a new id, so dedupe retries in your backend.
+
+## Effect
+
+The same Actions, with the same params, values and errors, as Effects. Declare your own service class and provide its `layer`:
+
+```typescript
+import { Scheduler } from "@fastijs/scheduler/effect";
+import { Effect } from "effect";
+
+class AppScheduler extends Scheduler<AppScheduler, typeof schema>()("app/Scheduler") {}
+
+const program = Effect.gen(function* bookOne() {
+  const scheduler = yield* AppScheduler;
+
+  return yield* scheduler
+    .book({ end, fields: { customerName: "Ada" }, resourceId: "room-1", start })
+    .pipe(Effect.catchTag("SlotConflict", (error) => Effect.succeed(error.conflicts)));
+});
+
+await Effect.runPromise(
+  program.pipe(Effect.provide(AppScheduler.layer({ adapter: drizzleAdapter(db), schema })))
+);
+```
+
+Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it finishes, then commits or rolls back.
+
+## Not yet
+
+`0.1.0` books and cancels. These are planned (see the [roadmap](./ROADMAP.md)):
+
+- `reschedule` and Status Transitions beyond `booked` and `cancelled`.
+- Writing your own rows in the Action's transaction (`also`).
+- Policies beyond availability, `relax` on the Actions, and `notice` (past starts are bookable today).
+- `getBooking` and `listBookings` Actions; read through your own database meanwhile.
+- Retrying transient database errors.
+
+## The Core
+
+The Actions are built on the Core: pure functions over rules and Bookings you pass in. Use them directly when you keep Bookings yourself.
+
+### Concepts
+
+#### Primitives
 
 - **`AvailabilityRule`** — Abstract rule defining when a resource is available (e.g. "Tuesdays 09:00–17:00 Europe/Lisbon"). Always scoped to a single `resourceId`.
 - **`Booking`** — An existing reservation that occupies a resource. The required `isBlocking` flag controls whether it consumes the slot.
 - **`Slot`** — A candidate time window returned by the engine, with zoned start/end.
 - **`ExpandedWindow`** — One concrete application of one rule on one calendar date (output of `expandRules`).
 
-### Functions (v0.1)
+#### Functions
 
 | Function           | Purpose                                                       |
 | ------------------ | ------------------------------------------------------------- |
@@ -56,7 +183,7 @@ fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without na
 
 Every function except `checkRule` returns a `Result`: `{ ok: true, value }`, or `{ ok: false, error }` where `error` is an `InvalidParams` listing every problem in the input, each with a `path`. Invalid input is never thrown ([ADR 011](./docs/adr/011-effect-free-core-returns-results.md)). `checkRule` returns the issue list directly, empty when the rule is valid.
 
-## Usage
+### Usage
 
 ```typescript
 import {
@@ -114,7 +241,7 @@ if (result.ok) {
 }
 ```
 
-### Relaxing availability
+#### Relaxing availability
 
 Pass `relax: ["availability"]` to also get Grid slots outside the rules. Each one is tagged in `waived`, so you can show it as "outside hours". Overlap with a blocking Booking is never relaxed ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)).
 
@@ -123,7 +250,7 @@ const all = findFreeSlots({ ...params, relax: ["availability"] });
 // all.value[i].waived: [] or [{ policy: "availability", detail: {} }]
 ```
 
-### Rescheduling
+#### Rescheduling
 
 `findFreeSlots`, `isSlotValid` and `detectConflicts` take `excludeBookingId`, which leaves one Booking out of the overlap check, so a Booking doesn't conflict with itself when you move it.
 
@@ -137,7 +264,7 @@ const canMove = isSlotValid({
 }); // { ok: true, value: true } when the new time is free
 ```
 
-### Migrating from `0.1.0-next.0`
+#### Migrating from `0.1.0-next.0`
 
 `0.1.0-next.1` breaks every `0.1.0-next.0` call:
 
@@ -149,14 +276,14 @@ const canMove = isSlotValid({
 
 Stored `AvailabilityRule` and `Booking` data keeps the same shape.
 
-### DST behavior
+#### DST behavior
 
 - **Spring-forward gap** — slots whose wall-clock start falls in the missing hour are dropped.
 - **Fall-back overlap** — only the first occurrence of an ambiguous wall-clock time is emitted.
 
 See [ADR 005](./docs/adr/005-dst-policy.md) for the rationale.
 
-## Storage (preview)
+## Storage
 
 ### Defining your schema
 
