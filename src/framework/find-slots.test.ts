@@ -9,6 +9,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
+import { unwrap } from "../test-utils/results.js";
 import type { FindSlotsError, Slot } from "./find-slots.js";
 
 const schema = uuidIdSchema;
@@ -115,7 +116,7 @@ describe("findSlots", () => {
     expect(result.value).toStrictEqual([]);
   });
 
-  it("drops a booked slot", async () => {
+  it("drops a booked slot, and brings it back after cancel", async () => {
     const scheduler = createScheduler({ adapter: await seeded(), schema });
     const to = Temporal.Instant.from("2030-06-03T16:00:00Z");
 
@@ -131,6 +132,13 @@ describe("findSlots", () => {
 
     assert(result.ok, "expected ok");
     expect(result.value).toStrictEqual([]);
+
+    unwrap(await scheduler.cancel({ id: booked.value.id }));
+
+    const after = await scheduler.findSlots(query(to));
+
+    assert(after.ok, "expected ok");
+    expect(after.value.map((s) => s.start.toInstant())).toStrictEqual([from]);
   });
 
   it.each([
