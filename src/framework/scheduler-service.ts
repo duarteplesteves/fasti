@@ -20,6 +20,8 @@ import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { CreateSchedulerParams } from "./create-scheduler.js";
 import { liftAdapter } from "./effect-adapter.js";
 import type { EffectAdapter } from "./effect-adapter.js";
+import { findSlots } from "./find-slots.js";
+import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
 
 /** What every Action runs with. */
 export interface ActionContext<S extends AnySchema> {
@@ -38,6 +40,10 @@ export interface SchedulerService<S extends AnySchema> {
   readonly cancel: (
     params: CancelParams
   ) => Effect.Effect<CancelValue<S>, CancelError>;
+  /** Free slots on a Resource in a range, zoned in the caller's timezone. */
+  readonly findSlots: (
+    params: FindSlotsParams<S>
+  ) => Effect.Effect<readonly Slot<S>[], FindSlotsError>;
   /** A Resource's Availability Rules. */
   readonly availability: {
     /** Replace the Resource's whole rule set under its Resource Lock. */
@@ -69,5 +75,6 @@ export function makeScheduler<S extends AnySchema, Tx>({
     },
     book: (params) => book(ctx, params),
     cancel: (params) => cancel(ctx, params),
+    findSlots: (params) => findSlots(ctx, params),
   };
 }

@@ -692,10 +692,10 @@ describe(`${findFreeSlots.name} issues`, () => {
     expect(issuePaths(result)).toStrictEqual([
       ["duration"],
       ["interval"],
+      ["to"],
       ["rules", 1, "timezone"],
       ["rules", 1, "resourceId"],
       ["bookings", 0, "end"],
-      ["to"],
     ]);
   });
 });

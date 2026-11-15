@@ -4,6 +4,7 @@ import {
   checkResourceInputs,
   checkTimeZone,
 } from "./checks.js";
+import type { CheckIssue } from "./checks.js";
 import { overlapsBlockingBooking } from "./detect-conflicts.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
@@ -126,6 +127,32 @@ function findFreeSlotsUnchecked(
   return slots;
 }
 
+/** The search params' issues: whole-minute `duration` and `interval`, an IANA `timezone`, `from < to`. Internal; the Framework checks these before any Adapter call. */
+export function checkSearch({
+  duration,
+  from,
+  interval,
+  timezone,
+  to,
+}: Pick<
+  FindFreeSlotsParams,
+  "duration" | "from" | "interval" | "timezone" | "to"
+>): CheckIssue[] {
+  return [
+    ...checkPositiveInteger(duration, ["duration"]),
+    ...checkPositiveInteger(interval, ["interval"]),
+    ...checkTimeZone(timezone, ["timezone"]),
+    ...(Temporal.Instant.compare(from, to) < 0
+      ? []
+      : [
+          {
+            message: `to (${to.toString()}) must be after from (${from.toString()}).`,
+            path: ["to"],
+          },
+        ]),
+  ];
+}
+
 /**
  * The Grid starts whose slot overlaps no blocking Booking and fits availability.
  * With `relax: ["availability"]`, slots outside it are kept and marked `waived`.
@@ -148,18 +175,8 @@ export function findFreeSlots<
   } = params;
 
   const issues = [
-    ...checkPositiveInteger(duration, ["duration"]),
-    ...checkPositiveInteger(interval, ["interval"]),
-    ...checkTimeZone(timezone, ["timezone"]),
+    ...checkSearch({ duration, from, interval, timezone, to }),
     ...checkResourceInputs({ bookings, resourceId, rules }),
-    ...(Temporal.Instant.compare(from, to) < 0
-      ? []
-      : [
-          {
-            message: `to (${to.toString()}) must be after from (${from.toString()}).`,
-            path: ["to"],
-          },
-        ]),
   ];
 
   // SAFETY: an availability violation is only added when R contains "availability".
