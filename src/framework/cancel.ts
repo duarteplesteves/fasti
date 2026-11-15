@@ -71,9 +71,11 @@ export function cancel<S extends AnySchema>(
           expected: booking,
         });
 
-        // Only `changed` can fail it: a cancelled Booking blocks nothing, so no `conflict`.
         if (!updated.ok) {
-          return yield* Effect.fail(retry);
+          // A cancelled Booking blocks nothing, so `conflict` means the Adapter is broken: die, don't loop.
+          return yield* updated.reason === "changed"
+            ? Effect.fail(retry)
+            : Effect.die(new Error("fasti: cancel got `conflict`"));
         }
 
         return {
