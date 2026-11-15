@@ -50,3 +50,7 @@ We choose option 3.
 - **Negative:** A Policy is race-free only for the Resource whose lock it runs under. A limit across Resources (sessions per pack) can be overfilled by concurrent bookings on different Resources. Its guarantee has to come from an atomic write that can veto the Action, not from a Policy.
 - **Negative:** The grid starts at local midnight, not at each rule's start. A rule starting at 09:10 needs an `interval` that reaches 09:10 (for example 10 minutes), or its first slot moves.
 - **Negative:** `policies: []` allows past starts. The developer has to opt into `notice`.
+
+## Amendment (2026-11-15): Policies and `relax` are staged into checkpoint 7
+
+`0.1.0` (checkpoint 4) ships the Invariants and the `availability` Policy only. `createScheduler` takes no `policies`, the Actions take no `relax`, `notice` isn't exported, and `Slot.waived` is always empty. `availability` is checked as decided above, after the overlap Invariant, and reported as `PolicyViolation`, so the result shapes don't change when the rest arrives. `definePolicy`, `policies`, `relax`, `notice` and `now` from `Clock` arrive together in checkpoint 7. Until then past starts are bookable.

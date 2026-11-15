@@ -7,3 +7,6 @@ coverage
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# The example installs the repo as file:../.., so a lockfile would go stale on every root change.
+examples/*/bun.lock

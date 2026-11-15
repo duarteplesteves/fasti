@@ -40,3 +40,17 @@ We choose option 4.
 - **Positive:** Domain failures can be sent straight to a client as JSON.
 - **Negative:** Plain users see the field name `_tag`, which comes from Effect.
 - **Negative:** Adding a resource-owning part to the runtime later (a cache, a timer) would require a `dispose()`, which is a breaking change.
+
+## Amendment (2026-11-15): the service class is the developer's, and `fields` is nested
+
+Building the Framework in checkpoint 4 settled two details:
+
+- **The developer declares the service class.** fasti can't export one ready-made `Scheduler` tag, because the service's type depends on the developer's schema. `fasti/effect` exports a helper instead, and the developer's class is the tag:
+
+  ```ts
+  class AppScheduler extends Scheduler<AppScheduler, typeof schema>()("app/Scheduler") {}
+  const live = AppScheduler.layer({ schema, adapter });
+  ```
+
+  `layer` is a static on the returned class, so the shape above (`layer({ schema, adapter })`) is unchanged. The class follows Effect's own `Context.Service` idiom, and its id is the developer's, so two schedulers over different schemas can live in one app.
+- **Developer Fields are nested on input.** `book` takes them under `fields` (`{ resourceId, start, end, fields: { customerName } }`), so a field can never collide with a param fasti adds later. `fields` is absent when the schema declares none, optional when every field is optional, and required otherwise. Returned Bookings stay flat: Developer Fields sit next to `id`, `start` and `status`, as they do in the developer's table.

@@ -1,0 +1,23 @@
+{
+  "name": "fasti-example-basic",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node migrate.ts",
+    "plain": "node plain.ts",
+    "effect": "node effect.ts",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@fastijs/scheduler": "file:../..",
+    "drizzle-kit": "1.0.0-rc.5",
+    "drizzle-orm": "1.0.0-rc.5",
+    "effect": "^4.1",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "typescript": "^7.1.0-beta"
+  }
+}

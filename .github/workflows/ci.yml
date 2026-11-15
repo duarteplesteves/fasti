@@ -46,3 +46,15 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run test:integration
+      - run: bun run build
+      # The examples install the built package (file:../..) and run against the same Postgres.
+      - name: examples/basic
+        working-directory: examples/basic
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          bun install --no-save
+          bun run typecheck
+          bun run migrate
+          bun run plain
+          bun run effect
