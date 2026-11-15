@@ -60,6 +60,7 @@ export function book<S extends AnySchema>(
   params: BookParams<S>
 ): Effect.Effect<Booking<S>, BookError> {
   const { end, resourceId, start } = params;
+  const coreId = String(resourceId);
 
   return ctx.adapter.withResourceLock(resourceId, (locked) =>
     Effect.gen(function* bookUnit() {
@@ -76,11 +77,12 @@ export function book<S extends AnySchema>(
 
       const valid = isSlotValid({
         bookings: [],
-        resourceId: String(resourceId),
-        rules: rules.map((r) => ({ ...r, resourceId: String(resourceId) })),
+        resourceId: coreId,
+        rules: rules.map((r) => ({ ...r, resourceId: coreId })),
         slot: { end, start },
       });
 
+      // Invalid stored rules are the Adapter's data (Invariant 6). shortcut: until #65 checks params, a bad slot lands here too.
       if (!valid.ok) {
         return yield* Effect.fail(new AdapterError(valid.error));
       }
