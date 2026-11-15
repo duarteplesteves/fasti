@@ -66,13 +66,15 @@
     "typecheck": "tsc",
     "publint": "publint",
     "attw": "attw --pack --profile esm-only",
-    "test:integration": "vitest run --project conformance"
+    "test:integration": "vitest run --project conformance",
+    "release": "bun run build && changeset publish"
   },
   "dependencies": {
     "effect": "^4.1"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@changesets/cli": "^3.0.3",
     "@fast-check/vitest": "^0.5.0",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
