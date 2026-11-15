@@ -78,7 +78,7 @@ describe("findSlots", () => {
         waived: [],
       },
     ]);
-    expectTypeOf(result.value).toEqualTypeOf<Slot<typeof schema>[]>();
+    expectTypeOf(result.value).toEqualTypeOf<readonly Slot<typeof schema>[]>();
     expectTypeOf<Slot<typeof schema>["resourceId"]>().toEqualTypeOf<
       ResourceIdOf<typeof schema>
     >();

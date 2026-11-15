@@ -43,7 +43,7 @@ export interface SchedulerService<S extends AnySchema> {
   /** Free slots on a Resource in a range, zoned in the caller's timezone. */
   readonly findSlots: (
     params: FindSlotsParams<S>
-  ) => Effect.Effect<Slot<S>[], FindSlotsError>;
+  ) => Effect.Effect<readonly Slot<S>[], FindSlotsError>;
   /** A Resource's Availability Rules. */
   readonly availability: {
     /** Replace the Resource's whole rule set under its Resource Lock. */

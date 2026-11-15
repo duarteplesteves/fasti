@@ -2,8 +2,7 @@ import { Effect } from "effect";
 
 import { toCoreBooking } from "../adapter/records.js";
 import type { ResourceIdOf } from "../adapter/records.js";
-import { checkPositiveInteger, checkTimeZone } from "../core/checks.js";
-import { findFreeSlots } from "../core/find-free-slots.js";
+import { checkSearch, findFreeSlots } from "../core/find-free-slots.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
@@ -43,26 +42,14 @@ export type FindSlotsError = InvalidParams | AdapterError;
 export function findSlots<S extends AnySchema>(
   { adapter, codec }: ActionContext<S>,
   params: FindSlotsParams<S>
-): Effect.Effect<Slot<S>[], FindSlotsError> {
+): Effect.Effect<readonly Slot<S>[], FindSlotsError> {
   const { duration, interval, resourceId, timezone } = params;
   const from = floorMs(params.from);
   const to = floorMs(params.to);
 
   // Checked before any Adapter call (Invariant 5), so `to.add(duration)` below can't throw.
   const valid = checked(
-    [
-      ...checkPositiveInteger(duration, ["duration"]),
-      ...checkPositiveInteger(interval, ["interval"]),
-      ...checkTimeZone(timezone, ["timezone"]),
-      ...(Temporal.Instant.compare(from, to) < 0
-        ? []
-        : [
-            {
-              message: `to (${to.toString()}) must be after from (${from.toString()}).`,
-              path: ["to"],
-            },
-          ]),
-    ],
+    checkSearch({ duration, from, interval, timezone, to }),
     () => null
   );
 
