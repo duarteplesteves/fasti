@@ -152,11 +152,11 @@ const actions = {
 const locking = ["availability.set", "book", "cancel"] as const;
 
 /** Every Action. */
-const every = [...locking, "availability.get", "findSlots"] as const;
+const allActions = [...locking, "availability.get", "findSlots"] as const;
 
 describe("failure handling", () => {
   describe.each([
-    ["a rejecting verb", rejectingVerbs, every],
+    ["a rejecting verb", rejectingVerbs, allActions],
     ["a lock that rejects before the work", lockRejects, locking],
     ["a commit failure", commitRejects, locking],
   ] as const)("%s", (_, broken, names) => {
@@ -197,7 +197,8 @@ describe("failure handling", () => {
       };
     });
 
-    await expect(actions.book(broken)).rejects.toBeDefined();
+    // A defect, not the Adapter failing: `.map` on a non-array throws a TypeError.
+    await expect(actions.book(broken)).rejects.toBeInstanceOf(TypeError);
     await expect(
       adapter(schema).listBookings({
         overlapping: { from: freeSlot.start, to: freeSlot.end },
@@ -217,7 +218,16 @@ describe("failure handling", () => {
         withResourceLock: async (id, work) =>
           await raw.withResourceLock(
             id,
-            async (locked) => await work({ ...locked, insertBooking: reject })
+            async (locked) =>
+              await work({
+                ...locked,
+                // Writes, then fails: only a rollback keeps the slot free.
+                insertBooking: async (booking) => {
+                  await locked.insertBooking(booking);
+
+                  throw boom;
+                },
+              })
           ),
       };
     });
