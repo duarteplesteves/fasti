@@ -22,6 +22,12 @@ export interface PolicyViolation {
   ];
 }
 
+/** No Booking has this id. */
+export interface BookingNotFound {
+  readonly _tag: "BookingNotFound";
+  readonly id: BookingId;
+}
+
 /** The Adapter or its database failed. `cause` is the original rejection. A plain `Error`, so no Effect import is needed. */
 export class AdapterError extends Error {
   readonly _tag = "AdapterError" as const;
