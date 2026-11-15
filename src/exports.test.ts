@@ -34,7 +34,11 @@ interface Entry {
 }
 
 const surface = [
-  { module: root, names: ["column", "defineSchema"], source: "index.js" },
+  {
+    module: root,
+    names: ["AdapterError", "column", "createScheduler", "defineSchema"],
+    source: "index.js",
+  },
   { module: adapter, names: ["defineAdapter"], source: "adapter/index.js" },
   {
     module: core,
@@ -90,8 +94,8 @@ describe("package export surface", () => {
     }
   );
 
-  it("the package has no runtime dependencies", () => {
-    expect(pkg.dependencies).toBeUndefined();
+  it("the package's only runtime dependency is effect (ADR 012)", () => {
+    expect(pkg.dependencies).toStrictEqual({ effect: "^4.1" });
   });
 
   it("the Core imports nothing outside itself", () => {

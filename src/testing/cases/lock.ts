@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { expect } from "vitest";
 
 import type { LockedAdapter } from "../../adapter/contract.js";
+import { toCoreBooking } from "../../adapter/records.js";
 import type {
   BookingChanges,
   BookingRecord,
@@ -72,13 +73,7 @@ async function claim<S extends AnySchema, Tx>(
   });
 
   const conflicts = detectConflicts({
-    bookings: existing.map((b) => ({
-      end: b.end,
-      id: b.id,
-      isBlocking: codec.isBlocking(b.status),
-      resourceId: String(b.resourceId),
-      start: b.start,
-    })),
+    bookings: existing.map((b) => toCoreBooking(codec, b)),
     candidate: slot,
     resourceId: String(resourceId),
   });

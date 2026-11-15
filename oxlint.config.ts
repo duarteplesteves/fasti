@@ -21,6 +21,12 @@ const noEffect = {
   message: "Only the Effect layer imports effect (ADR 012).",
 };
 
+const noAdaptersOrTesting = {
+  group: ["**/memory/**", "**/drizzle/**", "**/testing/**", "**/test-utils/**"],
+  message:
+    "The Framework never imports an Adapter or the Conformance Suite (ADR 012).",
+};
+
 /** Builds a no-restricted-imports rule from pattern groups. */
 function restrict(patterns: object[]) {
   return { "no-restricted-imports": ["error", { patterns }] };
@@ -48,6 +54,10 @@ export default defineConfig({
     {
       files: ["src/{schema,adapter,memory,drizzle,testing}/**"],
       rules: restrict([noVitest, noDrizzle, noEffect]),
+    },
+    {
+      files: ["src/framework/**", "src/index.ts"],
+      rules: restrict([noVitest, noDrizzle, noAdaptersOrTesting]),
     },
     { files: ["src/drizzle/pg/**"], rules: restrict([noVitest, noEffect]) },
     { files: ["src/testing/**"], rules: restrict([noDrizzle, noEffect]) },
