@@ -267,6 +267,30 @@ describe("book", () => {
       });
     });
 
+    it("floors instant Developer Fields to the millisecond", async () => {
+      const { scheduler } = await setUp();
+
+      const result = await scheduler.book({
+        end: at(2),
+        fields: {
+          ...required,
+          remindAt: Temporal.Instant.from("2030-06-02T09:00:00.000999999Z"),
+          remindAtOpt: Temporal.Instant.from("2030-06-02T10:00:00.000000001Z"),
+        },
+        resourceId: staff,
+        start: at(1),
+      });
+
+      assert(result.ok, "expected ok");
+      // toStrictEqual, not toMatchObject: the latter sees every Instant as equal.
+      const { remindAt, remindAtOpt } = result.value;
+
+      expect({ remindAt, remindAtOpt }).toStrictEqual({
+        remindAt: Temporal.Instant.from("2030-06-02T09:00:00Z"),
+        remindAtOpt: Temporal.Instant.from("2030-06-02T10:00:00Z"),
+      });
+    });
+
     it("books back-to-back slots", async () => {
       const { scheduler } = await setUp();
 

@@ -74,7 +74,7 @@ function conflictsAt<S extends AnySchema>(
 /** A Developer Field's value, `null` when an optional one is unset. */
 type FieldValue = TypeOf<AnyColumn> | null;
 
-/** One value per schema field, `null` for an optional one left out; keys outside the schema are dropped. */
+/** One value per schema field, `null` for an optional one left out, Instants ms-floored; keys outside the schema are dropped. */
 function fieldValues<S extends AnySchema>(
   schema: S,
   params: BookParams<S>
@@ -86,10 +86,11 @@ function fieldValues<S extends AnySchema>(
   };
 
   return Object.fromEntries(
-    Object.keys(schema.booking.fields).map((name) => [
-      name,
-      fields?.[name] ?? null,
-    ])
+    Object.keys(schema.booking.fields).map((name) => {
+      const value = fields?.[name] ?? null;
+
+      return [name, value instanceof Temporal.Instant ? floorMs(value) : value];
+    })
   );
 }
 
