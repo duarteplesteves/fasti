@@ -154,17 +154,35 @@ describe("race safety", () => {
           })),
         });
 
+        // Seed only states the Framework can reach: blocking Bookings never overlap (the Invariant).
+        const kept: typeof bookings = [];
+
+        for (const b of bookings) {
+          const clash = kept.some(
+            (k) =>
+              k.isBlocking &&
+              b.isBlocking &&
+              Temporal.Instant.compare(k.start, b.end) < 0 &&
+              Temporal.Instant.compare(b.start, k.end) < 0
+          );
+
+          if (!clash) {
+            kept.push(b);
+          }
+        }
+
         await Promise.all(
-          bookings.map(
-            async (b) =>
-              await locked.insertBooking({
-                end: b.end,
-                id: mintBookingId(),
-                resourceId: room,
-                start: b.start,
-                status: b.isBlocking ? "booked" : "cancelled",
-              })
-          )
+          kept.map(async (b) => {
+            const inserted = await locked.insertBooking({
+              end: b.end,
+              id: mintBookingId(),
+              resourceId: room,
+              start: b.start,
+              status: b.isBlocking ? "booked" : "cancelled",
+            });
+
+            expect(inserted).toStrictEqual({ ok: true });
+          })
         );
       });
 
