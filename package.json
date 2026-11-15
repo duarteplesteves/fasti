@@ -64,6 +64,9 @@
     "attw": "attw --pack --profile esm-only",
     "test:integration": "vitest run --project conformance"
   },
+  "dependencies": {
+    "effect": "^4.1"
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
     "@fast-check/vitest": "^0.5.0",

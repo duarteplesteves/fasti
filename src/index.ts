@@ -19,3 +19,24 @@ export type {
   Fields,
   Schema,
 } from "./schema/define-schema.js";
+
+export { createScheduler } from "./framework/create-scheduler.js";
+
+export type {
+  CreateSchedulerParams,
+  Scheduler,
+} from "./framework/create-scheduler.js";
+
+export type { BookError, BookParams } from "./framework/book.js";
+
+export type { Booking } from "./framework/booking.js";
+
+export { AdapterError } from "./framework/errors.js";
+
+export type {
+  ConflictingBooking,
+  PolicyViolation,
+  SlotConflict,
+} from "./framework/errors.js";
+
+export type { InvalidParams, Issue, Result } from "./core/result.js";

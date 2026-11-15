@@ -1,6 +1,7 @@
-import type { AvailabilityRule, BookingId } from "../core/types.js";
+import type { AvailabilityRule, Booking, BookingId } from "../core/types.js";
 import type { TypeOf } from "../schema/column.js";
 import type { AnySchema, Fields } from "../schema/define-schema.js";
+import type { StatusCodec } from "../schema/status-codec.js";
 
 /** The Resource id type a schema declares, brand included. */
 export type ResourceIdOf<S extends AnySchema> = TypeOf<S["resource"]["idType"]>;
@@ -37,3 +38,17 @@ export type RuleRecord = Readonly<
 > & {
   readonly exceptions: readonly Temporal.PlainDate[];
 };
+
+/** The Core's view of a stored Booking: `String` Resource id, blocking derived from its Status. Internal. */
+export function toCoreBooking<S extends AnySchema>(
+  codec: StatusCodec<StatusOf<S>>,
+  record: BookingRecord<S>
+): Booking<BookingId> {
+  return {
+    end: record.end,
+    id: record.id,
+    isBlocking: codec.isBlocking(record.status),
+    resourceId: String(record.resourceId),
+    start: record.start,
+  };
+}
