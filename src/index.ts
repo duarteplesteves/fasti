@@ -46,6 +46,12 @@ export type {
 
 export type { Booking } from "./framework/booking.js";
 
+export type {
+  FindSlotsError,
+  FindSlotsParams,
+  Slot,
+} from "./framework/find-slots.js";
+
 export { AdapterError } from "./framework/errors.js";
 
 export type {
