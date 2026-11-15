@@ -37,13 +37,17 @@ export function Scheduler<Self, S extends AnySchema>(): <
 >(
   id: Id
 ) => SchedulerClass<Self, Id, S> {
-  return (id) =>
-    class extends Context.Service<Self, SchedulerService<S>>()(id) {
+  return (id) => {
+    const Tag = Context.Service<Self, SchedulerService<S>>()(id);
+
+    return class extends Tag {
       /** Provide the Actions over `schema` and `adapter`. */
+      // Not `this`, so a detached `const { layer } = AppScheduler` still works.
       static layer<Tx>(
         params: CreateSchedulerParams<S, Tx>
       ): Layer.Layer<Self> {
-        return Layer.succeed(this, makeScheduler(params));
+        return Layer.succeed(Tag, makeScheduler(params));
       }
     };
+  };
 }

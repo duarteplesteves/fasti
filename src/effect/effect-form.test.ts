@@ -161,5 +161,11 @@ describe("Effect form", () => {
 
     assert(Exit.isFailure(exit), "expected a failure");
     expect(Cause.hasDies(exit.cause)).toBeTruthy();
+    await expect(
+      inner(schema).listBookings({
+        overlapping: { from: at(0), to: at(24) },
+        resourceId: room,
+      })
+    ).resolves.toStrictEqual([]);
   });
 });
