@@ -38,11 +38,18 @@ export type {
 
 export type { BookError, BookParams } from "./framework/book.js";
 
+export type {
+  CancelError,
+  CancelParams,
+  CancelValue,
+} from "./framework/cancel.js";
+
 export type { Booking } from "./framework/booking.js";
 
 export { AdapterError } from "./framework/errors.js";
 
 export type {
+  BookingNotFound,
   ConflictingBooking,
   PolicyViolation,
   SlotConflict,

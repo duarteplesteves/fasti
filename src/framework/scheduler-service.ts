@@ -15,6 +15,8 @@ import type {
 import { book } from "./book.js";
 import type { BookError, BookParams } from "./book.js";
 import type { Booking } from "./booking.js";
+import { cancel } from "./cancel.js";
+import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { CreateSchedulerParams } from "./create-scheduler.js";
 import { liftAdapter } from "./effect-adapter.js";
 import type { EffectAdapter } from "./effect-adapter.js";
@@ -32,6 +34,10 @@ export interface SchedulerService<S extends AnySchema> {
   readonly book: (
     params: BookParams<S>
   ) => Effect.Effect<Booking<S>, BookError>;
+  /** Cancel a Booking, freeing its slot. Idempotent. */
+  readonly cancel: (
+    params: CancelParams
+  ) => Effect.Effect<CancelValue<S>, CancelError>;
   /** A Resource's Availability Rules. */
   readonly availability: {
     /** Replace the Resource's whole rule set under its Resource Lock. */
@@ -62,5 +68,6 @@ export function makeScheduler<S extends AnySchema, Tx>({
       set: (params) => setAvailability(ctx, params),
     },
     book: (params) => book(ctx, params),
+    cancel: (params) => cancel(ctx, params),
   };
 }
