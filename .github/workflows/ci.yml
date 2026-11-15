@@ -20,10 +20,28 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun run typecheck
-      - run: bun run test:ci
       - run: bun run build
       - run: bun run publint
       - run: bun run attw
+
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [node, bun]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - if: matrix.runtime == 'node'
+        run: bun run test:ci
+      # --bun runs vitest itself on Bun's runtime instead of Node.
+      - if: matrix.runtime == 'bun'
+        run: bun --bun vitest run --project unit
 
   integration:
     runs-on: ubuntu-latest
