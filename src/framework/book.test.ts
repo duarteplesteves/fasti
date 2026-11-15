@@ -28,12 +28,9 @@ const uuidV7 =
 describe("book", () => {
   it("books a free slot inside availability, with a fresh UUIDv7 id", async () => {
     const adapter = memoryAdapter();
-
-    await adapter(schema).withResourceLock(room, async (locked) => {
-      await locked.replaceRules({ resourceId: room, rules: [weekdays] });
-    });
-
     const scheduler = createScheduler({ adapter, schema });
+
+    await scheduler.availability.set({ resourceId: room, rules: [weekdays] });
     // Monday 3 June 2030, 10:00–11:00 Lisbon (UTC+1).
     const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
     const end = Temporal.Instant.from("2030-06-03T10:00:00Z");

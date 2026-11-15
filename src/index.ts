@@ -27,6 +27,15 @@ export type {
   Scheduler,
 } from "./framework/create-scheduler.js";
 
+export type {
+  AvailabilityRuleInput,
+  GetAvailabilityError,
+  GetAvailabilityParams,
+  SetAvailabilityError,
+  SetAvailabilityParams,
+  SetAvailabilityValue,
+} from "./framework/availability.js";
+
 export type { BookError, BookParams } from "./framework/book.js";
 
 export type { Booking } from "./framework/booking.js";

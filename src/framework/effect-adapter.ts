@@ -5,6 +5,7 @@ import type {
   InsertBookingResult,
   ListBookingsQuery,
   LockedAdapter,
+  ReplaceRulesParams,
   SchemaAdapter,
 } from "../adapter/contract.js";
 import type {
@@ -34,6 +35,9 @@ export interface EffectLocked<S extends AnySchema> extends EffectReads<S> {
   readonly insertBooking: (
     booking: BookingRecord<S>
   ) => Effect.Effect<InsertBookingResult, AdapterError>;
+  readonly replaceRules: (
+    params: ReplaceRulesParams<S>
+  ) => Effect.Effect<void, AdapterError>;
 }
 
 /** An Adapter as Effects: the only place a Promise Adapter becomes Effect. */
@@ -69,6 +73,10 @@ function liftLocked<S extends AnySchema, Tx>(
     ...liftReads(raw),
     insertBooking: (booking) =>
       attempt(async () => await raw.insertBooking(booking)),
+    replaceRules: (params) =>
+      attempt(async () => {
+        await raw.replaceRules(params);
+      }),
   };
 }
 

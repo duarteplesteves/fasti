@@ -1,9 +1,17 @@
 import type { Effect } from "effect";
 
-import type { StatusOf } from "../adapter/records.js";
+import type { RuleRecord, StatusOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import { statusCodec } from "../schema/status-codec.js";
+import { getAvailability, setAvailability } from "./availability.js";
+import type {
+  GetAvailabilityError,
+  GetAvailabilityParams,
+  SetAvailabilityError,
+  SetAvailabilityParams,
+  SetAvailabilityValue,
+} from "./availability.js";
 import { book } from "./book.js";
 import type { BookError, BookParams } from "./book.js";
 import type { Booking } from "./booking.js";
@@ -24,6 +32,17 @@ export interface SchedulerService<S extends AnySchema> {
   readonly book: (
     params: BookParams<S>
   ) => Effect.Effect<Booking<S>, BookError>;
+  /** A Resource's Availability Rules. */
+  readonly availability: {
+    /** Replace the Resource's whole rule set under its Resource Lock. */
+    readonly set: (
+      params: SetAvailabilityParams<S>
+    ) => Effect.Effect<SetAvailabilityValue, SetAvailabilityError>;
+    /** Read the Resource's rules; `[]` when it has none. */
+    readonly get: (
+      params: GetAvailabilityParams<S>
+    ) => Effect.Effect<readonly RuleRecord[], GetAvailabilityError>;
+  };
 }
 
 /** Bind the Actions to a schema and an Adapter. */
@@ -37,5 +56,11 @@ export function makeScheduler<S extends AnySchema, Tx>({
     schema,
   };
 
-  return { book: (params) => book(ctx, params) };
+  return {
+    availability: {
+      get: (params) => getAvailability(ctx, params),
+      set: (params) => setAvailability(ctx, params),
+    },
+    book: (params) => book(ctx, params),
+  };
 }
