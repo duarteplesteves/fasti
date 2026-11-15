@@ -6,6 +6,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
+import { unwrap } from "../test-utils/results.js";
 
 const schema = uuidIdSchema;
 const [room] = uuidIdResources;
@@ -30,7 +31,9 @@ describe("book", () => {
     const adapter = memoryAdapter();
     const scheduler = createScheduler({ adapter, schema });
 
-    await scheduler.availability.set({ resourceId: room, rules: [weekdays] });
+    unwrap(
+      await scheduler.availability.set({ resourceId: room, rules: [weekdays] })
+    );
     // Monday 3 June 2030, 10:00–11:00 Lisbon (UTC+1).
     const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
     const end = Temporal.Instant.from("2030-06-03T10:00:00Z");
