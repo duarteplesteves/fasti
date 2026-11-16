@@ -1,22 +1,19 @@
 import { Effect } from "effect";
 
-import { toCoreBooking } from "../adapter/records.js";
 import type {
   BlockFieldsOf,
   BlockRecord,
   ResourceIdOf,
 } from "../adapter/records.js";
 import { checkInstantRange } from "../core/checks.js";
-import { detectConflicts } from "../core/detect-conflicts.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { mintBlockId } from "./booking-id.js";
 import { fieldValues, floorMs } from "./booking.js";
 import type { FieldsParam } from "./booking.js";
-import { AdapterError } from "./errors.js";
-import type { SlotConflict } from "./errors.js";
-import { toConflicts } from "./occupancy.js";
+import type { AdapterError, SlotConflict } from "./errors.js";
+import { conflictsAt } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
 
 /** A Block as an Action returns it: flat, Developer Fields included. */
@@ -78,30 +75,17 @@ export function createBlock<S extends AnySchema>(
 
   return adapter.withResourceLock(resourceId, (locked) =>
     Effect.gen(function* createBlockUnit() {
-      // Bookings only: Blocks may overlap each other.
-      const bookings = yield* locked.listBookings({
-        overlapping: { from: start, to: end },
+      // Only blocking Bookings conflict with a Block: Blocks may overlap each other (ADR 016).
+      const conflicts = yield* conflictsAt(locked, codec, {
+        end,
         resourceId,
+        start,
       });
 
-      const hits = detectConflicts({
-        bookings: bookings.map((b) => toCoreBooking(codec, b)),
-        candidate: { end, start },
-        resourceId: String(resourceId),
-      });
-
-      // The params were checked up front, so only invalid stored data fails here (Invariant 6).
-      if (!hits.ok) {
-        return yield* Effect.fail(new AdapterError(hits.error));
-      }
-
-      if (hits.value.length > 0) {
+      if (conflicts.length > 0) {
         return yield* Effect.fail<SlotConflict>({
           _tag: "SlotConflict",
-          conflicts: toConflicts(
-            hits.value,
-            new Map(bookings.map((b) => [b.id, "booking"] as const))
-          ),
+          conflicts,
         });
       }
 

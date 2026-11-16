@@ -2,7 +2,6 @@ import { Effect } from "effect";
 
 import type { BookingRecord, ResourceIdOf } from "../adapter/records.js";
 import { checkInstantRange } from "../core/checks.js";
-import { detectConflicts } from "../core/detect-conflicts.js";
 import { isSlotValid } from "../core/is-slot-valid.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
@@ -10,10 +9,9 @@ import type { AnySchema } from "../schema/define-schema.js";
 import { mintBookingId } from "./booking-id.js";
 import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
-import type { EffectLocked } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
-import type { Conflict, PolicyViolation, SlotConflict } from "./errors.js";
-import { occupants, toConflicts } from "./occupancy.js";
+import type { PolicyViolation, SlotConflict } from "./errors.js";
+import { conflictsAt } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
 
 /** Params of `book`: one Resource, one half-open `[start, end)` range, and the schema's Developer Fields under `fields`. */
@@ -32,37 +30,6 @@ export type BookError =
   | SlotConflict
   | PolicyViolation
   | AdapterError;
-
-/** The conflicts at the slot, read inside the unit of work. */
-function conflictsAt<S extends AnySchema>(
-  { codec }: ActionContext<S>,
-  locked: EffectLocked<S>,
-  {
-    end,
-    resourceId,
-    start,
-  }: {
-    readonly resourceId: ResourceIdOf<S>;
-    readonly start: Temporal.Instant;
-    readonly end: Temporal.Instant;
-  }
-): Effect.Effect<readonly Conflict[], AdapterError> {
-  return Effect.flatMap(
-    occupants(locked, codec, resourceId, { from: start, to: end }),
-    ({ bookings, kindById }) => {
-      const r = detectConflicts({
-        bookings,
-        candidate: { end, start },
-        resourceId: String(resourceId),
-      });
-
-      // The params were checked up front, so only invalid stored data fails here (Invariant 6).
-      return r.ok
-        ? Effect.succeed(toConflicts(r.value, kindById))
-        : Effect.fail(new AdapterError(r.error));
-    }
-  );
-}
 
 /** Store a new `booked` Booking, if the slot is free and inside availability (ADR 014: overlap first). */
 export function book<S extends AnySchema>(
@@ -84,7 +51,7 @@ export function book<S extends AnySchema>(
 
   return ctx.adapter.withResourceLock(resourceId, (locked) =>
     Effect.gen(function* bookUnit() {
-      const conflicts = yield* conflictsAt(ctx, locked, range);
+      const conflicts = yield* conflictsAt(locked, ctx.codec, range);
 
       if (conflicts.length > 0) {
         return yield* Effect.fail<SlotConflict>({
@@ -134,7 +101,7 @@ export function book<S extends AnySchema>(
         // The backstop caught an outside write the lock can't see: report what is there now.
         return yield* Effect.fail<SlotConflict>({
           _tag: "SlotConflict",
-          conflicts: yield* conflictsAt(ctx, locked, range),
+          conflicts: yield* conflictsAt(locked, ctx.codec, range),
         });
       }
 

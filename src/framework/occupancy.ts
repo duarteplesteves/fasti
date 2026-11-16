@@ -2,11 +2,13 @@ import { Effect } from "effect";
 
 import { toCoreBooking } from "../adapter/records.js";
 import type { ResourceIdOf, StatusOf } from "../adapter/records.js";
+import { detectConflicts } from "../core/detect-conflicts.js";
 import type { Booking, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import type { EffectReads } from "./effect-adapter.js";
-import type { AdapterError, Conflict } from "./errors.js";
+import { AdapterError } from "./errors.js";
+import type { Conflict } from "./errors.js";
 
 /** What occupies a Resource over a range, as the Core sees it, plus each occupant's kind for mapping hits back. */
 interface Occupants {
@@ -54,4 +56,38 @@ export function toConflicts(
         Temporal.Instant.compare(a.start, b.start) ||
         (a.id < b.id ? -1 : Number(a.id > b.id))
     );
+}
+
+/**
+ * What a candidate `[start, end)` on `resourceId` would overlap, as Conflicts: the overlap Invariant's one check (ADR 014, ADR 016).
+ * Blocking Bookings only, for now; when Blocks occupy time (#86) it takes the candidate's kind, since a Block never conflicts with a Block.
+ */
+export function conflictsAt<S extends AnySchema>(
+  reads: Pick<EffectReads<S>, "listBookings">,
+  codec: StatusCodec<StatusOf<S>>,
+  {
+    end,
+    resourceId,
+    start,
+  }: {
+    readonly resourceId: ResourceIdOf<S>;
+    readonly start: Temporal.Instant;
+    readonly end: Temporal.Instant;
+  }
+): Effect.Effect<readonly Conflict[], AdapterError> {
+  return Effect.flatMap(
+    occupants(reads, codec, resourceId, { from: start, to: end }),
+    ({ bookings, kindById }) => {
+      const r = detectConflicts({
+        bookings,
+        candidate: { end, start },
+        resourceId: String(resourceId),
+      });
+
+      // Callers check the params up front, so only invalid stored data fails here (Invariant 6).
+      return r.ok
+        ? Effect.succeed(toConflicts(r.value, kindById))
+        : Effect.fail(new AdapterError(r.error));
+    }
+  );
 }
