@@ -20,7 +20,7 @@ import type {
   ResourceIdOf,
   RuleRecord,
 } from "../adapter/records.js";
-import type { BlockId, BookingId } from "../core/types.js";
+import type { BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { AdapterError } from "./errors.js";
 
@@ -35,10 +35,6 @@ export interface EffectReads<S extends AnySchema> {
   readonly getRules: (
     resourceId: ResourceIdOf<S>
   ) => Effect.Effect<RuleRecord[], AdapterError>;
-  /** `null` on a schema without `block`. */
-  readonly getBlock: (
-    id: BlockId
-  ) => Effect.Effect<BlockRecord<S> | null, AdapterError>;
   /** `[]` on a schema without `block`, with no database read. */
   readonly listBlocks: (
     query: ListBlocksQuery<S>
@@ -84,10 +80,6 @@ function liftReads<S extends AnySchema>(
   hasBlocks: boolean
 ): EffectReads<S> {
   return {
-    getBlock: (id) =>
-      hasBlocks
-        ? attempt(async () => await raw.getBlock(id))
-        : Effect.succeed(null),
     getBooking: (id) => attempt(async () => await raw.getBooking(id)),
     getRules: (resourceId) =>
       attempt(async () => await raw.getRules(resourceId)),

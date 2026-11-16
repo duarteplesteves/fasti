@@ -111,10 +111,13 @@ describe(defineSchema, () => {
     });
   });
 
-  it("throws on a Block table name that collides only when `block` is declared", () => {
+  it("throws on a Block table or column name that collides only when `block` is declared", () => {
     const names = { tables: { block: "booking" } };
 
     expect(() => defineSchema({ names })).not.toThrow();
+    expect(() =>
+      defineSchema({ names: { columns: { block: { end: "start" } } } })
+    ).not.toThrow();
     expect(() => defineSchema({ block: { fields: {} }, names })).toThrow(
       /table name "booking"/u
     );

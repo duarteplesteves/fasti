@@ -227,8 +227,12 @@ export function defineSchema<
   assertDistinct("stored value", stored);
   assertDistinct("column name", bookingColumns);
   assertDistinct("column name", ruleColumns);
-  assertDistinct("column name", blockColumns);
-  // An unused Block table name can't collide with anything.
+
+  // Unused Block names can't collide with anything.
+  if (params.block) {
+    assertDistinct("column name", blockColumns);
+  }
+
   assertDistinct(
     "table name",
     params.block

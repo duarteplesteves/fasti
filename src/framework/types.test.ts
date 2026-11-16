@@ -1,10 +1,30 @@
 import { describe, expectTypeOf, it } from "vitest";
 
-import type { Adapter } from "../adapter/contract.js";
+import type {
+  Adapter,
+  BlockReads,
+  BlockRecord,
+  BlockWrites,
+  GroupsOf,
+  ListBlocksQuery,
+  VerbGroup,
+} from "../adapter/index.js";
 import type { InvalidParams, Result } from "../core/result.js";
-import type { BlockId, BookingId } from "../core/types.js";
+import type { BookingId } from "../core/types.js";
+import type {
+  BlockId,
+  Block,
+  BlockActions,
+  BlockColumn,
+  CreateBlockError,
+  CreateBlockParams,
+  CreateSchedulerParams,
+  HasBlocks,
+  ListBlocksError,
+  ListBlocksParams,
+  Scheduler,
+} from "../index.js";
 import { createScheduler } from "../index.js";
-import type { CreateSchedulerParams, Scheduler } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { column } from "../schema/column.js";
 import { defineSchema } from "../schema/define-schema.js";
@@ -14,7 +34,6 @@ import type {
   textIdSchema,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
-import type { Block, CreateBlockError, CreateBlockParams } from "./blocks.js";
 import type { BookError, BookParams } from "./book.js";
 import type { Booking } from "./booking.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
@@ -210,5 +229,25 @@ describe("Blocks types", () => {
       // oxlint-disable-next-line typescript/no-generated-empty-object-type -- no Developer Fields.
       readonly fields: Record<never, never>;
     }>();
+  });
+});
+
+describe("Block exports", () => {
+  it("puts the Block types on the root and the contract types on /adapter", () => {
+    type S = typeof blockSchema;
+
+    expectTypeOf<HasBlocks<S>>().toEqualTypeOf<true>();
+    expectTypeOf<GroupsOf<S>>().toEqualTypeOf<VerbGroup>();
+    expectTypeOf<BlockColumn>().toEqualTypeOf<
+      "id" | "resourceId" | "start" | "end"
+    >();
+    expectTypeOf<Block<S>>().toEqualTypeOf<BlockRecord<S>>();
+    expectTypeOf<ListBlocksQuery<S>>().toHaveProperty("overlapping");
+    expectTypeOf<BlockReads<S>>().toHaveProperty("listBlocks");
+    expectTypeOf<BlockWrites<S>>().toHaveProperty("insertBlock");
+    expectTypeOf<BlockActions<S>["list"]>()
+      .parameter(0)
+      .toEqualTypeOf<ListBlocksParams<S>>();
+    expectTypeOf<ListBlocksError>().toExtend<CreateBlockError>();
   });
 });

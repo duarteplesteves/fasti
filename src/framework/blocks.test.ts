@@ -274,7 +274,7 @@ describe("blocks.create and blocks.list", () => {
     const inner = memoryAdapter();
     const boom = new Error("boom");
 
-    // Writes a Booking first, so only a rollback leaves the store empty.
+    // Writes the Block, then fails: only a rollback leaves the store empty.
     const adapter = defineAdapter<undefined, "blocks">((s) => {
       const raw = inner(s);
 

@@ -89,7 +89,5 @@ export function makeScheduler<S extends AnySchema, Tx>({
     findSlots: (params) => findSlots(ctx, params),
   };
 
-  // SAFETY: `blocks` is there exactly when the schema declares `block`, which is what HasBlocks<S> says.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
   return schema.block === null ? base : { ...base, blocks };
 }
