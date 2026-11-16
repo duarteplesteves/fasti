@@ -46,7 +46,7 @@ function conflictsAt<S extends AnySchema>(
     readonly start: Temporal.Instant;
     readonly end: Temporal.Instant;
   }
-): Effect.Effect<Conflict[], AdapterError> {
+): Effect.Effect<readonly Conflict[], AdapterError> {
   return Effect.flatMap(
     occupants(locked, codec, resourceId, { from: start, to: end }),
     ({ bookings, kindById }) => {

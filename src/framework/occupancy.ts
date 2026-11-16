@@ -9,7 +9,7 @@ import type { EffectReads } from "./effect-adapter.js";
 import type { AdapterError, Conflict } from "./errors.js";
 
 /** What occupies a Resource over a range, as the Core sees it, plus each occupant's kind for mapping hits back. */
-export interface Occupants {
+interface Occupants {
   readonly bookings: readonly Booking<BookingId>[];
   readonly kindById: ReadonlyMap<string, Conflict["kind"]>;
 }
@@ -37,15 +37,18 @@ export function occupants<S extends AnySchema>(
 export function toConflicts(
   hits: readonly Booking<BookingId>[],
   kindById: ReadonlyMap<string, Conflict["kind"]>
-): Conflict[] {
+): readonly Conflict[] {
   return hits
-    .map(({ end, id, start }) => ({
-      end,
-      id,
-      // shortcut: one kind until Blocks land (#84); every hit came from `occupants`.
-      kind: kindById.get(id) ?? "booking",
-      start,
-    }))
+    .map(({ end, id, start }) => {
+      const kind = kindById.get(id);
+
+      // Every hit came from `occupants`, which tagged it: a miss is a defect.
+      if (kind === undefined) {
+        throw new Error(`fasti: occupant ${id} has no kind`);
+      }
+
+      return { end, id, kind, start };
+    })
     .toSorted(
       (a, b) =>
         Temporal.Instant.compare(a.start, b.start) ||
