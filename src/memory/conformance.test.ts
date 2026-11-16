@@ -39,7 +39,12 @@ describe.each([
   testAdapter(params);
 
   // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
-  it.fails.each(concurrencyCases)("[lock off] $name", async (c) => {
+  // Blocks cases are skipped without `block`, so a failure there would prove nothing.
+  it.fails.each(
+    concurrencyCases.filter(
+      (c) => schema.block !== null || !c.tags.includes("blocks")
+    )
+  )("[lock off] $name", async (c) => {
     await expect(
       runCase(c, { ...params, makeAdapter: lockOffAdapter })
     ).resolves.toBeUndefined();
