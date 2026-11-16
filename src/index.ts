@@ -13,10 +13,12 @@ export type {
   AnySchema,
   AvailabilityRuleColumn,
   BaseStatus,
+  BlockColumn,
   BookingColumn,
   DefineSchemaParams,
   FieldDef,
   Fields,
+  HasBlocks,
   Schema,
 } from "./schema/define-schema.js";
 
@@ -35,6 +37,15 @@ export type {
   SetAvailabilityParams,
   SetAvailabilityValue,
 } from "./framework/availability.js";
+
+export type {
+  Block,
+  BlockActions,
+  CreateBlockError,
+  CreateBlockParams,
+  ListBlocksError,
+  ListBlocksParams,
+} from "./framework/blocks.js";
 
 export type { BookError, BookParams } from "./framework/book.js";
 
@@ -63,3 +74,5 @@ export type {
 } from "./framework/errors.js";
 
 export type { InvalidParams, Issue, Result } from "./core/result.js";
+
+export type { BlockId } from "./core/types.js";

@@ -2,20 +2,25 @@ import { Effect, Exit } from "effect";
 
 import type {
   AdapterReads,
+  BlockReads,
+  GroupsOf,
   InsertBookingResult,
+  ListBlocksQuery,
   ListBookingsQuery,
   LockedAdapter,
   ReplaceRulesParams,
   SchemaAdapter,
   UpdateBookingParams,
   UpdateBookingResult,
+  VerbGroup,
 } from "../adapter/contract.js";
 import type {
+  BlockRecord,
   BookingRecord,
   ResourceIdOf,
   RuleRecord,
 } from "../adapter/records.js";
-import type { BookingId } from "../core/types.js";
+import type { BlockId, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { AdapterError } from "./errors.js";
 
@@ -30,6 +35,14 @@ export interface EffectReads<S extends AnySchema> {
   readonly getRules: (
     resourceId: ResourceIdOf<S>
   ) => Effect.Effect<RuleRecord[], AdapterError>;
+  /** `null` on a schema without `block`. */
+  readonly getBlock: (
+    id: BlockId
+  ) => Effect.Effect<BlockRecord<S> | null, AdapterError>;
+  /** `[]` on a schema without `block`, with no database read. */
+  readonly listBlocks: (
+    query: ListBlocksQuery<S>
+  ) => Effect.Effect<BlockRecord<S>[], AdapterError>;
 }
 
 /** The handle inside a unit of work, as Effects. No `tx` until `also` (checkpoint 6). */
@@ -37,6 +50,10 @@ export interface EffectLocked<S extends AnySchema> extends EffectReads<S> {
   readonly insertBooking: (
     booking: BookingRecord<S>
   ) => Effect.Effect<InsertBookingResult, AdapterError>;
+  /** Dies on a schema without `block`: no Action calls it there. */
+  readonly insertBlock: (
+    block: BlockRecord<S>
+  ) => Effect.Effect<void, AdapterError>;
   readonly replaceRules: (
     params: ReplaceRulesParams<S>
   ) => Effect.Effect<void, AdapterError>;
@@ -62,20 +79,38 @@ function attempt<A>(run: () => Promise<A>): Effect.Effect<A, AdapterError> {
   });
 }
 
-function liftReads<S extends AnySchema>(raw: AdapterReads<S>): EffectReads<S> {
+function liftReads<S extends AnySchema>(
+  raw: AdapterReads<S> & BlockReads<S>,
+  hasBlocks: boolean
+): EffectReads<S> {
   return {
+    getBlock: (id) =>
+      hasBlocks
+        ? attempt(async () => await raw.getBlock(id))
+        : Effect.succeed(null),
     getBooking: (id) => attempt(async () => await raw.getBooking(id)),
     getRules: (resourceId) =>
       attempt(async () => await raw.getRules(resourceId)),
+    listBlocks: (query) =>
+      hasBlocks
+        ? attempt(async () => await raw.listBlocks(query))
+        : Effect.succeed([]),
     listBookings: (query) => attempt(async () => await raw.listBookings(query)),
   };
 }
 
 function liftLocked<S extends AnySchema, Tx>(
-  raw: LockedAdapter<S, Tx>
+  raw: LockedAdapter<S, Tx, VerbGroup>,
+  hasBlocks: boolean
 ): EffectLocked<S> {
   return {
-    ...liftReads(raw),
+    ...liftReads(raw, hasBlocks),
+    insertBlock: (block) =>
+      hasBlocks
+        ? attempt(async () => {
+            await raw.insertBlock(block);
+          })
+        : Effect.die(new Error("fasti: insertBlock on a schema without block")),
     insertBooking: (booking) =>
       attempt(async () => await raw.insertBooking(booking)),
     replaceRules: (params) =>
@@ -87,12 +122,18 @@ function liftLocked<S extends AnySchema, Tx>(
   };
 }
 
-/** Wrap a Promise Adapter bound to a schema as an {@link EffectAdapter}. */
+/** Wrap a Promise Adapter bound to `schema` as an {@link EffectAdapter}. Without `block`, the Block verbs never reach it. */
 export function liftAdapter<S extends AnySchema, Tx>(
-  raw: SchemaAdapter<S, Tx>
+  bound: SchemaAdapter<S, Tx, GroupsOf<S>>,
+  schema: S
 ): EffectAdapter<S> {
+  const hasBlocks = schema.block !== null;
+  // SAFETY: GroupsOf<S> is "blocks" exactly when `schema.block` isn't null, and the Block verbs are only called then.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
+  const raw = bound as SchemaAdapter<S, Tx, VerbGroup>;
+
   return {
-    ...liftReads(raw),
+    ...liftReads(raw, hasBlocks),
     withResourceLock: <A, E>(
       resourceId: ResourceIdOf<S>,
       work: (locked: EffectLocked<S>) => Effect.Effect<A, E>
@@ -105,7 +146,7 @@ export function liftAdapter<S extends AnySchema, Tx>(
           try {
             return await raw.withResourceLock(resourceId, async (locked) => {
               const exit = await Effect.runPromiseExit(
-                work(liftLocked(locked))
+                work(liftLocked(locked, hasBlocks))
               );
 
               if (Exit.isFailure(exit)) {

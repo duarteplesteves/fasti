@@ -68,7 +68,7 @@ describe("race safety", () => {
     });
 
     // Plays an outside write landing after the unit's first read: hidden from it, then caught by the backstop.
-    const adapter = defineAdapter<undefined>((s) => {
+    const adapter = defineAdapter<undefined, "blocks">((s) => {
       const raw = inner(s);
 
       return {

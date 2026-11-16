@@ -83,9 +83,11 @@ describe("book", () => {
   });
 
   it("refuses end <= start as InvalidParams at end, before any Adapter call", async () => {
-    const adapter = defineAdapter(() => ({
+    const adapter = defineAdapter<undefined, "blocks">(() => ({
+      getBlock: refuse,
       getBooking: refuse,
       getRules: refuse,
+      listBlocks: refuse,
       listBookings: refuse,
       withResourceLock: refuse,
     }));

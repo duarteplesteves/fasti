@@ -1,4 +1,9 @@
-import type { AvailabilityRule, Booking, BookingId } from "../core/types.js";
+import type {
+  AvailabilityRule,
+  BlockId,
+  Booking,
+  BookingId,
+} from "../core/types.js";
 import type { TypeOf } from "../schema/column.js";
 import type { AnySchema, Fields } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
@@ -23,6 +28,22 @@ export type BookingRecord<S extends AnySchema> = {
   readonly end: Temporal.Instant;
   readonly status: StatusOf<S>;
 } & Readonly<FieldValues<S["booking"]["fields"]>>;
+
+/** A schema's Block Developer Fields; none when it has no Blocks. */
+export type BlockFieldsOf<S extends AnySchema> = S["block"] extends {
+  readonly fields: infer F extends Fields;
+}
+  ? F
+  : // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no Developer Fields" is exactly `{}`.
+    Record<never, never>;
+
+/** A Block as it crosses the Adapter seam: logical names only, Developer Fields included. */
+export type BlockRecord<S extends AnySchema> = {
+  readonly id: BlockId;
+  readonly resourceId: ResourceIdOf<S>;
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
+} & Readonly<FieldValues<BlockFieldsOf<S>>>;
 
 /** The fields `updateBooking` may change: anything but `id`. */
 export type BookingChanges<S extends AnySchema> = Partial<

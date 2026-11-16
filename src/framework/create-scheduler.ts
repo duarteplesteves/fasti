@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, Result as EffectResult } from "effect";
 
-import type { Adapter } from "../adapter/contract.js";
+import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { makeScheduler } from "./scheduler-service.js";
@@ -10,8 +10,8 @@ import type { SchedulerService } from "./scheduler-service.js";
 export interface CreateSchedulerParams<S extends AnySchema, Tx> {
   /** The schema from `defineSchema`. */
   readonly schema: S;
-  /** The Adapter over the developer's database, e.g. `drizzleAdapter(db)`. */
-  readonly adapter: Adapter<Tx>;
+  /** The Adapter over the developer's database, e.g. `drizzleAdapter(db)`. A schema with `block` needs one that implements Blocks. */
+  readonly adapter: Adapter<Tx, GroupsOf<S>>;
 }
 
 /** The plain form of an Effect service: each Action resolves to a {@link Result}; nested groups map too. */

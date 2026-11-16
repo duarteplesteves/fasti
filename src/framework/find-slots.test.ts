@@ -149,9 +149,11 @@ describe("findSlots", () => {
   ] as const)(
     "refuses an invalid %s with InvalidParams, before any Adapter call",
     async (path, change) => {
-      const adapter = defineAdapter(() => ({
+      const adapter = defineAdapter<undefined, "blocks">(() => ({
+        getBlock: refuse,
         getBooking: refuse,
         getRules: refuse,
+        listBlocks: refuse,
         listBookings: refuse,
         withResourceLock: refuse,
       }));

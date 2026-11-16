@@ -66,16 +66,18 @@ async function seeded() {
   return { adapter, booking };
 }
 
-type Inner = Adapter<undefined>;
+type Inner = Adapter<undefined, "blocks">;
 
 /** Every verb rejects, inside and outside the lock; the lock itself works. */
 function rejectingVerbs(inner: Inner) {
-  return defineAdapter<undefined>((s) => {
+  return defineAdapter<undefined, "blocks">((s) => {
     const raw = inner(s);
 
     return {
+      getBlock: reject,
       getBooking: reject,
       getRules: reject,
+      listBlocks: reject,
       listBookings: reject,
       withResourceLock: async (id, work) =>
         await raw.withResourceLock(
@@ -83,9 +85,12 @@ function rejectingVerbs(inner: Inner) {
           async (locked) =>
             await work({
               ...locked,
+              getBlock: reject,
               getBooking: reject,
               getRules: reject,
+              insertBlock: reject,
               insertBooking: reject,
+              listBlocks: reject,
               listBookings: reject,
               replaceRules: reject,
               updateBooking: reject,
@@ -97,7 +102,7 @@ function rejectingVerbs(inner: Inner) {
 
 /** Taking the lock rejects before the work runs. */
 function lockRejects(inner: Inner) {
-  return defineAdapter<undefined>((s) => ({
+  return defineAdapter<undefined, "blocks">((s) => ({
     ...inner(s),
     withResourceLock: reject,
   }));
@@ -105,7 +110,7 @@ function lockRejects(inner: Inner) {
 
 /** The work resolves, then committing rejects. */
 function commitRejects(inner: Inner) {
-  return defineAdapter<undefined>((s) => {
+  return defineAdapter<undefined, "blocks">((s) => {
     const raw = inner(s);
 
     return {
@@ -178,7 +183,7 @@ describe("failure handling", () => {
   it("a listBookings that breaks the contract makes book reject, and stores nothing", async () => {
     const { adapter } = await seeded();
 
-    const broken = defineAdapter<undefined>((s) => {
+    const broken = defineAdapter<undefined, "blocks">((s) => {
       const raw = adapter(s);
 
       return {
@@ -210,7 +215,7 @@ describe("failure handling", () => {
   it("an insertBooking that rejects gives AdapterError, and the slot stays free", async () => {
     const { adapter } = await seeded();
 
-    const broken = defineAdapter<undefined>((s) => {
+    const broken = defineAdapter<undefined, "blocks">((s) => {
       const raw = adapter(s);
 
       return {
