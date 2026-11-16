@@ -1,6 +1,6 @@
 # examples/basic
 
-fasti on Postgres with default names: a schema, a migration, and the same book-and-cancel story in the plain form (`plain.ts`) and the Effect form (`effect.ts`). Each script exits non-zero on any unexpected outcome.
+fasti on Postgres with default names: a schema, a migration, and the same book-and-cancel story in the plain form (`plain.ts`) and the Effect form (`effect.ts`). `plain.ts` also blocks out lunch with a Block and shows `book` and `findSlots` respecting it. Each script exits non-zero on any unexpected outcome.
 
 CI runs this on every push, and the [quickstart](../../README.md#quickstart) is copied from it, so changing it changes what the docs promise.
 

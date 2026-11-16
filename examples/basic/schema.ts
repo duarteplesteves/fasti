@@ -1,13 +1,15 @@
 import { column, defineSchema } from "@fastijs/scheduler";
 import {
   availabilityRuleTable,
+  blockTable,
   bookingTable,
 } from "@fastijs/scheduler/drizzle/pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-/** Default names: tables `booking` and `availability_rule`, text Resource ids. */
+/** Default names: tables `booking`, `availabilityRule` and `block`, text Resource ids. */
 export const schema = defineSchema({
+  block: { fields: { reason: { required: true, type: column.text() } } },
   booking: {
     fields: { customerName: { required: true, type: column.text() } },
   },
@@ -16,6 +18,7 @@ export const schema = defineSchema({
 /** The tables to migrate, built from `schema`. */
 export const tables = {
   availabilityRule: availabilityRuleTable(schema),
+  block: blockTable(schema),
   booking: bookingTable(schema),
 };
 

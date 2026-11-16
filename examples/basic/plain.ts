@@ -88,6 +88,50 @@ assert.equal(cancelled.alreadyCancelled, false);
 // The slot is free again.
 valueOf(await scheduler.book({ ...slot, fields: { customerName: "Grace" } }));
 
+// A Block takes time off the Resource: lunch, 12:00–14:00.
+const lunch = valueOf(
+  await scheduler.blocks.create({
+    end: Temporal.Instant.from("2030-06-03T14:00:00+01:00"),
+    fields: { reason: "lunch" },
+    resourceId,
+    start: Temporal.Instant.from("2030-06-03T12:00:00+01:00"),
+  })
+);
+
+const overLunch = await scheduler.book({
+  end: Temporal.Instant.from("2030-06-03T13:00:00+01:00"),
+  fields: { customerName: "Grace" },
+  resourceId,
+  start: Temporal.Instant.from("2030-06-03T12:30:00+01:00"),
+});
+
+assert.ok(!overLunch.ok);
+
+assert.equal(overLunch.error._tag, "SlotConflict");
+
+assert.deepEqual(
+  overLunch.error.conflicts.map(({ id, kind }) => ({ id, kind })),
+  [{ id: lunch.id, kind: "block" }]
+);
+
+// findSlots hides every slot that overlaps the Block.
+const afterLunch = valueOf(
+  await scheduler.findSlots({
+    ...day,
+    duration: 30,
+    interval: 30,
+    resourceId,
+    timezone: "Europe/Lisbon",
+  })
+);
+
+const starts = afterLunch.map((s) => s.start.toPlainTime().toString());
+
+assert.ok(starts.includes("11:30:00"));
+assert.ok(!starts.includes("12:00:00"));
+assert.ok(!starts.includes("13:30:00"));
+assert.ok(starts.includes("14:00:00"));
+
 await pool.end();
 
 console.log("plain: ok");
