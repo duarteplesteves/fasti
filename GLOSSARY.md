@@ -25,8 +25,8 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **Adapter** | The bridge between the Framework and the developer's own database. | The developer owns the database; the Adapter only reads and writes through it. A **first-party Adapter** ships with fasti; a **custom Adapter** is written by the developer against the same contract, for tables that differ from the Logical Model by more than names. The contract is exported from `@fastijs/scheduler/adapter`. |
 | **Resource Lock** | The exclusive right to change one Resource's bookings and availability for the length of one unit of work. | Every write Action holds one; reads don't. Promised per Resource only: an Adapter may lock more broadly, never more narrowly. _Avoid_: mutex. |
 | **Conformance Suite** | The published tests every Adapter must pass to count as correct, including concurrency tests against a real database. | Applies equally to first-party and custom Adapters. No opt-outs except explicitly optional groups. Run it with `testAdapter` from `@fastijs/scheduler/testing`. |
-| **Logical Model** | The entities and fields the Framework stores through an Adapter: Booking and AvailabilityRule. | Named independently of the developer's physical tables and columns, which can be renamed. Resources are not part of it; they stay in the developer's own tables. |
-| **Developer Field** | A field the developer declares on a Booking (e.g. a customer id), which the Framework stores and types but never interprets. | _Avoid_: metadata, custom data. |
+| **Logical Model** | The entities and fields the Framework stores through an Adapter: Booking, AvailabilityRule and Block. | Named independently of the developer's physical tables and columns, which can be renamed. Resources are not part of it; they stay in the developer's own tables. |
+| **Developer Field** | A field the developer declares on a Booking or a Block (e.g. a customer id, a block's title), which the Framework stores and types but never interprets. | _Avoid_: metadata, custom data. |
 | **Action** | A server-side operation exposed by a Framework instance (e.g. booking, cancelling). | Called directly from the developer's backend. _Avoid_: endpoint (HTTP exposure is a separate, later concern). |
 
 ### Scheduling
@@ -37,6 +37,7 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **AvailabilityRule** | An abstract, recurring pattern defining when a Resource is available for booking. | Expressed as a recurrence, time window, timezone, and effective date range. The recurrence is one value discriminated by `frequency` (only `weekly` today: interval and days of the week), so a new frequency is a new kind of recurrence, not a data migration. Concrete windows are generated on demand. |
 | **Booking** | An existing reservation that occupies a Resource for a specific time range. | The engine uses `isBlocking` (not `status`) to determine if a booking consumes capacity. The engine knows nothing about booking lifecycle or business consequences. |
 | **Slot** | A candidate time window on the query's Grid, starting in the queried `[from, to)`, that fits inside an expanded AvailabilityRule window and is free of conflicting Bookings. | Represents a bookable window. Returned with start/end zoned in the query `timezone`, so the caller knows local wall-clock time. Its end may pass `to`. Carries `waived`: the relaxed Policies it breaks (e.g. `availability` when listed with `relax: ["availability"]`), empty otherwise; never an Invariant such as overlap. |
+| **Block** | A time range on one Resource during which nothing can be booked, such as a vacation, lunch or a meeting. | Not a Booking: it has its own Developer Fields and no Status, and is only created, changed or deleted. It always blocks, and overlapping it breaks the overlap Invariant, so no caller can relax it. _Avoid_: time off, unavailability, availability block. |
 | **Capacity** | The number of simultaneous bookings a Resource can host. | **v0.1 constraint: capacity is always 1.** Multi-booking resources (classes, group events) are out of scope for the core engine. |
 | **Blocking** | Whether a booking prevents another booking from occupying the same slot. | Determined by `isBlocking: boolean` on the Booking primitive. Required, with no default (ADR 004). The engine ignores `status` for conflict detection. |
 | **Grid / Interval** | The candidate slot starts of a query: local midnight in the query's required `timezone` plus whole steps of the required `interval` (minutes), each day. | One Grid per query, whatever rules made the slots (ADR 014). Independent of `duration` (e.g., a 15-minute grid for 30-minute bookings). A rule starting off the Grid (09:10 on a 15-minute grid) gets its first slot at the next Grid time (09:15). |
@@ -54,7 +55,7 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 
 | Term | Definition | Notes |
 |------|------------|-------|
-| **Invariant** | A check the Framework always enforces and no caller can relax. | Exactly four: params are meaningful, no overlap with a blocking Booking on the same Resource, the Transition is declared, and the Booking exists with the expected Status. |
+| **Invariant** | A check the Framework always enforces and no caller can relax. | Exactly four: params are meaningful, no overlap with a blocking Booking or a Block on the same Resource, the Transition is declared, and the Booking exists with the expected Status. |
 | **Policy** | A named rule about when a booking change is allowed, which a caller may relax on a single call. | **availability** (inside the Resource's AvailabilityRules) is always present, because it enforces rules the developer stored. Every other Policy applies only if the developer lists it: the prebuilt **notice** (a minimum lead time before the start; zero forbids past starts), or one they write (buffers, limits, a Transition's preconditions). _Avoid_: rule (taken by AvailabilityRule), constraint, built-in. |
 | **Waived** | The relaxed Policies a slot or a successful booking change actually broke. | Reported so the developer can show or log the exception (e.g. "booked outside hours"). |
 | **Relax** | To skip named Policies for one Action call, decided by the developer's backend. | Only Policies can be relaxed, never Invariants, and only by name. _Avoid_: override, bypass. |
@@ -98,6 +99,7 @@ Properties of the output:
    - Its start is a Grid time and falls in the queried `[from, to)`.
    - Its entire duration (start to start + `duration`, by instant) fits within one expanded AvailabilityRule window for the Resource, in any rule timezone.
    - It does not overlap with any Booking where `isBlocking === true`, other than the one named by `excludeBookingId`.
+   - It does not overlap with any Block on the Resource.
 
 2. **Capacity is always 1 in v0.1.**
    Two bookings for the same Resource at overlapping times is always a conflict.
@@ -156,4 +158,5 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 011](./docs/adr/011-effect-free-core-returns-results.md) | The Core is Effect-free and returns typed results | Accepted |
 | [ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md) | Four Invariants, everything else a Policy the caller can relax | Accepted |
 | [ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md) | The developer's own writes run inside the Action's transaction | Accepted |
+| [ADR 016](./docs/adr/016-block-is-its-own-entity.md) | A Block is its own entity, not a kind of Booking | Accepted |
 

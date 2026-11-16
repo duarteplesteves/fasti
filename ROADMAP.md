@@ -76,17 +76,28 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Test of done:** the Conformance Suite on Postgres and the `examples/` app both run green in CI; `0.1.0` is published on `latest` by the release workflow.
 
-## 5. Time off and blocks — `0.2` (public)
+## 5. Blocks — `0.2` (public)
 
 **Goal:** periods when a Resource isn't bookable, beyond availability-rule exceptions. This comes first after the public release because it touches the Logical Model, so it should land while few developers have tables to migrate.
 
-**Open:** a new Logical Model entity or a kind of Booking; how `findSlots` and the booking checks treat them.
+**Scope** ([ADR 016](./docs/adr/016-block-is-its-own-entity.md)):
+
+- The **Block**: its own Logical Model entity with its own Developer Fields, opt-in through `defineSchema({ block: { fields } })`. One-off `[start, end)` Instant ranges; no Status, no recurrence.
+- The overlap Invariant covers Blocks both ways, under the Resource Lock: `book` can't overlap a Block, and a Block can't be written over a blocking Booking. `findSlots` hides slots that overlap a Block.
+- `scheduler.blocks.create / update / delete / list`, in both forms.
+- `SlotConflict` items carry `kind: "booking" | "block"` (a breaking type change, flagged in the changeset).
+- The optional Block verb group in the Adapter contract, required by the types exactly when the schema declares `block`; `blockTable(schema)` in the Drizzle Adapter; the in-memory Adapter; an optional Blocks group in the Conformance Suite.
+- No Core change.
+
+**Test of done:** the Conformance Suite, Blocks group included, passes on the in-memory and Drizzle Postgres Adapters.
 
 ## 6. Full lifecycle — `0.3` (public)
 
 **Goal:** the complete base lifecycle.
 
 **Scope:** `reschedule`, `transition({ id, from, to })`, developer Statuses ([ADR 009](./docs/adr/009-booking-lifecycle.md)), and `also` on every write Action ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)).
+
+**Open:** writing a Block that cancels the blocking Bookings it overlaps, in the same unit of work (opt-in per call), instead of being refused.
 
 ## 7. Policies — `0.4` (public)
 
@@ -112,7 +123,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 - How plugins extend types.
 - After-commit effects of Actions and Transitions (emails, calendar sync): best effort, never rolled back.
 - Hooks that run on every call, such as an audit log.
-- Whether availability (its Actions and its `availability` Policy) becomes a plugin the developer turns on.
+- Whether availability (its rules, its Actions and its `availability` Policy) becomes a plugin the developer turns on, and whether Blocks, opt-in through the schema since `0.2`, move to the same mechanism. Without availability, everything outside Blocks and Bookings is bookable.
 
 ## 10. Finished Framework — `1.0.0` (public)
 
@@ -144,3 +155,5 @@ Deferred past `1.0`, in no order.
 - **Performance benchmarks.**
 - **First-party integration plugins** (email, SMS, payments, calendar sync).
 - **Waitlists**, as an after-commit effect of `cancel`.
+- **Date overrides**: one date's hours changed, adding or removing time, as part of AvailabilityRule and so relaxable through the `availability` Policy. Today's whole-day `exceptions` are the crude form.
+- **Recurring Blocks**, using AvailabilityRule's `frequency`-discriminated recurrence. They matter once availability can be turned off (milestone 9); until then, recurring busy time can be left out of the rules. Guard: `SlotConflict`'s `kind: "block"` doesn't assume a Block is one stored row.

@@ -54,3 +54,7 @@ We choose option 3.
 ## Amendment (2026-11-15): Policies and `relax` are staged into checkpoint 7
 
 `0.1.0` (checkpoint 4) ships the Invariants and the `availability` Policy only. `createScheduler` takes no `policies`, the Actions take no `relax`, `notice` isn't exported, and `Slot.waived` is always empty. `availability` is checked as decided above, after the overlap Invariant, and reported as `PolicyViolation`, so the result shapes don't change when the rest arrives. `definePolicy`, `policies`, `relax`, `notice` and `now` from `Clock` arrive together in checkpoint 7. Until then past starts are bookable.
+
+## Amendment (2026-11-16): the overlap Invariant covers Blocks
+
+From checkpoint 5 (`0.2`), the overlap Invariant is "no overlap with a blocking Booking or a Block on the same Resource" (ADR 016). There are still four Invariants. A Block can't be relaxed, so `findSlots` never returns a slot that overlaps one, whatever the caller relaxes.
