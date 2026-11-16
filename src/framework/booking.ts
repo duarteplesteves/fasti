@@ -31,7 +31,7 @@ export function floorMs(instant: Temporal.Instant): Temporal.Instant {
 }
 
 /** A Developer Field's value, `null` when an optional one is unset. */
-type FieldValue = TypeOf<AnyColumn> | null;
+export type FieldValue = TypeOf<AnyColumn> | null;
 
 /** One value per declared field, `null` for an optional one left out, Instants ms-floored; keys outside `fields` are dropped. */
 export function fieldValues<F extends Fields>(

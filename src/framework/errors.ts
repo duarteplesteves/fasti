@@ -44,6 +44,12 @@ export interface BookingNotFound {
   readonly id: BookingId;
 }
 
+/** No Block has this id. */
+export interface BlockNotFound {
+  readonly _tag: "BlockNotFound";
+  readonly id: BlockId;
+}
+
 /** The Adapter or its database failed. `cause` is the original rejection. A plain `Error`, so no Effect import is needed. */
 export class AdapterError extends Error {
   readonly _tag = "AdapterError" as const;

@@ -13,13 +13,14 @@ import type {
   RuleRecord,
 } from "../adapter/records.js";
 import type { BlockId, BookingId } from "../core/types.js";
+import type { AnyColumn, TypeOf } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 
+/** A stored row as plain values: every column, Developer Fields included. */
+type StoredRecord = Readonly<Record<string, TypeOf<AnyColumn> | null>>;
+
 /** Field-by-field equality; Temporal values have no enumerable fields, so they compare with `equals`. */
-function sameBooking(
-  a: BookingRecord<AnySchema>,
-  b: BookingRecord<AnySchema>
-): boolean {
+function sameRecord(a: StoredRecord, b: StoredRecord): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
 
   return [...keys].every((k) => {
@@ -111,6 +112,8 @@ function lockedOn<S extends AnySchema>(
 
       draft.blocks.set(block.id, block);
     },
+    deleteBlock: async (id) =>
+      draft.blocks.delete(id) ? { ok: true } : { ok: false, reason: "missing" },
     insertBooking: async (booking) => {
       if (draft.bookings.has(booking.id)) {
         throw new Error(`memoryAdapter: Booking ${booking.id} already exists`);
@@ -124,10 +127,21 @@ function lockedOn<S extends AnySchema>(
       draft.rules.set(resourceId, [...rules]);
     },
     tx: undefined,
+    updateBlock: async ({ changes, expected }) => {
+      const stored = draft.blocks.get(expected.id);
+
+      if (stored === undefined || !sameRecord(stored, expected)) {
+        return { ok: false, reason: "changed" };
+      }
+
+      draft.blocks.set(expected.id, { ...stored, ...changes });
+
+      return { ok: true };
+    },
     updateBooking: async ({ changes, expected }) => {
       const stored = draft.bookings.get(expected.id);
 
-      if (stored === undefined || !sameBooking(stored, expected)) {
+      if (stored === undefined || !sameRecord(stored, expected)) {
         return { ok: false, reason: "changed" };
       }
 

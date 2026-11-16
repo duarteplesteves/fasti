@@ -45,6 +45,11 @@ export type BlockRecord<S extends AnySchema> = {
   readonly end: Temporal.Instant;
 } & Readonly<FieldValues<BlockFieldsOf<S>>>;
 
+/** The fields `updateBlock` may change: anything but `id` and `resourceId`, since a Block never changes Resource. */
+export type BlockChanges<S extends AnySchema> = Partial<
+  Omit<BlockRecord<S>, "id" | "resourceId">
+>;
+
 /** The fields `updateBooking` may change: anything but `id`. */
 export type BookingChanges<S extends AnySchema> = Partial<
   Omit<BookingRecord<S>, "id">

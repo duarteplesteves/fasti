@@ -1,6 +1,7 @@
 import type { BlockId, BookingId } from "../core/types.js";
 import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
 import type {
+  BlockChanges,
   BlockRecord,
   BookingChanges,
   BookingRecord,
@@ -49,10 +50,29 @@ export interface BlockReads<S extends AnySchema> {
   readonly listBlocks: (query: ListBlocksQuery<S>) => Promise<BlockRecord<S>[]>;
 }
 
+/** What `updateBlock` can return. `changed`: the stored row no longer equals `expected`, or is gone. */
+export type UpdateBlockResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "changed" };
+
+/** What `deleteBlock` can return. `missing`: there was no Block with that id. */
+export type DeleteBlockResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "missing" };
+
 /** The Block writes, only inside a unit of work. */
 export interface BlockWrites<S extends AnySchema> {
   /** Store a new Block. No backstop, so any failure rejects. */
   readonly insertBlock: (block: BlockRecord<S>) => Promise<void>;
+  /** Change a Block, if it still equals `expected` (compare-and-set). The id comes from `expected`. */
+  readonly updateBlock: (params: {
+    /** The row as last read; the update applies only if the stored row still equals it. */
+    readonly expected: BlockRecord<S>;
+    /** The fields to change. */
+    readonly changes: BlockChanges<S>;
+  }) => Promise<UpdateBlockResult>;
+  /** Remove a Block. */
+  readonly deleteBlock: (id: BlockId) => Promise<DeleteBlockResult>;
 }
 
 /** `T` when the Adapter declares group `K`, nothing otherwise. Tuple-wrapped: `K extends G` makes TypeScript measure G as covariant. */

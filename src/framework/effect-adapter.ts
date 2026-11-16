@@ -3,6 +3,8 @@ import { Effect, Exit } from "effect";
 import type {
   AdapterReads,
   BlockReads,
+  BlockWrites,
+  DeleteBlockResult,
   GroupsOf,
   InsertBookingResult,
   ListBlocksQuery,
@@ -10,6 +12,7 @@ import type {
   LockedAdapter,
   ReplaceRulesParams,
   SchemaAdapter,
+  UpdateBlockResult,
   UpdateBookingParams,
   UpdateBookingResult,
   VerbGroup,
@@ -20,7 +23,7 @@ import type {
   ResourceIdOf,
   RuleRecord,
 } from "../adapter/records.js";
-import type { BookingId } from "../core/types.js";
+import type { BlockId, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { AdapterError } from "./errors.js";
 
@@ -35,6 +38,10 @@ export interface EffectReads<S extends AnySchema> {
   readonly getRules: (
     resourceId: ResourceIdOf<S>
   ) => Effect.Effect<RuleRecord[], AdapterError>;
+  /** Dies on a schema without `block`: no Action calls it there. */
+  readonly getBlock: (
+    id: BlockId
+  ) => Effect.Effect<BlockRecord<S> | null, AdapterError>;
   /** `[]` on a schema without `block`, with no database read. */
   readonly listBlocks: (
     query: ListBlocksQuery<S>
@@ -50,6 +57,14 @@ export interface EffectLocked<S extends AnySchema> extends EffectReads<S> {
   readonly insertBlock: (
     block: BlockRecord<S>
   ) => Effect.Effect<void, AdapterError>;
+  /** Dies on a schema without `block`, as `insertBlock`. */
+  readonly updateBlock: (
+    params: Parameters<BlockWrites<S>["updateBlock"]>[0]
+  ) => Effect.Effect<UpdateBlockResult, AdapterError>;
+  /** Dies on a schema without `block`, as `insertBlock`. */
+  readonly deleteBlock: (
+    id: BlockId
+  ) => Effect.Effect<DeleteBlockResult, AdapterError>;
   readonly replaceRules: (
     params: ReplaceRulesParams<S>
   ) => Effect.Effect<void, AdapterError>;
@@ -75,11 +90,24 @@ function attempt<A>(run: () => Promise<A>): Effect.Effect<A, AdapterError> {
   });
 }
 
+/** A Block verb: run it with `block`, die without (the Framework never calls it there). */
+function blockVerb<A>(
+  hasBlocks: boolean,
+  name: string,
+  run: () => Promise<A>
+): Effect.Effect<A, AdapterError> {
+  return hasBlocks
+    ? attempt(run)
+    : Effect.die(new Error(`fasti: ${name} on a schema without block`));
+}
+
 function liftReads<S extends AnySchema>(
   raw: AdapterReads<S> & BlockReads<S>,
   hasBlocks: boolean
 ): EffectReads<S> {
   return {
+    getBlock: (id) =>
+      blockVerb(hasBlocks, "getBlock", async () => await raw.getBlock(id)),
     getBooking: (id) => attempt(async () => await raw.getBooking(id)),
     getRules: (resourceId) =>
       attempt(async () => await raw.getRules(resourceId)),
@@ -97,18 +125,28 @@ function liftLocked<S extends AnySchema, Tx>(
 ): EffectLocked<S> {
   return {
     ...liftReads(raw, hasBlocks),
+    deleteBlock: (id) =>
+      blockVerb(
+        hasBlocks,
+        "deleteBlock",
+        async () => await raw.deleteBlock(id)
+      ),
     insertBlock: (block) =>
-      hasBlocks
-        ? attempt(async () => {
-            await raw.insertBlock(block);
-          })
-        : Effect.die(new Error("fasti: insertBlock on a schema without block")),
+      blockVerb(hasBlocks, "insertBlock", async () => {
+        await raw.insertBlock(block);
+      }),
     insertBooking: (booking) =>
       attempt(async () => await raw.insertBooking(booking)),
     replaceRules: (params) =>
       attempt(async () => {
         await raw.replaceRules(params);
       }),
+    updateBlock: (params) =>
+      blockVerb(
+        hasBlocks,
+        "updateBlock",
+        async () => await raw.updateBlock(params)
+      ),
     updateBooking: (params) =>
       attempt(async () => await raw.updateBooking(params)),
   };

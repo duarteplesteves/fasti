@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import type { SchemaAdapter } from "../../adapter/contract.js";
+import type { BlockChanges, BlockRecord } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
 import { blockId, insertBlock, newBlock } from "../fixtures.js";
@@ -19,7 +20,39 @@ function withBlocks<S extends AnySchema, Tx>({
   return adapter as SchemaAdapter<S, Tx, "blocks">;
 }
 
-/** Blocks (ADR 016): save, read back, list by range, undo on failure. */
+/** Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record. */
+function asChanges<S extends AnySchema>(
+  changes: BlockChanges<AnySchema>
+): BlockChanges<S> {
+  // SAFETY: the cases only change `start`/`end`, which every Block has.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+  return changes as BlockChanges<S>;
+}
+
+/** `updateBlock` in its own unit of work. */
+async function update<S extends AnySchema, Tx>(
+  adapter: SchemaAdapter<S, Tx, "blocks">,
+  expected: BlockRecord<S>,
+  changes: BlockChanges<S>
+) {
+  return await adapter.withResourceLock(
+    expected.resourceId,
+    async (locked) => await locked.updateBlock({ changes, expected })
+  );
+}
+
+/** `deleteBlock` in its own unit of work, on the Block's Resource. */
+async function remove<S extends AnySchema, Tx>(
+  adapter: SchemaAdapter<S, Tx, "blocks">,
+  block: BlockRecord<S>
+) {
+  return await adapter.withResourceLock(
+    block.resourceId,
+    async (locked) => await locked.deleteBlock(block.id)
+  );
+}
+
+/** Blocks (ADR 016): save, read back, list by range, change, delete, undo on failure. */
 export const blockCases: readonly ConformanceCase[] = [
   {
     name: "a Block round-trips every field: id, Instants to the millisecond, every Developer Field set or null",
@@ -140,6 +173,156 @@ export const blockCases: readonly ConformanceCase[] = [
       // The lock was released: the next unit of work runs and commits.
       await insertBlock(adapter, block);
       expect(await adapter.getBlock(block.id)).toStrictEqual(block);
+    },
+    tags: ["blocks"],
+  },
+  {
+    name: "updateBlock with a matching expected applies the changes, Developer Fields included",
+    async run(ctx) {
+      const { resources, schema } = ctx;
+      const adapter = withBlocks(ctx);
+
+      const block = newBlock(schema, {
+        optionalFields: "null",
+        resourceId: resources[0],
+      });
+
+      // Same Resource, every optional Developer Field set: changes the range and those fields.
+      const {
+        id: _id,
+        resourceId: _resourceId,
+        ...changes
+      } = newBlock(schema, {
+        optionalFields: "set",
+        resourceId: resources[0],
+        start: block.start.add({ minutes: 30 }),
+      });
+
+      await insertBlock(adapter, block);
+
+      expect(await update(adapter, block, changes)).toStrictEqual({ ok: true });
+      expect(await adapter.getBlock(block.id)).toStrictEqual({
+        ...block,
+        ...changes,
+      });
+    },
+    tags: ["blocks"],
+  },
+  {
+    name: "updateBlock with a stale or missing expected gives changed, and the row is untouched",
+    async run(ctx) {
+      const { resources, schema } = ctx;
+      const adapter = withBlocks(ctx);
+
+      const block = newBlock(schema, {
+        optionalFields: "null",
+        resourceId: resources[0],
+      });
+
+      const ghost = newBlock(schema, {
+        optionalFields: "null",
+        resourceId: resources[0],
+      });
+
+      await insertBlock(adapter, block);
+
+      const hasOptional = Object.values(schema.block?.fields ?? {}).some(
+        (f) => !f.required
+      );
+
+      const filled = newBlock(schema, {
+        optionalFields: "set",
+        resourceId: block.resourceId,
+      });
+
+      const stale: BlockRecord<typeof schema>[] = [
+        { ...block, start: block.start.add({ milliseconds: 1 }) },
+        { ...block, end: block.end.subtract({ milliseconds: 1 }) },
+        ...(hasOptional
+          ? [{ ...filled, end: block.end, id: block.id, start: block.start }]
+          : []),
+        ghost,
+      ];
+
+      const end = block.end.add({ hours: 1 });
+
+      const results = await Promise.all(
+        stale.map(
+          async (expected) =>
+            await update(adapter, expected, asChanges({ end }))
+        )
+      );
+
+      expect(results).toStrictEqual(
+        stale.map(() => ({ ok: false, reason: "changed" }))
+      );
+      expect(await adapter.getBlock(block.id)).toStrictEqual(block);
+      expect(await adapter.getBlock(ghost.id)).toBeNull();
+    },
+    tags: ["blocks"],
+  },
+  {
+    name: "deleteBlock removes the Block, and a second delete gives missing",
+    async run(ctx) {
+      const { resources, schema } = ctx;
+      const adapter = withBlocks(ctx);
+
+      const block = newBlock(schema, {
+        optionalFields: "set",
+        resourceId: resources[0],
+      });
+
+      const kept = newBlock(schema, {
+        optionalFields: "set",
+        resourceId: resources[0],
+      });
+
+      await insertBlock(adapter, block);
+      await insertBlock(adapter, kept);
+
+      expect(await remove(adapter, block)).toStrictEqual({ ok: true });
+      expect(await adapter.getBlock(block.id)).toBeNull();
+      expect(await adapter.getBlock(kept.id)).toStrictEqual(kept);
+      expect(await remove(adapter, block)).toStrictEqual({
+        ok: false,
+        reason: "missing",
+      });
+    },
+    tags: ["blocks"],
+  },
+  {
+    name: "a throw after updateBlock and deleteBlock leaves both Blocks as they were",
+    async run(ctx) {
+      const { resources, schema } = ctx;
+      const adapter = withBlocks(ctx);
+      const reason = new Error("work failed");
+
+      const moved = newBlock(schema, {
+        optionalFields: "set",
+        resourceId: resources[0],
+      });
+
+      const deleted = newBlock(schema, {
+        optionalFields: "set",
+        resourceId: resources[0],
+      });
+
+      await insertBlock(adapter, moved);
+      await insertBlock(adapter, deleted);
+
+      await expect(
+        adapter.withResourceLock(resources[0], async (locked) => {
+          await locked.updateBlock({
+            changes: asChanges({ end: moved.end.add({ hours: 1 }) }),
+            expected: moved,
+          });
+          await locked.deleteBlock(deleted.id);
+          throw reason;
+        })
+      ).rejects.toBe(reason);
+
+      expect(await adapter.getBlock(moved.id)).toStrictEqual(moved);
+      expect(await adapter.getBlock(deleted.id)).toStrictEqual(deleted);
     },
     tags: ["blocks"],
   },
