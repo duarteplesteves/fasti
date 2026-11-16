@@ -169,7 +169,7 @@ interface Retry {
 const retry: Retry = { _tag: "Retry" };
 
 /** Equal as stored values: Instants by `equals`, the rest by identity. */
-function same(a: FieldValue | undefined, b: FieldValue): boolean {
+function sameStoredValue(a: FieldValue | undefined, b: FieldValue): boolean {
   return a instanceof Temporal.Instant && b instanceof Temporal.Instant
     ? a.equals(b)
     : a === b;
@@ -262,7 +262,7 @@ export function updateBlock<S extends AnySchema>(
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the field names are only known at runtime.
         const changes = Object.fromEntries(
           Object.entries({ ...range, ...fieldChanges }).filter(
-            ([name, value]) => !same(current[name], value)
+            ([name, value]) => !sameStoredValue(current[name], value)
           )
         ) as BlockChanges<S>;
 
@@ -279,8 +279,6 @@ export function updateBlock<S extends AnySchema>(
           return yield* Effect.fail(retry);
         }
 
-        // SAFETY: `changes` holds only fields of a Block record.
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- spreading a Partial over the record keeps its shape.
         return { ...stored, ...changes };
       })
     );
