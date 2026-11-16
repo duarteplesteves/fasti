@@ -3,7 +3,7 @@ import type { AnyPgTable } from "drizzle-orm/pg-core";
 import { integer, pgTable, uuid } from "drizzle-orm/pg-core";
 import { assert, afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createScheduler } from "../../index.js";
+import { createScheduler } from "../../framework/create-scheduler.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
@@ -127,7 +127,12 @@ function suite<S extends AnySchema>(
 
     // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
     // Run without the backstop, which would refuse the overlap a missing lock lets through and so mask it.
-    it.fails.each(concurrencyCases)("[lock off] $name", async (c) => {
+    // Blocks cases are skipped without `block`, so a failure there would prove nothing.
+    it.fails.each(
+      concurrencyCases.filter(
+        (c) => schema.block !== null || !c.tags.includes("blocks")
+      )
+    )("[lock off] $name", async (c) => {
       await expect(
         runCase(c, {
           ...params,
