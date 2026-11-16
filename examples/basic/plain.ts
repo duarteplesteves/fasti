@@ -88,7 +88,7 @@ assert.equal(cancelled.alreadyCancelled, false);
 // The slot is free again.
 valueOf(await scheduler.book({ ...slot, fields: { customerName: "Grace" } }));
 
-// A Block takes time off the Resource: lunch, 12:00–14:00.
+// A Block makes the Resource unbookable over lunch, 12:00–14:00.
 const lunch = valueOf(
   await scheduler.blocks.create({
     end: Temporal.Instant.from("2030-06-03T14:00:00+01:00"),

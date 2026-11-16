@@ -149,7 +149,7 @@ Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug i
 
 ## Blocks
 
-A Block takes time off a Resource: a vacation, a lunch, a meeting. It is its own entity, not a kind of Booking, with its own Developer Fields and no Status: you create, change and delete it ([ADR 016](./docs/adr/016-block-is-its-own-entity.md)).
+A Block makes a Resource unbookable for a while: a vacation, a lunch, a meeting. It is its own entity, not a kind of Booking, with its own Developer Fields and no Status: you create, change and delete it ([ADR 016](./docs/adr/016-block-is-its-own-entity.md)).
 
 **Declare it in the schema.** Blocks are opt-in: `block` turns them on, with its Developer Fields (`fields: {}` for none). A schema without `block` has no Block table and no `scheduler.blocks`.
 
@@ -173,7 +173,7 @@ Rename the table and its columns under `names`: `names.tables.block`, `names.col
 **Block out time.**
 
 ```typescript
-const lunch = await scheduler.blocks.create({
+await scheduler.blocks.create({
   end: Temporal.Instant.from("2030-06-03T14:00:00+01:00"),
   fields: { reason: "lunch" },
   resourceId: "room-1",
@@ -181,7 +181,12 @@ const lunch = await scheduler.blocks.create({
 });
 
 // Now `book` over 12:00–14:00 is a SlotConflict, and `findSlots` hides those slots.
-const overLunch = await scheduler.book({ end, fields, resourceId: "room-1", start });
+const overLunch = await scheduler.book({
+  end: Temporal.Instant.from("2030-06-03T13:00:00+01:00"),
+  fields: { customerName: "Grace" },
+  resourceId: "room-1",
+  start: Temporal.Instant.from("2030-06-03T12:30:00+01:00"),
+});
 if (!overLunch.ok && overLunch.error._tag === "SlotConflict") {
   for (const conflict of overLunch.error.conflicts) {
     conflict.kind; // "booking" | "block": narrow on it; conflict.id is a BookingId or a BlockId
@@ -202,7 +207,7 @@ if (!overLunch.ok && overLunch.error._tag === "SlotConflict") {
 - Blocks may overlap each other, and no Policy applies to their writes: a Block outside availability is fine.
 - The Effect form has the same `blocks` Actions; failures are tagged for `Effect.catchTag`.
 
-**Writes outside fasti.** The [backstop](#drizzle-on-postgres) `EXCLUDE` constraint works within one table, so no database constraint stops a Booking from overlapping a Block. fasti's lock keeps its own Actions safe, but a row you write to either table yourself can create a Booking/Block overlap that nothing catches.
+**Writes outside fasti.** The [backstop](#drizzle-on-postgres) `EXCLUDE` constraint works within one table, so no database constraint stops a Booking from overlapping a Block. fasti's lock keeps its own Actions safe, but a row you write to either table yourself can create a Booking/Block overlap that nothing catches. A later `blocks.update` that changes only `fields` doesn't re-check, so such an overlap stays.
 
 **In a custom Adapter.** A schema with `block` needs an Adapter that implements the Block verb group, and the types enforce it: declare it as `Adapter<Tx, "blocks">` (or `defineAdapter<Tx, "blocks">`) and add `getBlock` and `listBlocks` to the reads, and `insertBlock`, `updateBlock` (compare-and-set, `"changed"`) and `deleteBlock` (`"missing"`) to the locked handle. See [Writing a custom Adapter](#writing-a-custom-adapter). `testAdapter` runs the Conformance Suite's Blocks cases whenever your schema declares `block`.
 
@@ -413,6 +418,7 @@ export const myAdapter = defineAdapter<MyTx>((schema) => ({
         insertBooking: async (booking) => /* { ok: true } or { ok: false, reason: "conflict" } */,
         updateBooking: async ({ expected, changes }) => /* compare-and-set; "changed" if the row moved on */,
         replaceRules: async ({ resourceId, rules }) => { /* replace the whole set */ },
+        // With `defineAdapter<MyTx, "blocks">`: getBlock and listBlocks here and above, plus insertBlock, updateBlock, deleteBlock.
       });
     }),
 }));
