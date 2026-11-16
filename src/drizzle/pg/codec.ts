@@ -1,4 +1,6 @@
 import type {
+  BlockChanges,
+  BlockRecord,
   BookingChanges,
   BookingRecord,
   RuleRecord,
@@ -6,48 +8,68 @@ import type {
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { StatusCodec } from "../../schema/status-codec.js";
 
-/** A value a Booking record holds. */
+/** A value a record holds. */
 type RecordValue = string | number | boolean | Temporal.Instant | null;
 
-/** A value of a Booking row as Drizzle reads and writes it: `Date` in place of Instants. */
+/** A value of a row as Drizzle reads and writes it: `Date` in place of Instants. */
 type RowValue = string | number | boolean | Date | null;
 
-/** A Booking row: logical keys, `Date`s, the stored Status. */
-export type BookingRow = Readonly<Record<string, RowValue>>;
-
-/** One record value as the driver takes it. */
-function toDriver(
-  codec: StatusCodec<string>,
-  key: string,
-  value: RecordValue
-): RowValue {
-  if (value instanceof Temporal.Instant) {
-    return new Date(value.epochMilliseconds);
-  }
-
-  return key === "status" ? codec.toStored(String(value)) : value;
-}
+/** A Booking or Block row: logical keys, `Date`s (and for a Booking, the stored Status). */
+export type Row = Readonly<Record<string, RowValue>>;
 
 /**
- * Record → row: Instants become `Date`s (milliseconds, I7), the Status its stored value.
- * An update's changes give a partial row.
+ * Record → row: Instants become `Date`s (milliseconds, I7), everything else as is.
+ * Keys left `undefined` (an update's changes leave them out) are dropped, giving a partial row.
  */
-export function encodeBooking<S extends AnySchema>(
-  codec: StatusCodec<string>,
-  record: BookingRecord<S> | BookingChanges<S>
-): BookingRow {
+export function encodeRow<S extends AnySchema>(
+  record:
+    | BookingRecord<S>
+    | BookingChanges<S>
+    | BlockRecord<S>
+    | BlockChanges<S>
+): Row {
   return Object.fromEntries(
-    Object.entries<RecordValue | undefined>(record)
-      // Keys the changes leave out: nothing to write.
+    // SAFETY: Booking and Block records hold only RecordValues; TS can't resolve a generic S's Block fields to them.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+    Object.entries(record as Readonly<Record<string, RecordValue | undefined>>)
       .filter((entry): entry is [string, RecordValue] => entry[1] !== undefined)
-      .map(([key, value]) => [key, toDriver(codec, key, value)])
+      .map(([key, value]) => [
+        key,
+        value instanceof Temporal.Instant
+          ? new Date(value.epochMilliseconds)
+          : value,
+      ])
   );
 }
 
-/** Row → record. A stored Status the schema doesn't know throws, so the read rejects. */
+/** Row → record values: `Date`s become Instants. */
+export function decodeRow(row: Row): Readonly<Record<string, RecordValue>> {
+  return Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      value instanceof Date
+        ? Temporal.Instant.fromEpochMilliseconds(value.getTime())
+        : value,
+    ])
+  );
+}
+
+/** Booking record → row: {@link encodeRow}, and the Status its stored value. */
+export function encodeBooking<S extends AnySchema>(
+  codec: StatusCodec<string>,
+  record: BookingRecord<S> | BookingChanges<S>
+): Row {
+  const row = encodeRow(record);
+
+  return record.status === undefined
+    ? row
+    : { ...row, status: codec.toStored(record.status) };
+}
+
+/** Row → Booking record. A stored Status the schema doesn't know throws, so the read rejects. */
 export function decodeBooking<S extends AnySchema>(
   codec: StatusCodec<string>,
-  row: BookingRow
+  row: Row
 ): BookingRecord<S> {
   const stored = String(row["status"]);
   const status = codec.fromStored(stored);
@@ -58,21 +80,16 @@ export function decodeBooking<S extends AnySchema>(
     );
   }
 
-  const record = {
-    ...Object.fromEntries(
-      Object.entries(row).map(([key, value]) => [
-        key,
-        value instanceof Date
-          ? Temporal.Instant.fromEpochMilliseconds(value.getTime())
-          : value,
-      ])
-    ),
-    status,
-  };
-
   // SAFETY: the row comes from bookingTable(schema): one column per record key, of the declared kind.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
-  return record as BookingRecord<S>;
+  return { ...decodeRow(row), status } as BookingRecord<S>;
+}
+
+/** Row → Block record. */
+export function decodeBlock<S extends AnySchema>(row: Row): BlockRecord<S> {
+  // SAFETY: the row comes from blockTable(schema): one column per record key, of the declared kind.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+  return decodeRow(row) as BlockRecord<S>;
 }
 
 /** An AvailabilityRule row as Drizzle reads it, without its private id. */

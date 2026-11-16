@@ -19,7 +19,10 @@ import type { AnyColumn } from "../../schema/column.js";
 import type {
   AnySchema,
   AvailabilityRuleColumn,
+  BlockColumn,
+  BlockSchema,
   BookingColumn,
+  Fields,
 } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 
@@ -91,6 +94,20 @@ function resourceIdColumn<S extends AnySchema, C extends AnyPgColumn>(
   return col;
 }
 
+/** One column per Developer Field, keyed by logical name; `NOT NULL` when required. */
+function fieldColumns(
+  fields: Fields,
+  names: Readonly<Partial<Record<string, string>>>
+) {
+  return Object.fromEntries(
+    Object.entries(fields).map(([field, def]) => {
+      const col = pgColumn(def.type, names[field] ?? field);
+
+      return [field, def.required ? col.notNull() : col];
+    })
+  );
+}
+
 /** A SQL string literal, for DDL, where values can't be parameters. */
 export function literal(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -112,21 +129,13 @@ export function bookingTable<
 
   const resourceId = resourceIdColumn(schema, names.resourceId, options);
 
-  const fields = Object.fromEntries(
-    Object.entries(schema.booking.fields).map(([field, def]) => {
-      const col = pgColumn(def.type, names[field] ?? field);
-
-      return [field, def.required ? col.notNull() : col];
-    })
-  );
-
   const columns = {
     id: uuid(names.id).primaryKey(),
     resourceId,
     start: pgColumn({ kind: "instant" }, names.start).notNull(),
     end: pgColumn({ kind: "instant" }, names.end).notNull(),
     status: text(names.status).notNull(),
-    ...fields,
+    ...fieldColumns(schema.booking.fields, names),
   };
 
   const stored = statusCodec(schema).allStored.map(literal).join(", ");
@@ -136,6 +145,29 @@ export function bookingTable<
     // DDL takes no bind parameters, so the stored values go in as escaped literals.
     check(`${table}_status_check`, sql`${self.status} in (${sql.raw(stored)})`),
   ]);
+}
+
+/**
+ * The Block table of `schema`, with your physical names, for your drizzle-kit schema file.
+ * Columns are keyed by logical name. Only for a schema that declares `block`.
+ */
+export function blockTable<
+  S extends BlockSchema,
+  C extends AnyPgColumn = AnyPgColumn,
+>(schema: S, options: TableOptions<S, C> = {}) {
+  // SAFETY: defineSchema names every Block column and Developer Field; a generic S only widens the keys to string.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+  const names = schema.names.columns.block as Readonly<
+    Record<BlockColumn, string> & Partial<Record<string, string>>
+  >;
+
+  return pgTable(schema.names.tables.block, {
+    id: uuid(names.id).primaryKey(),
+    resourceId: resourceIdColumn(schema, names.resourceId, options),
+    start: pgColumn({ kind: "instant" }, names.start).notNull(),
+    end: pgColumn({ kind: "instant" }, names.end).notNull(),
+    ...fieldColumns(schema.block.fields, names),
+  });
 }
 
 /**

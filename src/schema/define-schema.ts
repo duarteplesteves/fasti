@@ -135,6 +135,11 @@ export interface Schema<
 /** A schema of any shape, for use as a constraint (`S extends AnySchema`). */
 export type AnySchema = Schema<ResourceIdColumn, Fields, string, Fields | null>;
 
+/** A schema that declares Blocks, for use as a constraint. */
+export type BlockSchema = AnySchema & {
+  readonly block: { readonly fields: Fields };
+};
+
 /** Whether a schema declares Blocks. */
 export type HasBlocks<S extends AnySchema> = [S["block"]] extends [null]
   ? false

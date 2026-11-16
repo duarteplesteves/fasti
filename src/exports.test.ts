@@ -58,6 +58,7 @@ const surface = [
     names: [
       "availabilityRuleTable",
       "backstopSql",
+      "blockTable",
       "bookingTable",
       "drizzleAdapter",
     ],

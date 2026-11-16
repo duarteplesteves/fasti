@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
 import type { AnyPgTable } from "drizzle-orm/pg-core";
-import { integer, pgTable } from "drizzle-orm/pg-core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { integer, pgTable, uuid } from "drizzle-orm/pg-core";
+import { assert, afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { Adapter, GroupsOf } from "../../adapter/contract.js";
+import { createScheduler } from "../../index.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
@@ -25,17 +25,20 @@ import { createDrizzleAdapter } from "./drizzle-adapter.js";
 import {
   availabilityRuleTable,
   backstopSql,
+  blockTable,
   bookingTable,
   drizzleAdapter,
 } from "./index.js";
 
-// Without Drizzle Block verbs the cases see `block: null`, so Blocks cases are skipped and can't serve as a control.
-const concurrencyCases = conformanceCases.filter(
-  (c) => c.tags.includes("concurrency") && !c.tags.includes("blocks")
+const concurrencyCases = conformanceCases.filter((c) =>
+  c.tags.includes("concurrency")
 );
 
 /** The developer's own Resource table, which the integer-id schema references. */
 const testStaff = pgTable("test_staff", { id: integer().primaryKey() });
+
+/** The developer's own Resource table, which the uuid-id schema's Blocks reference. */
+const testRooms = pgTable("test_rooms", { id: uuid().primaryKey() });
 
 const tables = {
   integerBooking: bookingTable(integerIdSchema, {
@@ -44,9 +47,12 @@ const tables = {
   integerRule: availabilityRuleTable(integerIdSchema, {
     references: () => testStaff.id,
   }),
+  testRooms,
   testStaff,
+  textBlock: blockTable(textIdSchema),
   textBooking: bookingTable(textIdSchema),
   textRule: availabilityRuleTable(textIdSchema),
+  uuidBlock: blockTable(uuidIdSchema, { references: () => testRooms.id }),
   uuidBooking: bookingTable(uuidIdSchema),
   uuidRule: availabilityRuleTable(uuidIdSchema),
 };
@@ -55,29 +61,26 @@ const url = postgresUrl();
 
 let database: TestDatabase;
 
-// shortcut: drizzleAdapter implements no Blocks yet, so the suite runs on the schema without `block`
-// (the Blocks group skips) and the Adapter is typed as having the groups it then needs; drop both with #90.
-function noBlocks<S extends AnySchema>(adapter: Adapter<unknown>) {
-  // SAFETY: the cases see `block: null`, so they never call a Block verb.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-  return adapter as Adapter<unknown, GroupsOf<S>>;
-}
-
 /** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
 function suite<S extends AnySchema>(
   schema: S,
   booking: AnyPgTable,
-  rule: AnyPgTable,
+  others: readonly AnyPgTable[],
   resources: TestAdapterParams<S, unknown>["resources"]
 ): void {
   const params: TestAdapterParams<S, unknown> = {
     groups: { backstop: true },
-    makeAdapter: () => noBlocks<S>(drizzleAdapter(database.db)),
+    makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
-      await database.db.execute(sql`truncate ${booking}, ${rule}`);
+      await database.db.execute(
+        sql`truncate ${sql.join(
+          [booking, ...others].map((t) => sql`${t}`),
+          sql`, `
+        )}`
+      );
     },
     resources,
-    schema: { ...schema, block: null },
+    schema,
   };
 
   const constraint = noOverlapConstraint(schema);
@@ -128,8 +131,7 @@ function suite<S extends AnySchema>(
       await expect(
         runCase(c, {
           ...params,
-          makeAdapter: () =>
-            noBlocks<S>(createDrizzleAdapter(database.db, { lock: false })),
+          makeAdapter: () => createDrizzleAdapter(database.db, { lock: false }),
         })
       ).resolves.toBeUndefined();
     });
@@ -162,18 +164,56 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
     await database.db
       .insert(testStaff)
       .values(integerIdResources.map((id) => ({ id })));
+    await database.db
+      .insert(testRooms)
+      .values(uuidIdResources.map((id) => ({ id })));
   });
 
   afterAll(async () => {
     await database?.drop();
   });
 
-  suite(textIdSchema, tables.textBooking, tables.textRule, textIdResources);
-  suite(uuidIdSchema, tables.uuidBooking, tables.uuidRule, uuidIdResources);
+  suite(
+    textIdSchema,
+    tables.textBooking,
+    [tables.textRule, tables.textBlock],
+    textIdResources
+  );
+  suite(
+    uuidIdSchema,
+    tables.uuidBooking,
+    [tables.uuidRule, tables.uuidBlock],
+    uuidIdResources
+  );
+  // No `block`: no Block table exists in the database, and none is needed.
   suite(
     integerIdSchema,
     tables.integerBooking,
-    tables.integerRule,
+    [tables.integerRule],
     integerIdResources
   );
+
+  it("a Block whose Resource id breaks the foreign key gives AdapterError with the driver's cause", async () => {
+    const scheduler = createScheduler({
+      adapter: drizzleAdapter(database.db),
+      schema: uuidIdSchema,
+    });
+
+    const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
+
+    const result = await scheduler.blocks.create({
+      end: start.add({ hours: 1 }),
+      resourceId: "0193b6e2-7c00-7000-8000-0000000000ff",
+      start,
+    });
+
+    assert(!result.ok, "expected an error");
+    expect(result.error).toMatchObject({
+      _tag: "AdapterError",
+      cause: {
+        cause: { code: "23503" },
+        message: "drizzleAdapter: insertBlock failed",
+      },
+    });
+  });
 });
