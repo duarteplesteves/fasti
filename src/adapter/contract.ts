@@ -1,6 +1,7 @@
-import type { BookingId } from "../core/types.js";
-import type { AnySchema } from "../schema/define-schema.js";
+import type { BlockId, BookingId } from "../core/types.js";
+import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
 import type {
+  BlockRecord,
   BookingChanges,
   BookingRecord,
   ResourceIdOf,
@@ -29,6 +30,40 @@ export interface AdapterReads<S extends AnySchema> {
   /** Every stored rule of the Resource; order unspecified. */
   readonly getRules: (resourceId: ResourceIdOf<S>) => Promise<RuleRecord[]>;
 }
+
+/** An optional group of verbs an Adapter declares it implements, as `Adapter<Tx, "blocks">`. */
+export type VerbGroup = "blocks";
+
+/** The verb groups a schema needs from its Adapter: `"blocks"` when it declares `block`. */
+export type GroupsOf<S extends AnySchema> =
+  HasBlocks<S> extends true ? "blocks" : never;
+
+/** A `listBlocks` query: one Resource, one half-open range. */
+export type ListBlocksQuery<S extends AnySchema> = ListBookingsQuery<S>;
+
+/** The Block reads, inside and outside a unit of work. */
+export interface BlockReads<S extends AnySchema> {
+  /** The Block with this id, or `null` when there is none. */
+  readonly getBlock: (id: BlockId) => Promise<BlockRecord<S> | null>;
+  /** Every Block of the Resource overlapping the half-open range; sorted by `start`, then `id`. */
+  readonly listBlocks: (query: ListBlocksQuery<S>) => Promise<BlockRecord<S>[]>;
+}
+
+/** The Block writes, only inside a unit of work. */
+export interface BlockWrites<S extends AnySchema> {
+  /** Store a new Block. No backstop, so any failure rejects. */
+  readonly insertBlock: (block: BlockRecord<S>) => Promise<void>;
+}
+
+/** `T` when the Adapter declares group `K`, nothing otherwise. Tuple-wrapped: `K extends G` makes TypeScript measure G as covariant. */
+type With<G extends VerbGroup, K extends VerbGroup, T> = [
+  Extract<G, K>,
+] extends [never]
+  ? unknown
+  : T;
+
+/** Type-only key for {@link SchemaAdapter}'s variance marker; no runtime value. */
+declare const groups: unique symbol;
 
 /** What `insertBooking` can return. Any other failure (a duplicate id, a lost connection) rejects. */
 export type InsertBookingResult =
@@ -61,47 +96,63 @@ export interface ReplaceRulesParams<S extends AnySchema> {
  * Reads go through the same transaction and see the unit's own writes.
  *
  * @typeParam Tx - The Adapter's own transaction type (`undefined` when there is none).
+ * @typeParam G - The optional verb groups the Adapter implements.
  */
-export interface LockedAdapter<
+export type LockedAdapter<
   S extends AnySchema,
   Tx,
-> extends AdapterReads<S> {
-  /** The ORM's own transaction, for the developer's writes (ADR 015). */
-  readonly tx: Tx;
-  /** Store a new Booking. */
-  readonly insertBooking: (
-    booking: BookingRecord<S>
-  ) => Promise<InsertBookingResult>;
-  /** Change a Booking, if it still equals `expected` (compare-and-set). */
-  readonly updateBooking: (
-    params: UpdateBookingParams<S>
-  ) => Promise<UpdateBookingResult>;
-  /** Replace one Resource's whole rule set. */
-  readonly replaceRules: (params: ReplaceRulesParams<S>) => Promise<void>;
-}
+  G extends VerbGroup = never,
+> = AdapterReads<S> &
+  With<G, "blocks", BlockReads<S> & BlockWrites<S>> & {
+    /** The ORM's own transaction, for the developer's writes (ADR 015). */
+    readonly tx: Tx;
+    /** Store a new Booking. */
+    readonly insertBooking: (
+      booking: BookingRecord<S>
+    ) => Promise<InsertBookingResult>;
+    /** Change a Booking, if it still equals `expected` (compare-and-set). */
+    readonly updateBooking: (
+      params: UpdateBookingParams<S>
+    ) => Promise<UpdateBookingResult>;
+    /** Replace one Resource's whole rule set. */
+    readonly replaceRules: (params: ReplaceRulesParams<S>) => Promise<void>;
+  };
 
 /** An Adapter bound to one schema. */
-export interface SchemaAdapter<
+export type SchemaAdapter<
   S extends AnySchema,
   Tx,
-> extends AdapterReads<S> {
-  /**
-   * Run `work` as one transaction that excludes every other locked unit of work on the same Resource.
-   * Resolves with the work's value and commits; if the work rejects, nothing persists and the call
-   * rejects with the same reason. Locking more broadly is allowed; more narrowly is not.
-   */
-  readonly withResourceLock: <T>(
-    resourceId: ResourceIdOf<S>,
-    work: (locked: LockedAdapter<S, Tx>) => Promise<T>
-  ) => Promise<T>;
-}
+  G extends VerbGroup = never,
+> = AdapterReads<S> &
+  With<G, "blocks", BlockReads<S>> & {
+    /**
+     * Never set. Makes `Adapter<Tx, G>` contravariant in G, which TypeScript can't infer from {@link With}:
+     * an Adapter with more groups stands in for one with fewer, never the reverse.
+     */
+    readonly [groups]?: (group: G) => void;
+    /**
+     * Run `work` as one transaction that excludes every other locked unit of work on the same Resource.
+     * Resolves with the work's value and commits; if the work rejects, nothing persists and the call
+     * rejects with the same reason. Locking more broadly is allowed; more narrowly is not.
+     */
+    readonly withResourceLock: <T>(
+      resourceId: ResourceIdOf<S>,
+      work: (locked: LockedAdapter<S, Tx, G>) => Promise<T>
+    ) => Promise<T>;
+  };
 
-/** An Adapter: given the developer's schema, the verbs over their tables. */
-export type Adapter<Tx> = <S extends AnySchema>(
+/**
+ * An Adapter: given the developer's schema, the verbs over their tables.
+ *
+ * @typeParam G - The optional verb groups it implements; a schema with `block` needs `"blocks"`.
+ */
+export type Adapter<Tx, G extends VerbGroup = never> = <S extends AnySchema>(
   schema: S
-) => SchemaAdapter<S, Tx>;
+) => SchemaAdapter<S, Tx, G>;
 
 /** Declare an Adapter. Identity at runtime; it infers the schema-dependent types for you. */
-export function defineAdapter<Tx>(make: Adapter<Tx>): Adapter<Tx> {
+export function defineAdapter<Tx, G extends VerbGroup = never>(
+  make: Adapter<Tx, G>
+): Adapter<Tx, G> {
   return make;
 }

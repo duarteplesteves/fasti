@@ -16,8 +16,18 @@ function ruleColumns(prefix: string) {
   };
 }
 
-/** Text ids, and a Developer Field of every kind, required and optional. Everything renamed. */
+/** Text ids, and a Developer Field of every kind, required and optional, on Bookings and Blocks. Everything renamed. */
 export const textIdSchema = defineSchema({
+  block: {
+    fields: {
+      flag: { required: true, type: column.boolean() },
+      flagOpt: { required: false, type: column.boolean() },
+      note: { required: true, type: column.text() },
+      noteOpt: { required: false, type: column.text() },
+      until: { required: true, type: column.instant() },
+      untilOpt: { required: false, type: column.instant() },
+    },
+  },
   booking: {
     fields: {
       count: { required: true, type: column.integer() },
@@ -35,6 +45,18 @@ export const textIdSchema = defineSchema({
   names: {
     columns: {
       availabilityRule: ruleColumns("t"),
+      block: {
+        end: "t_off_ends_at",
+        flag: "t_flag",
+        flagOpt: "t_flag_opt",
+        id: "t_off_id",
+        note: "t_note",
+        noteOpt: "t_note_opt",
+        resourceId: "t_off_staff_id",
+        start: "t_off_starts_at",
+        until: "t_until",
+        untilOpt: "t_until_opt",
+      },
       booking: {
         count: "t_count",
         countOpt: "t_count_opt",
@@ -54,7 +76,11 @@ export const textIdSchema = defineSchema({
       },
     },
     statuses: { booked: "T_CONFIRMED", cancelled: "T_VOID" },
-    tables: { availabilityRule: "t_hours", booking: "t_appointments" },
+    tables: {
+      availabilityRule: "t_hours",
+      block: "t_time_off",
+      booking: "t_appointments",
+    },
   },
   resource: { idType: column.text() },
 });
@@ -62,11 +88,18 @@ export const textIdSchema = defineSchema({
 /** Two existing Resources for {@link textIdSchema}. */
 export const textIdResources = ["staff-a", "staff-b"] as const;
 
-/** UUID ids, no Developer Fields. Everything renamed. */
+/** UUID ids, Blocks, no Developer Fields. Everything renamed. */
 export const uuidIdSchema = defineSchema({
+  block: { fields: {} },
   names: {
     columns: {
       availabilityRule: ruleColumns("u"),
+      block: {
+        end: "u_off_ends_at",
+        id: "u_off_id",
+        resourceId: "u_off_room_id",
+        start: "u_off_starts_at",
+      },
       booking: {
         end: "u_ends_at",
         id: "u_booking_id",
@@ -76,7 +109,11 @@ export const uuidIdSchema = defineSchema({
       },
     },
     statuses: { booked: "U_HELD", cancelled: "U_RELEASED" },
-    tables: { availabilityRule: "u_hours", booking: "u_reservations" },
+    tables: {
+      availabilityRule: "u_hours",
+      block: "u_closures",
+      booking: "u_reservations",
+    },
   },
   resource: { idType: column.uuid() },
 });
@@ -87,7 +124,7 @@ export const uuidIdResources = [
   "0193b6e2-7c00-7000-8000-000000000002",
 ] as const;
 
-/** Integer ids (linked to a test Resource table on Postgres). Everything renamed. */
+/** Integer ids (linked to a test Resource table on Postgres), no Blocks. Everything renamed. */
 export const integerIdSchema = defineSchema({
   booking: { fields: { note: { required: false, type: column.text() } } },
   names: {

@@ -13,6 +13,7 @@ import type { BaseStatus } from "./define-schema.js";
 describe(defineSchema, () => {
   it("resolves defaults: text ids, logical names, the two base Statuses", () => {
     expect(defineSchema({})).toStrictEqual({
+      block: null,
       booking: { fields: {} },
       names: {
         columns: {
@@ -27,6 +28,12 @@ describe(defineSchema, () => {
             windowEnd: "windowEnd",
             windowStart: "windowStart",
           },
+          block: {
+            end: "end",
+            id: "id",
+            resourceId: "resourceId",
+            start: "start",
+          },
           booking: {
             end: "end",
             id: "id",
@@ -35,7 +42,11 @@ describe(defineSchema, () => {
             status: "status",
           },
         },
-        tables: { availabilityRule: "availabilityRule", booking: "booking" },
+        tables: {
+          availabilityRule: "availabilityRule",
+          block: "block",
+          booking: "booking",
+        },
       },
       resource: { idType: { kind: "text" } },
       statuses: {
@@ -73,6 +84,49 @@ describe(defineSchema, () => {
         names: { tables: { availabilityRule: "x", booking: "x" } },
       })
     ).toThrow(/table name "x"/u);
+  });
+
+  it("resolves `block` with its fields and default names, renamed where asked", () => {
+    const fields = { reason: { required: true, type: column.text() } };
+
+    const schema = defineSchema({
+      block: { fields },
+      names: {
+        columns: { block: { reason: "why", start: "starts_at" } },
+        tables: { block: "time_off" },
+      },
+    });
+
+    expect(schema.block).toStrictEqual({ fields });
+    expect(schema.names.tables.block).toBe("time_off");
+    expect(schema.names.columns.block).toStrictEqual({
+      end: "end",
+      id: "id",
+      reason: "why",
+      resourceId: "resourceId",
+      start: "starts_at",
+    });
+    expect(defineSchema({ block: { fields: {} } }).block).toStrictEqual({
+      fields: {},
+    });
+  });
+
+  it("throws on a Block table or column name that collides only when `block` is declared", () => {
+    const names = { tables: { block: "booking" } };
+
+    expect(() => defineSchema({ names })).not.toThrow();
+    expect(() =>
+      defineSchema({ names: { columns: { block: { end: "start" } } } })
+    ).not.toThrow();
+    expect(() => defineSchema({ block: { fields: {} }, names })).toThrow(
+      /table name "booking"/u
+    );
+    expect(() =>
+      defineSchema({
+        block: { fields: {} },
+        names: { columns: { block: { end: "start" } } },
+      })
+    ).toThrow(/column name "start"/u);
   });
 
   it("names a Developer Field called `constructor` after itself", () => {
@@ -148,6 +202,17 @@ describe("schema types", () => {
         booking: {
           // @ts-expect-error `start` is a Booking column
           fields: { start: { required: true, type: column.instant() } },
+        },
+      })
+    ).not.toThrow();
+  });
+
+  it("rejects a Block Developer Field named after a Block column", () => {
+    expect(() =>
+      defineSchema({
+        block: {
+          // @ts-expect-error `end` is a Block column
+          fields: { end: { required: true, type: column.instant() } },
         },
       })
     ).not.toThrow();

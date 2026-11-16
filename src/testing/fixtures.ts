@@ -4,19 +4,27 @@ import { expect } from "vitest";
 
 import type { SchemaAdapter } from "../adapter/contract.js";
 import type {
+  BlockRecord,
   BookingRecord,
   ResourceIdOf,
   StatusOf,
 } from "../adapter/records.js";
-import type { BookingId } from "../core/types.js";
+import type { BlockId, BookingId } from "../core/types.js";
 import type { AnyColumn } from "../schema/column.js";
-import type { AnySchema } from "../schema/define-schema.js";
+import type { AnySchema, Fields } from "../schema/define-schema.js";
 
 /** A fresh Booking id (a UUID, as the Framework will mint). */
 export function bookingId(): BookingId {
   // SAFETY: a UUID string is a valid BookingId; the brand is type-only.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minting a branded id.
   return randomUUID() as BookingId;
+}
+
+/** A fresh Block id. */
+export function blockId(): BlockId {
+  // SAFETY: a UUID string is a valid BlockId; the brand is type-only.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minting a branded id.
+  return randomUUID() as BlockId;
 }
 
 /** A random Instant in 2030 at millisecond precision: what every Adapter must round-trip. */
@@ -58,6 +66,19 @@ function valueOf(type: AnyColumn): FieldValue {
   }
 }
 
+/** A generated value for every Developer Field; optional ones `null` unless `set`. */
+function fieldValues(
+  fields: Fields,
+  optionalFields: "set" | "null"
+): Record<string, FieldValue | null> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([name, field]) => [
+      name,
+      field.required || optionalFields === "set" ? valueOf(field.type) : null,
+    ])
+  );
+}
+
 /** Params of {@link newBooking}. */
 export interface NewBookingParams<S extends AnySchema> {
   readonly resourceId: ResourceIdOf<S>;
@@ -72,13 +93,7 @@ export function newBooking<S extends AnySchema>(
   { optionalFields, resourceId, status }: NewBookingParams<S>
 ): BookingRecord<S> {
   const start = instant();
-
-  const fields = Object.fromEntries(
-    Object.entries(schema.booking.fields).map(([name, field]) => [
-      name,
-      field.required || optionalFields === "set" ? valueOf(field.type) : null,
-    ])
-  );
+  const fields = fieldValues(schema.booking.fields, optionalFields);
 
   // SAFETY: `fields` holds one value of the declared kind per Developer Field (null when optional and unset).
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the values are generated from the schema at runtime.
@@ -103,4 +118,39 @@ export async function insert<S extends AnySchema, Tx>(
   );
 
   expect(result).toStrictEqual({ ok: true });
+}
+
+/** Params of {@link newBlock}. */
+export interface NewBlockParams<S extends AnySchema> {
+  readonly resourceId: ResourceIdOf<S>;
+  /** Whether optional Developer Fields get a value or `null`. */
+  readonly optionalFields: "set" | "null";
+  /** Defaults to a random Instant in 2030. */
+  readonly start?: Temporal.Instant;
+}
+
+/** A new Block one hour long, with a generated value for every Block Developer Field. */
+export function newBlock<S extends AnySchema>(
+  schema: S,
+  { optionalFields, resourceId, start = instant() }: NewBlockParams<S>
+): BlockRecord<S> {
+  // SAFETY: `fields` holds one value of the declared kind per Block Developer Field (null when optional and unset).
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the values are generated from the schema at runtime.
+  return {
+    ...fieldValues(schema.block?.fields ?? {}, optionalFields),
+    end: start.add({ hours: 1 }),
+    id: blockId(),
+    resourceId,
+    start,
+  } as BlockRecord<S>;
+}
+
+/** Insert a Block in its own unit of work. */
+export async function insertBlock<S extends AnySchema, Tx>(
+  adapter: SchemaAdapter<S, Tx, "blocks">,
+  block: BlockRecord<S>
+): Promise<void> {
+  await adapter.withResourceLock(block.resourceId, async (locked) => {
+    await locked.insertBlock(block);
+  });
 }

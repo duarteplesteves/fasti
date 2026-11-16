@@ -1,9 +1,10 @@
 import { describe, it } from "vitest";
 
-import type { Adapter } from "../adapter/contract.js";
+import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { backstopCases } from "./cases/backstop.js";
+import { blockCases } from "./cases/blocks.js";
 import { changeCases } from "./cases/change.js";
 import { lockCases } from "./cases/lock.js";
 import { rollbackCases } from "./cases/rollback.js";
@@ -16,13 +17,13 @@ import type { ConformanceCase } from "./conformance-case.js";
 export interface TestAdapterParams<S extends AnySchema, Tx> {
   /** Your schema, with your names and Developer Fields. */
   readonly schema: S;
-  /** Called once per case. The Adapter must allow 20 concurrent units of work. */
-  readonly makeAdapter: () => Adapter<Tx>;
+  /** Called once per case. The Adapter must allow 20 concurrent units of work, and implement Blocks if `schema` declares `block`. */
+  readonly makeAdapter: () => Adapter<Tx, GroupsOf<S>>;
   /** Empties the fasti tables before each case; your Resource rows stay. */
   readonly reset: () => Promise<void>;
   /** Two existing Resource ids, so Bookings satisfy your foreign key. */
   readonly resources: readonly [ResourceIdOf<S>, ResourceIdOf<S>];
-  /** Opt-in groups: `backstop` only if your Adapter ships a database constraint. */
+  /** Opt-in groups: `backstop` only if your Adapter ships a database constraint. The `blocks` cases run iff `schema` declares `block`. */
   readonly groups: { readonly backstop: boolean };
 }
 
@@ -35,6 +36,7 @@ export const conformanceCases: readonly ConformanceCase[] = [
   ...rollbackCases,
   ...lockCases,
   ...backstopCases,
+  ...blockCases,
 ];
 
 /** Run one case: reset, make a fresh Adapter for the schema, run it. Rejects when the case fails. */
@@ -52,14 +54,16 @@ export async function runCase<S extends AnySchema, Tx>(
 
 /**
  * Register the Conformance Suite as Vitest tests: one `it` per case.
- * Cases of a group you didn't opt into are registered as skipped.
+ * Cases of a group you didn't opt into, or `blocks` cases for a schema without `block`, are registered as skipped.
  */
 export function testAdapter<S extends AnySchema, Tx>(
   params: TestAdapterParams<S, Tx>
 ): void {
   describe("fasti Adapter conformance", () => {
     for (const c of conformanceCases) {
-      const skipped = c.tags.includes("backstop") && !params.groups.backstop;
+      const skipped =
+        (c.tags.includes("backstop") && !params.groups.backstop) ||
+        (c.tags.includes("blocks") && params.schema.block === null);
 
       it.skipIf(skipped)(c.name, async () => {
         await runCase(c, params);

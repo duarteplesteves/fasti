@@ -30,9 +30,9 @@ const weekdays = {
 
 /** Wrap `inner` so each locked `updateBooking` goes through `update` first. */
 function wrapUpdates(
-  inner: Adapter<undefined>,
+  inner: Adapter<undefined, "blocks">,
   update: (call: number) => "pass" | "changed"
-): Adapter<undefined> {
+): Adapter<undefined, "blocks"> {
   let calls = 0;
 
   return (s) => {
@@ -59,7 +59,7 @@ function wrapUpdates(
   };
 }
 
-async function bookedScheduler(adapter: Adapter<undefined>) {
+async function bookedScheduler(adapter: Adapter<undefined, "blocks">) {
   await adapter(schema).withResourceLock(room, async (locked) => {
     await locked.replaceRules({ resourceId: room, rules: [weekdays] });
   });

@@ -40,7 +40,7 @@ function at(hours: number): Temporal.Instant {
 
 /** Run `use` against the Effect form over `adapter`, to its Exit. */
 async function viaEffect<A, E>(
-  adapter: Adapter<undefined>,
+  adapter: Adapter<undefined, "blocks">,
   use: (service: Service) => Effect.Effect<A, E>
 ): Promise<Exit.Exit<A, E>> {
   return await Effect.runPromiseExit(
@@ -79,7 +79,9 @@ async function seeded() {
 }
 
 /** Wrap `inner` so a locked `listBookings` breaks the contract by resolving to a non-array. */
-function listingNonArray(inner: Adapter<undefined>): Adapter<undefined> {
+function listingNonArray(
+  inner: Adapter<undefined, "blocks">
+): Adapter<undefined, "blocks"> {
   return (s) => {
     const bound = inner(s);
 
@@ -143,6 +145,38 @@ describe("Effect form", () => {
     );
 
     expect(exit).toStrictEqual(
+      Exit.succeed([
+        { end: at(2), id: booking.id, kind: "booking", start: at(1) },
+      ])
+    );
+  });
+
+  it("blocks.create and blocks.list run through the layer, with SlotConflict in the error channel", async () => {
+    const { adapter, booking } = await seeded();
+
+    const created = await viaEffect(adapter, (s) =>
+      s.blocks.create({ end: at(4), resourceId: room, start: at(3) })
+    );
+
+    assert(Exit.isSuccess(created), "expected the Block to be created");
+
+    await expect(
+      viaEffect(adapter, (s) =>
+        s.blocks.list({ from: at(0), resourceId: room, to: at(8) })
+      )
+    ).resolves.toStrictEqual(Exit.succeed([created.value]));
+
+    const refused = await viaEffect(adapter, (s) =>
+      s.blocks.create({ end: at(2), resourceId: room, start: at(1) }).pipe(
+        Effect.catchTag("SlotConflict", (error) => {
+          expectTypeOf(error).toEqualTypeOf<SlotConflict>();
+
+          return Effect.succeed(error.conflicts);
+        })
+      )
+    );
+
+    expect(refused).toStrictEqual(
       Exit.succeed([
         { end: at(2), id: booking.id, kind: "booking", start: at(1) },
       ])

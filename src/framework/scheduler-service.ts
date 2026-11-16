@@ -1,7 +1,7 @@
 import type { Effect } from "effect";
 
 import type { RuleRecord, StatusOf } from "../adapter/records.js";
-import type { AnySchema } from "../schema/define-schema.js";
+import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import { statusCodec } from "../schema/status-codec.js";
 import { getAvailability, setAvailability } from "./availability.js";
@@ -12,6 +12,8 @@ import type {
   SetAvailabilityParams,
   SetAvailabilityValue,
 } from "./availability.js";
+import { createBlock, listBlocks } from "./blocks.js";
+import type { BlockActions } from "./blocks.js";
 import { book } from "./book.js";
 import type { BookError, BookParams } from "./book.js";
 import type { Booking } from "./booking.js";
@@ -30,8 +32,8 @@ export interface ActionContext<S extends AnySchema> {
   readonly adapter: EffectAdapter<S>;
 }
 
-/** The Actions, Effect form: each written once, shared by both forms (ADR 010). */
-export interface SchedulerService<S extends AnySchema> {
+/** The Actions every scheduler has. */
+export interface BaseActions<S extends AnySchema> {
   /** Store a new Booking. */
   readonly book: (
     params: BookParams<S>
@@ -57,18 +59,27 @@ export interface SchedulerService<S extends AnySchema> {
   };
 }
 
+/** The Actions, Effect form: each written once, shared by both forms (ADR 010). `blocks` only when the schema declares `block`. */
+export type SchedulerService<S extends AnySchema> = BaseActions<S> &
+  (HasBlocks<S> extends true ? { readonly blocks: BlockActions<S> } : unknown);
+
 /** Bind the Actions to a schema and an Adapter. */
 export function makeScheduler<S extends AnySchema, Tx>({
   adapter,
   schema,
 }: CreateSchedulerParams<S, Tx>): SchedulerService<S> {
   const ctx: ActionContext<S> = {
-    adapter: liftAdapter(adapter(schema)),
+    adapter: liftAdapter(adapter(schema), schema),
     codec: statusCodec(schema),
     schema,
   };
 
-  return {
+  const blocks: BlockActions<S> = {
+    create: (params) => createBlock(ctx, params),
+    list: (params) => listBlocks(ctx, params),
+  };
+
+  const base: BaseActions<S> = {
     availability: {
       get: (params) => getAvailability(ctx, params),
       set: (params) => setAvailability(ctx, params),
@@ -77,4 +88,6 @@ export function makeScheduler<S extends AnySchema, Tx>({
     cancel: (params) => cancel(ctx, params),
     findSlots: (params) => findSlots(ctx, params),
   };
+
+  return schema.block === null ? base : { ...base, blocks };
 }
