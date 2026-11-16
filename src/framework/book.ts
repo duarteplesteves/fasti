@@ -1,24 +1,19 @@
 import { Effect } from "effect";
 
-import { toCoreBooking } from "../adapter/records.js";
 import type { BookingRecord, ResourceIdOf } from "../adapter/records.js";
 import { checkInstantRange } from "../core/checks.js";
 import { detectConflicts } from "../core/detect-conflicts.js";
 import { isSlotValid } from "../core/is-slot-valid.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
-import type { AnyColumn, TypeOf } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { mintBookingId } from "./booking-id.js";
-import { floorMs } from "./booking.js";
+import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
 import type { EffectLocked } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
-import type {
-  ConflictingBooking,
-  PolicyViolation,
-  SlotConflict,
-} from "./errors.js";
+import type { Conflict, PolicyViolation, SlotConflict } from "./errors.js";
+import { occupants, toConflicts } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
 
 /** Params of `book`: one Resource, one half-open `[start, end)` range, and the schema's Developer Fields under `fields`. */
@@ -29,7 +24,7 @@ export type BookParams<S extends AnySchema> = {
   readonly start: Temporal.Instant;
   /** Exclusive end; floored to the millisecond. */
   readonly end: Temporal.Instant;
-} & FieldsParam<S>;
+} & FieldsParam<S["booking"]["fields"]>;
 
 /** Every way `book` can fail. */
 export type BookError =
@@ -38,7 +33,7 @@ export type BookError =
   | PolicyViolation
   | AdapterError;
 
-/** The blocking Bookings overlapping the slot, read inside the unit of work. */
+/** The conflicts at the slot, read inside the unit of work. */
 function conflictsAt<S extends AnySchema>(
   { codec }: ActionContext<S>,
   locked: EffectLocked<S>,
@@ -51,46 +46,21 @@ function conflictsAt<S extends AnySchema>(
     readonly start: Temporal.Instant;
     readonly end: Temporal.Instant;
   }
-): Effect.Effect<readonly ConflictingBooking[], AdapterError> {
+): Effect.Effect<Conflict[], AdapterError> {
   return Effect.flatMap(
-    locked.listBookings({ overlapping: { from: start, to: end }, resourceId }),
-    (existing) => {
+    occupants(locked, codec, resourceId, { from: start, to: end }),
+    ({ bookings, kindById }) => {
       const r = detectConflicts({
-        bookings: existing.map((b) => toCoreBooking(codec, b)),
+        bookings,
         candidate: { end, start },
         resourceId: String(resourceId),
       });
 
       // The params were checked up front, so only invalid stored data fails here (Invariant 6).
       return r.ok
-        ? Effect.succeed(
-            r.value.map((b) => ({ end: b.end, id: b.id, start: b.start }))
-          )
+        ? Effect.succeed(toConflicts(r.value, kindById))
         : Effect.fail(new AdapterError(r.error));
     }
-  );
-}
-
-/** A Developer Field's value, `null` when an optional one is unset. */
-type FieldValue = TypeOf<AnyColumn> | null;
-
-/** One value per schema field, `null` for an optional one left out, Instants ms-floored; keys outside the schema are dropped. */
-function fieldValues<S extends AnySchema>(
-  schema: S,
-  params: BookParams<S>
-): Record<string, FieldValue> {
-  // SAFETY: FieldsParam<S> is `unknown` or an object with an optional or required `fields`.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't narrow inside a generic.
-  const { fields } = params as {
-    readonly fields?: Readonly<Record<string, FieldValue>>;
-  };
-
-  return Object.fromEntries(
-    Object.keys(schema.booking.fields).map((name) => {
-      const value = fields?.[name] ?? null;
-
-      return [name, value instanceof Temporal.Instant ? floorMs(value) : value];
-    })
   );
 }
 
@@ -147,7 +117,10 @@ export function book<S extends AnySchema>(
       // SAFETY: the base columns are set, and every schema field is set: required ones by BookParams' type, optional ones to their value or `null`.
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
       const record = {
-        ...fieldValues(ctx.schema, params),
+        ...fieldValues<S["booking"]["fields"]>(
+          ctx.schema.booking.fields,
+          params
+        ),
         end,
         id: mintBookingId(),
         resourceId,

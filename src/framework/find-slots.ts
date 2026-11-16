@@ -1,6 +1,5 @@
 import { Effect } from "effect";
 
-import { toCoreBooking } from "../adapter/records.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import { checkSearch, findFreeSlots } from "../core/find-free-slots.js";
 import { checked } from "../core/result.js";
@@ -8,6 +7,7 @@ import type { InvalidParams } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { floorMs } from "./booking.js";
 import { AdapterError } from "./errors.js";
+import { occupants } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
 
 /** Params of `findSlots`: free `duration`-minute slots on one Resource, starting in `[from, to)`. */
@@ -62,13 +62,13 @@ export function findSlots<S extends AnySchema>(
     const rules = yield* adapter.getRules(resourceId);
 
     // A slot starting before `to` can run to `to + duration`.
-    const bookings = yield* adapter.listBookings({
-      overlapping: { from, to: to.add({ minutes: duration }) },
-      resourceId,
+    const { bookings } = yield* occupants(adapter, codec, resourceId, {
+      from,
+      to: to.add({ minutes: duration }),
     });
 
     const found = findFreeSlots({
-      bookings: bookings.map((b) => toCoreBooking(codec, b)),
+      bookings,
       duration,
       from,
       interval,
