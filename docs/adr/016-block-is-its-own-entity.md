@@ -33,3 +33,7 @@ We choose option 3.
 - **Negative:** The Postgres `EXCLUDE` backstop works within one table, so it can't catch a Booking overlapping a Block. Writes made outside fasti lose that safety net.
 - **Negative:** `SlotConflict`'s item type changes from 0.1, a breaking type change in a `0.x` minor.
 - **Negative:** Without availability, recurring busy time (a daily lunch) has no home until recurring Blocks exist.
+
+## Amendment (2026-11-16): `getBlock` joins the verb group
+
+The Block verb group also has `getBlock(id)` on reads. `update` and `delete` are addressed by id, so they read the Block first to learn which Resource to lock, as `cancel` does with `getBooking`.
