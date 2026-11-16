@@ -29,8 +29,9 @@ import {
   drizzleAdapter,
 } from "./index.js";
 
-const concurrencyCases = conformanceCases.filter((c) =>
-  c.tags.includes("concurrency")
+// Without Drizzle Block verbs the cases see `block: null`, so Blocks cases are skipped and can't serve as a control.
+const concurrencyCases = conformanceCases.filter(
+  (c) => c.tags.includes("concurrency") && !c.tags.includes("blocks")
 );
 
 /** The developer's own Resource table, which the integer-id schema references. */

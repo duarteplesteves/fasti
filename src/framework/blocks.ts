@@ -78,6 +78,7 @@ export function createBlock<S extends AnySchema>(
       // Only blocking Bookings conflict with a Block: Blocks may overlap each other (ADR 016).
       const conflicts = yield* conflictsAt(locked, codec, {
         end,
+        kind: "block",
         resourceId,
         start,
       });

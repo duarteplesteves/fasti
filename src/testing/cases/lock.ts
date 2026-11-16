@@ -5,15 +5,17 @@ import { expect } from "vitest";
 import type { LockedAdapter } from "../../adapter/contract.js";
 import { toCoreBooking } from "../../adapter/records.js";
 import type {
+  BlockRecord,
   BookingChanges,
   BookingRecord,
   ResourceIdOf,
 } from "../../adapter/records.js";
 import { detectConflicts } from "../../core/detect-conflicts.js";
+import type { BlockId, BookingId } from "../../core/types.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
-import { insert, newBooking } from "../fixtures.js";
+import { insert, newBlock, newBooking } from "../fixtures.js";
 
 /** Parallel units of work per race (spec: N = 20). */
 const n = 20;
@@ -52,8 +54,17 @@ function bookingAt<S extends AnySchema>(
   };
 }
 
+/** The locked handle with its Block verbs; only for a schema with `block`. */
+function withBlocks<S extends AnySchema, Tx>(
+  locked: LockedAdapter<S, Tx>
+): LockedAdapter<S, Tx, "blocks"> {
+  // SAFETY: callers check `schema.block !== null`, so GroupsOf<S> is "blocks".
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
+  return locked as LockedAdapter<S, Tx, "blocks">;
+}
+
 /**
- * Read–check–write, as the Framework will: list the slot, check it with the Core,
+ * Read–check–write, as the Framework will: list the slot's occupants, check them with the Core,
  * sleep to widen the race window, then write. `"won"` only when the write succeeds.
  */
 async function claim<S extends AnySchema, Tx>(
@@ -66,14 +77,24 @@ async function claim<S extends AnySchema, Tx>(
   write: () => Promise<{ readonly ok: boolean }>
 ): Promise<"won" | "lost"> {
   const codec = statusCodec(schema);
+  const query = { overlapping: { from: slot.start, to: slot.end }, resourceId };
+  const existing = await locked.listBookings(query);
 
-  const existing = await locked.listBookings({
-    overlapping: { from: slot.start, to: slot.end },
-    resourceId,
-  });
+  // Blocks occupy time too, when the schema has them.
+  const blocks =
+    schema.block === null ? [] : await withBlocks(locked).listBlocks(query);
 
-  const conflicts = detectConflicts({
-    bookings: existing.map((b) => toCoreBooking(codec, b)),
+  const conflicts = detectConflicts<BookingId | BlockId>({
+    bookings: [
+      ...existing.map((b) => toCoreBooking(codec, b)),
+      ...blocks.map(({ end, id, start }) => ({
+        end,
+        id,
+        isBlocking: true,
+        resourceId: String(resourceId),
+        start,
+      })),
+    ],
     candidate: slot,
     resourceId: String(resourceId),
   });
@@ -93,20 +114,25 @@ async function claim<S extends AnySchema, Tx>(
   return ok ? "won" : "lost";
 }
 
-/** The blocking Bookings of a Resource at a slot, from committed state. */
-async function blockingAt<S extends AnySchema, Tx>(
+/** What occupies a Resource at a slot, from committed state: blocking Bookings, and Blocks when the schema has them. */
+async function occupiedAt<S extends AnySchema, Tx>(
   { adapter, schema }: CaseContext<S, Tx>,
   resourceId: ResourceIdOf<S>,
   slot: Slot
-): Promise<BookingRecord<S>[]> {
+): Promise<(BookingRecord<S> | BlockRecord<S>)[]> {
   const codec = statusCodec(schema);
+  const query = { overlapping: { from: slot.start, to: slot.end }, resourceId };
+  const bookings = await adapter.listBookings(query);
 
-  const bookings = await adapter.listBookings({
-    overlapping: { from: slot.start, to: slot.end },
-    resourceId,
-  });
+  const blocks =
+    schema.block === null
+      ? []
+      : await adapter.withResourceLock(
+          resourceId,
+          async (locked) => await withBlocks(locked).listBlocks(query)
+        );
 
-  return bookings.filter((b) => codec.isBlocking(b.status));
+  return [...bookings.filter((b) => codec.isBlocking(b.status)), ...blocks];
 }
 
 /** The Resource Lock (ADR 008): locked units of work on one Resource never interleave. Each case fails against an Adapter that skips it. */
@@ -162,7 +188,7 @@ export const lockCases: readonly ConformanceCase[] = [
         // Count successes, not only rows: a copy-and-swap store without the lock keeps just the last writer.
         expect(results.filter((r) => r === "won")).toHaveLength(1);
         // oxlint-disable-next-line no-await-in-loop -- read back this repetition's slot.
-        expect(await blockingAt(ctx, r0, slot)).toHaveLength(1);
+        expect(await occupiedAt(ctx, r0, slot)).toHaveLength(1);
       }
     },
     tags: ["concurrency"],
@@ -218,9 +244,56 @@ export const lockCases: readonly ConformanceCase[] = [
 
         expect(results.filter((r) => r === "won")).toHaveLength(1);
         // oxlint-disable-next-line no-await-in-loop -- read back this repetition's slot.
-        expect(await blockingAt(ctx, to, slot)).toHaveLength(1);
+        expect(await occupiedAt(ctx, to, slot)).toHaveLength(1);
       }
     },
     tags: ["concurrency"],
+  },
+  {
+    name: "a Block write racing bookings of one slot: exactly one wins",
+    async run(ctx) {
+      const { adapter, resources, schema } = ctx;
+      const [r0] = resources;
+
+      for (let rep = 0; rep < repetitions; rep += 1) {
+        const slot = slotFor(rep);
+
+        const block = {
+          ...newBlock(schema, { optionalFields: "null", resourceId: r0 }),
+          ...slot,
+        };
+
+        // The Block write sits at a different place in each race.
+        // oxlint-disable-next-line no-await-in-loop -- each repetition is its own race.
+        const results = await Promise.all(
+          Array.from(
+            { length: n },
+            async (_, i) =>
+              await adapter.withResourceLock(r0, async (locked) => {
+                const booking = bookingAt(schema, r0, slot);
+
+                return await claim(
+                  ctx,
+                  locked,
+                  { resourceId: r0, slot },
+                  i === rep
+                    ? async () => {
+                        await withBlocks(locked).insertBlock(block);
+
+                        return { ok: true };
+                      }
+                    : async () => await locked.insertBooking(booking)
+                );
+              })
+          )
+        );
+
+        expect(results.filter((r) => r === "won")).toHaveLength(1);
+
+        // oxlint-disable-next-line no-await-in-loop -- read back this repetition's slot.
+        expect(await occupiedAt(ctx, r0, slot)).toHaveLength(1);
+      }
+    },
+    tags: ["blocks", "concurrency"],
   },
 ];

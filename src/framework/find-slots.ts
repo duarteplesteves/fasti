@@ -38,7 +38,7 @@ export interface Slot<S extends AnySchema> {
 /** Every way `findSlots` can fail. */
 export type FindSlotsError = InvalidParams | AdapterError;
 
-/** Free slots on a Resource: no blocking Booking overlaps them and they fit availability. Unlocked reads. */
+/** Free slots on a Resource: no blocking Booking or Block overlaps them and they fit availability. Unlocked reads. */
 export function findSlots<S extends AnySchema>(
   { adapter, codec }: ActionContext<S>,
   params: FindSlotsParams<S>
@@ -62,10 +62,16 @@ export function findSlots<S extends AnySchema>(
     const rules = yield* adapter.getRules(resourceId);
 
     // A slot starting before `to` can run to `to + duration`.
-    const { bookings } = yield* occupants(adapter, codec, resourceId, {
-      from,
-      to: to.add({ minutes: duration }),
-    });
+    const { bookings } = yield* occupants(
+      adapter,
+      codec,
+      "booking",
+      resourceId,
+      {
+        from,
+        to: to.add({ minutes: duration }),
+      }
+    );
 
     const found = findFreeSlots({
       bookings,

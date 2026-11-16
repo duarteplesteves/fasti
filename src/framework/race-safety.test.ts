@@ -1,6 +1,6 @@
 /* eslint-disable vitest/no-standalone-expect */
 import { test } from "@fast-check/vitest";
-import { array, nat } from "fast-check";
+import { array, nat, tuple } from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
@@ -20,7 +20,7 @@ import {
 } from "../test-utils/conformance-schemas.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
-import { mintBookingId } from "./booking-id.js";
+import { mintBlockId, mintBookingId } from "./booking-id.js";
 
 const schema = uuidIdSchema;
 const [room] = uuidIdResources;
@@ -129,10 +129,10 @@ describe("race safety", () => {
     [
       array(arbAvailabilityRule(), { maxLength: 3, minLength: 1 }),
       arbDateRange().chain((range) =>
-        array(arbBookingIn(range, room), { maxLength: 5 }).map((bookings) => ({
-          bookings,
-          range,
-        }))
+        tuple(
+          array(arbBookingIn(range, room), { maxLength: 5 }),
+          array(arbBookingIn(range, room), { maxLength: 3 })
+        ).map(([bookings, blocks]) => ({ blocks, bookings, range }))
       ),
       arbDuration(),
       arbInterval(),
@@ -141,8 +141,15 @@ describe("race safety", () => {
     ],
     propConfig
   )(
-    "books any slot findSlots returns",
-    async (rules, { bookings, range }, duration, interval, timezone, pick) => {
+    "books any slot findSlots returns, around random Bookings and Blocks",
+    async (
+      rules,
+      { blocks, bookings, range },
+      duration,
+      interval,
+      timezone,
+      pick
+    ) => {
       const adapter = memoryAdapter();
 
       await adapter(schema).withResourceLock(room, async (locked) => {
@@ -182,6 +189,18 @@ describe("race safety", () => {
             });
 
             expect(inserted).toStrictEqual({ ok: true });
+          })
+        );
+
+        // Blocks may overlap anything stored outside fasti; they only take time away.
+        await Promise.all(
+          blocks.map(async (b) => {
+            await locked.insertBlock({
+              end: b.end,
+              id: mintBlockId(),
+              resourceId: room,
+              start: b.start,
+            });
           })
         );
       });

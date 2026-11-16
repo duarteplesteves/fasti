@@ -1,4 +1,8 @@
-import type { AvailabilityViolation, BookingId } from "../core/types.js";
+import type {
+  AvailabilityViolation,
+  BlockId,
+  BookingId,
+} from "../core/types.js";
 
 /** A blocking Booking that a requested slot overlaps; no Developer Fields, so no customer data. */
 export interface ConflictingBooking {
@@ -8,8 +12,16 @@ export interface ConflictingBooking {
   readonly end: Temporal.Instant;
 }
 
+/** A Block that a requested slot overlaps; no Developer Fields. */
+export interface ConflictingBlock {
+  readonly kind: "block";
+  readonly id: BlockId;
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
+}
+
 /** Something a requested slot overlaps; narrow on `kind`. */
-export type Conflict = ConflictingBooking;
+export type Conflict = ConflictingBooking | ConflictingBlock;
 
 /** The slot overlaps what occupies the Resource: the overlap Invariant (ADR 014). Sorted by start, then id. */
 export interface SlotConflict {

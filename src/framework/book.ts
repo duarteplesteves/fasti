@@ -41,7 +41,7 @@ export function book<S extends AnySchema>(
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
   const end = floorMs(params.end);
-  const range = { end, resourceId, start };
+  const range = { end, kind: "booking", resourceId, start } as const;
   // Before any Adapter call (Invariant 5).
   const checkedRange = checked(checkInstantRange(range, []), () => range);
 
