@@ -5,7 +5,7 @@ import type { Adapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import { mintBookingId } from "../framework/booking-id.js";
 import { createScheduler } from "../index.js";
-import type { SlotConflict } from "../index.js";
+import type { BlockNotFound, SlotConflict } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   uuidIdResources,
@@ -181,6 +181,41 @@ describe("Effect form", () => {
         { end: at(2), id: booking.id, kind: "booking", start: at(1) },
       ])
     );
+  });
+
+  it("blocks.update and blocks.delete run through the layer, with BlockNotFound in the error channel", async () => {
+    const { adapter } = await seeded();
+
+    const created = await viaEffect(adapter, (s) =>
+      s.blocks.create({ end: at(4), resourceId: room, start: at(3) })
+    );
+
+    assert(Exit.isSuccess(created), "expected the Block to be created");
+
+    const { id } = created.value;
+
+    await expect(
+      viaEffect(adapter, (s) =>
+        s.blocks.update({ end: at(6), id, start: at(5) })
+      )
+    ).resolves.toStrictEqual(
+      Exit.succeed({ ...created.value, end: at(6), start: at(5) })
+    );
+    await expect(
+      viaEffect(adapter, (s) => s.blocks.delete({ id }))
+    ).resolves.toStrictEqual(Exit.void);
+
+    const gone = await viaEffect(adapter, (s) =>
+      s.blocks.delete({ id }).pipe(
+        Effect.catchTag("BlockNotFound", (error) => {
+          expectTypeOf(error).toEqualTypeOf<BlockNotFound>();
+
+          return Effect.succeed(error.id);
+        })
+      )
+    );
+
+    expect(gone).toStrictEqual(Exit.succeed(id));
   });
 
   it("dies on a defect from a contract-violating Adapter", async () => {

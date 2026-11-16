@@ -12,7 +12,7 @@ import type {
   SetAvailabilityParams,
   SetAvailabilityValue,
 } from "./availability.js";
-import { createBlock, listBlocks } from "./blocks.js";
+import { createBlock, deleteBlock, listBlocks, updateBlock } from "./blocks.js";
 import type { BlockActions } from "./blocks.js";
 import { book } from "./book.js";
 import type { BookError, BookParams } from "./book.js";
@@ -76,7 +76,9 @@ export function makeScheduler<S extends AnySchema, Tx>({
 
   const blocks: BlockActions<S> = {
     create: (params) => createBlock(ctx, params),
+    delete: (params) => deleteBlock(ctx, params),
     list: (params) => listBlocks(ctx, params),
+    update: (params) => updateBlock(ctx, params),
   };
 
   const base: BaseActions<S> = {

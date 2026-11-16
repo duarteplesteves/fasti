@@ -1,12 +1,14 @@
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
+import type { Adapter, LockedAdapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { BlockId, BookingId } from "../core/types.js";
 import { column, createScheduler, defineSchema } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
+import type { AnySchema } from "../schema/define-schema.js";
 import { unwrap } from "../test-utils/results.js";
-import { mintBlockId } from "./booking-id.js";
+import { mintBlockId, mintBookingId } from "./booking-id.js";
 import type { Conflict } from "./errors.js";
 
 const schema = defineSchema({
@@ -53,6 +55,27 @@ const spyAdapter = defineAdapter<undefined, "blocks">(() => ({
   listBookings: refuse,
   withResourceLock: refuse,
 }));
+
+/** Wrap `inner` so each locked unit of work sees `overrides(locked)` over its verbs. */
+function wrapLocked(
+  inner: Adapter<undefined, "blocks">,
+  overrides: <S extends AnySchema>(
+    locked: LockedAdapter<S, undefined, "blocks">
+  ) => Partial<LockedAdapter<S, undefined, "blocks">>
+): Adapter<undefined, "blocks"> {
+  return defineAdapter<undefined, "blocks">((s) => {
+    const raw = inner(s);
+
+    return {
+      ...raw,
+      withResourceLock: async (id, work) =>
+        await raw.withResourceLock(
+          id,
+          async (locked) => await work({ ...locked, ...overrides(locked) })
+        ),
+    };
+  });
+}
 
 /** A scheduler over a fresh memory Adapter, with weekday availability so `book` works. */
 async function fresh() {
@@ -546,5 +569,252 @@ describe("Blocks occupy time", () => {
         to: at(3),
       })
     ).resolves.toMatchObject({ ok: true });
+  });
+});
+
+describe("blocks.update", () => {
+  it("moves a Block, keeping its Resource and fields", async () => {
+    const { scheduler } = await fresh();
+    const block = await createBlockAt(scheduler, 1, 2);
+
+    const moved = unwrap(
+      await scheduler.blocks.update({ end: at(4), id: block.id, start: at(3) })
+    );
+
+    expect(moved).toStrictEqual({ ...block, end: at(4), start: at(3) });
+    expect(
+      unwrap(
+        await scheduler.blocks.list({
+          from: at(0),
+          resourceId: room,
+          to: at(8),
+        })
+      )
+    ).toStrictEqual([moved]);
+  });
+
+  it("merges fields, leaving the others as they were", async () => {
+    const { scheduler } = await fresh();
+
+    const block = unwrap(
+      await scheduler.blocks.create({
+        end: at(2),
+        fields: { note: "boiler", reason: "maintenance" },
+        resourceId: room,
+        start: at(1),
+      })
+    );
+
+    const renamed = unwrap(
+      await scheduler.blocks.update({
+        fields: { reason: "repair" },
+        id: block.id,
+      })
+    );
+
+    expect(renamed).toStrictEqual({ ...block, reason: "repair" });
+
+    const both = unwrap(
+      await scheduler.blocks.update({
+        end: at(5),
+        fields: { note: null },
+        id: block.id,
+        start: at(4),
+      })
+    );
+
+    expect(both).toStrictEqual({
+      ...block,
+      end: at(5),
+      note: null,
+      reason: "repair",
+      start: at(4),
+    });
+    expect(
+      unwrap(
+        await scheduler.blocks.list({
+          from: at(0),
+          resourceId: room,
+          to: at(8),
+        })
+      )
+    ).toStrictEqual([both]);
+  });
+
+  it("refuses end <= start as InvalidParams at end, before any Adapter call", async () => {
+    const scheduler = createScheduler({ adapter: spyAdapter, schema });
+
+    const result = await scheduler.blocks.update({
+      end: at(1),
+      id: mintBlockId(),
+      start: at(1),
+    });
+
+    expect(errorOf(result)).toMatchObject({
+      _tag: "InvalidParams",
+      issues: [{ path: ["end"] }],
+    });
+  });
+
+  it("refuses an unknown id as BlockNotFound", async () => {
+    const { scheduler } = await fresh();
+    const id = mintBlockId();
+
+    expect(
+      errorOf(await scheduler.blocks.update({ ...reason, id }))
+    ).toStrictEqual({ _tag: "BlockNotFound", id });
+  });
+
+  it("refuses a move onto a blocking Booking as SlotConflict, leaving the Block where it was", async () => {
+    const { scheduler } = await fresh();
+    const block = await createBlockAt(scheduler, 1, 2);
+
+    const booked = unwrap(
+      await scheduler.book({ end: at(4), resourceId: room, start: at(3) })
+    );
+
+    const result = await scheduler.blocks.update({
+      end: at(3.5),
+      id: block.id,
+      start: at(2.5),
+    });
+
+    expect(errorOf(result)).toStrictEqual({
+      _tag: "SlotConflict",
+      conflicts: [{ end: at(4), id: booked.id, kind: "booking", start: at(3) }],
+    });
+    expect(
+      unwrap(
+        await scheduler.blocks.list({
+          from: at(0),
+          resourceId: room,
+          to: at(8),
+        })
+      )
+    ).toStrictEqual([block]);
+  });
+
+  it("doesn't re-check overlap on a fields-only update", async () => {
+    const { adapter, scheduler } = await fresh();
+    const block = await createBlockAt(scheduler, 1, 2);
+
+    // Written outside fasti, so it overlaps the Block (ADR 016 accepts this).
+    await adapter(schema).withResourceLock(room, async (locked) => {
+      await locked.insertBooking({
+        end: at(2),
+        id: mintBookingId(),
+        resourceId: room,
+        start: at(1),
+        status: "booked",
+      });
+    });
+
+    expect(
+      unwrap(
+        await scheduler.blocks.update({
+          fields: { reason: "repair" },
+          id: block.id,
+        })
+      )
+    ).toStrictEqual({ ...block, reason: "repair" });
+  });
+
+  it("writes nothing when the update changes nothing", async () => {
+    const { adapter: inner, scheduler: seed } = await fresh();
+    const block = await createBlockAt(seed, 1, 2);
+
+    const scheduler = createScheduler({
+      adapter: wrapLocked(inner, () => ({ updateBlock: refuse })),
+      schema,
+    });
+
+    for (const params of [
+      { id: block.id },
+      { ...reason, end: at(2), id: block.id, start: at(1) },
+    ]) {
+      // oxlint-disable-next-line no-await-in-loop -- independent cases, in order.
+      expect(unwrap(await scheduler.blocks.update(params))).toStrictEqual(
+        block
+      );
+    }
+  });
+
+  it("retries when the Block changed between read and write", async () => {
+    const { adapter: inner, scheduler: seed } = await fresh();
+    const block = await createBlockAt(seed, 1, 2);
+    let calls = 0;
+
+    const scheduler = createScheduler({
+      adapter: wrapLocked(inner, (locked) => ({
+        updateBlock: async (params) => {
+          calls += 1;
+
+          return calls === 1
+            ? { ok: false, reason: "changed" }
+            : await locked.updateBlock(params);
+        },
+      })),
+      schema,
+    });
+
+    expect(
+      unwrap(
+        await scheduler.blocks.update({
+          end: at(4),
+          id: block.id,
+          start: at(3),
+        })
+      )
+    ).toStrictEqual({ ...block, end: at(4), start: at(3) });
+    expect(calls).toBe(2);
+  });
+});
+
+describe("blocks.delete", () => {
+  it("frees the time, so a book over the old range succeeds", async () => {
+    const { scheduler } = await fresh();
+    const block = await createBlockAt(scheduler, 1, 2);
+
+    unwrap(await scheduler.blocks.delete({ id: block.id }));
+
+    expect(
+      unwrap(
+        await scheduler.blocks.list({
+          from: at(0),
+          resourceId: room,
+          to: at(8),
+        })
+      )
+    ).toStrictEqual([]);
+    await expect(
+      scheduler.book({ end: at(2), resourceId: room, start: at(1) })
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it("refuses an unknown id as BlockNotFound", async () => {
+    const { scheduler } = await fresh();
+    const id = mintBlockId();
+
+    expect(errorOf(await scheduler.blocks.delete({ id }))).toStrictEqual({
+      _tag: "BlockNotFound",
+      id,
+    });
+  });
+
+  it("gives BlockNotFound when the Adapter reports the Block missing", async () => {
+    const { adapter: inner, scheduler: seed } = await fresh();
+    const block = await createBlockAt(seed, 1, 2);
+
+    const scheduler = createScheduler({
+      adapter: wrapLocked(inner, () => ({
+        deleteBlock: async () =>
+          await Promise.resolve({ ok: false, reason: "missing" } as const),
+      })),
+      schema,
+    });
+
+    expect(
+      errorOf(await scheduler.blocks.delete({ id: block.id }))
+    ).toStrictEqual({ _tag: "BlockNotFound", id: block.id });
   });
 });

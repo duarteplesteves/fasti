@@ -43,8 +43,12 @@ export type {
   BlockActions,
   CreateBlockError,
   CreateBlockParams,
+  DeleteBlockError,
+  DeleteBlockParams,
   ListBlocksError,
   ListBlocksParams,
+  UpdateBlockError,
+  UpdateBlockParams,
 } from "./framework/blocks.js";
 
 export type { BookError, BookParams } from "./framework/book.js";
@@ -66,6 +70,7 @@ export type {
 export { AdapterError } from "./framework/errors.js";
 
 export type {
+  BlockNotFound,
   BookingNotFound,
   Conflict,
   ConflictingBlock,

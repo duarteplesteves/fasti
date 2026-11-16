@@ -2,11 +2,14 @@ import { describe, expectTypeOf, it } from "vitest";
 
 import type {
   Adapter,
+  BlockChanges,
   BlockReads,
   BlockRecord,
   BlockWrites,
+  DeleteBlockResult,
   GroupsOf,
   ListBlocksQuery,
+  UpdateBlockResult,
   VerbGroup,
 } from "../adapter/index.js";
 import type { InvalidParams, Result } from "../core/result.js";
@@ -16,13 +19,18 @@ import type {
   Block,
   BlockActions,
   BlockColumn,
+  BlockNotFound,
   CreateBlockError,
   CreateBlockParams,
   CreateSchedulerParams,
+  DeleteBlockError,
+  DeleteBlockParams,
   HasBlocks,
   ListBlocksError,
   ListBlocksParams,
   Scheduler,
+  UpdateBlockError,
+  UpdateBlockParams,
 } from "../index.js";
 import { createScheduler } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
@@ -35,6 +43,7 @@ import type {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import type { BookError, BookParams } from "./book.js";
+import { mintBlockId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
 
@@ -223,6 +232,33 @@ describe("Blocks types", () => {
     >();
   });
 
+  it("takes an id, a whole range or none, and fields only when the Block has them, in update", () => {
+    const id = mintBlockId();
+
+    expectTypeOf({ id }).toExtend<UpdateBlockParams<typeof blockSchema>>();
+    expectTypeOf({ end: instant, id, start: instant }).toExtend<
+      UpdateBlockParams<typeof blockSchema>
+    >();
+    expectTypeOf({ fields: { reason: "x" }, id }).toExtend<
+      UpdateBlockParams<typeof blockSchema>
+    >();
+    expectTypeOf({ id, start: instant }).not.toExtend<
+      UpdateBlockParams<typeof blockSchema>
+    >();
+    expectTypeOf({ end: instant, id }).not.toExtend<
+      UpdateBlockParams<typeof blockSchema>
+    >();
+    expectTypeOf({ fields: { reason: null }, id }).not.toExtend<
+      UpdateBlockParams<typeof blockSchema>
+    >();
+    expectTypeOf<
+      UpdateBlockParams<typeof bareBlockSchema>
+    >().not.toHaveProperty("fields");
+    expectTypeOf<UpdateBlockParams<typeof blockSchema>>().not.toHaveProperty(
+      "resourceId"
+    );
+  });
+
   it("types `block` as null without it, and as its fields with it", () => {
     expectTypeOf(defaultSchema.block).toEqualTypeOf<null>();
     expectTypeOf(bareBlockSchema.block).toEqualTypeOf<{
@@ -249,5 +285,18 @@ describe("Block exports", () => {
       .parameter(0)
       .toEqualTypeOf<ListBlocksParams<S>>();
     expectTypeOf<ListBlocksError>().toExtend<CreateBlockError>();
+    expectTypeOf<BlockActions<S>["update"]>()
+      .parameter(0)
+      .toEqualTypeOf<UpdateBlockParams<S>>();
+    expectTypeOf<BlockActions<S>["delete"]>()
+      .parameter(0)
+      .toEqualTypeOf<DeleteBlockParams>();
+    expectTypeOf<BlockNotFound>().toExtend<UpdateBlockError>();
+    expectTypeOf<BlockNotFound>().toExtend<DeleteBlockError>();
+    expectTypeOf<BlockWrites<S>>().toHaveProperty("updateBlock");
+    expectTypeOf<BlockWrites<S>>().toHaveProperty("deleteBlock");
+    expectTypeOf<BlockChanges<S>>().not.toHaveProperty("resourceId");
+    expectTypeOf<UpdateBlockResult>().toExtend<{ ok: boolean }>();
+    expectTypeOf<DeleteBlockResult>().toExtend<{ ok: boolean }>();
   });
 });
