@@ -100,7 +100,7 @@ describe("race safety", () => {
     expect(result).toStrictEqual({
       error: {
         _tag: "SlotConflict",
-        conflicts: [{ end, id: outside.id, start }],
+        conflicts: [{ end, id: outside.id, kind: "booking", start }],
       },
       ok: false,
     });

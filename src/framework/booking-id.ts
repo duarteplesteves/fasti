@@ -1,7 +1,7 @@
 import type { BookingId } from "../core/types.js";
 
 /** A new UUIDv7 (RFC 9562): 48-bit Unix ms, version 7, variant 10, the rest random from Web Crypto. */
-export function mintBookingId(): BookingId {
+export function uuidV7(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   const view = new DataView(bytes.buffer);
   const ms = Date.now();
@@ -16,7 +16,12 @@ export function mintBookingId(): BookingId {
     ""
   );
 
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** A new Booking id: a UUIDv7. */
+export function mintBookingId(): BookingId {
   // SAFETY: a freshly minted UUIDv7 is exactly what a BookingId is.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands are applied by assertion.
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` as BookingId;
+  return uuidV7() as BookingId;
 }

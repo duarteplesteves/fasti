@@ -263,7 +263,9 @@ describe("book", () => {
 
       expect(errorOf(overlap)).toStrictEqual({
         _tag: "SlotConflict",
-        conflicts: [{ end: at(2), id: first.value.id, start: at(1) }],
+        conflicts: [
+          { end: at(2), id: first.value.id, kind: "booking", start: at(1) },
+        ],
       });
     });
 
@@ -396,7 +398,9 @@ describe("book", () => {
 
       expect(errorOf(result)).toStrictEqual({
         _tag: "SlotConflict",
-        conflicts: [{ end: at(10), id: blocker.id, start: at(8) }],
+        conflicts: [
+          { end: at(10), id: blocker.id, kind: "booking", start: at(8) },
+        ],
       });
     });
   });

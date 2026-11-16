@@ -56,6 +56,7 @@ export { AdapterError } from "./framework/errors.js";
 
 export type {
   BookingNotFound,
+  Conflict,
   ConflictingBooking,
   PolicyViolation,
   SlotConflict,

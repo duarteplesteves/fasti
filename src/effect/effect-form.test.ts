@@ -143,7 +143,9 @@ describe("Effect form", () => {
     );
 
     expect(exit).toStrictEqual(
-      Exit.succeed([{ end: at(2), id: booking.id, start: at(1) }])
+      Exit.succeed([
+        { end: at(2), id: booking.id, kind: "booking", start: at(1) },
+      ])
     );
   });
 

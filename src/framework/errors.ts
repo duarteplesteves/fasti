@@ -2,15 +2,19 @@ import type { AvailabilityViolation, BookingId } from "../core/types.js";
 
 /** A blocking Booking that a requested slot overlaps; no Developer Fields, so no customer data. */
 export interface ConflictingBooking {
+  readonly kind: "booking";
   readonly id: BookingId;
   readonly start: Temporal.Instant;
   readonly end: Temporal.Instant;
 }
 
-/** The slot overlaps blocking Bookings: the overlap Invariant (ADR 014). */
+/** Something a requested slot overlaps; narrow on `kind`. */
+export type Conflict = ConflictingBooking;
+
+/** The slot overlaps what occupies the Resource: the overlap Invariant (ADR 014). Sorted by start, then id. */
 export interface SlotConflict {
   readonly _tag: "SlotConflict";
-  readonly conflicts: readonly ConflictingBooking[];
+  readonly conflicts: readonly Conflict[];
 }
 
 /** The slot breaks one or more Policies (ADR 014). */
