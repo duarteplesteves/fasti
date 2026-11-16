@@ -4,11 +4,9 @@ The milestone plan from the v0.1 Core to a finished **Framework**: persistence t
 
 ## Versions
 
-- **Internal checkpoints** get a git tag `v0.1.0-next.N` and an npm publish under the `next` dist-tag.
+- **Internal checkpoints** before `0.1.0` were tagged `v0.1.0-next.N` and published under the `next` dist-tag. Since `0.1.0`, Changesets versions every release: merging the Version PR publishes to `latest` and tags it. There are no more `next` prereleases.
 - **Public releases** are `0.x` on `latest`, starting with `0.1.0`: the Core plus a thin `createScheduler` slice.
 - **`1.0.0`** is the finished Framework.
-
-On a package's first publish, npm also points `latest` at it, so `latest` is a prerelease until `0.1.0` ships. The README says so.
 
 Milestones marked _open_ carry questions that get decided when that milestone starts, before any of its building begins.
 
