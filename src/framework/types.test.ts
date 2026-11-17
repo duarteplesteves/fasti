@@ -343,7 +343,9 @@ describe("forms", () => {
       (params: BookParams<S>) => Promise<Result<Booking<S>, BookError>>
     >();
     expectTypeOf<Single<Plain["cancel"]>>().toEqualTypeOf<
-      (params: CancelParams) => Promise<Result<CancelValue<S>, CancelError>>
+      (
+        params: CancelParams<S>
+      ) => Promise<Result<CancelValue<S>, CancelError<S>>>
     >();
     expectTypeOf<Single<Plain["findSlots"]>>().toEqualTypeOf<
       (
@@ -407,7 +409,7 @@ describe("forms", () => {
       ) => Effect.Effect<readonly Slot<S>[], FindSlotsError>
     >();
     expectTypeOf<Single<Service["cancel"]>>().toEqualTypeOf<
-      (params: CancelParams) => Effect.Effect<CancelValue<S>, CancelError>
+      (params: CancelParams<S>) => Effect.Effect<CancelValue<S>, CancelError<S>>
     >();
     expectTypeOf<Single<Service["availability"]["set"]>>().toEqualTypeOf<
       (

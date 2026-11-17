@@ -3,7 +3,7 @@ import { assert, describe, expect, expectTypeOf, it } from "vitest";
 import { defineAdapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { BlockId, BookingId } from "../core/types.js";
-import { createScheduler } from "../index.js";
+import { column, createScheduler, defineSchema } from "../index.js";
 import type {
   BookError,
   Booking,
@@ -14,13 +14,19 @@ import type {
   Vetoed,
 } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
-import {
-  uuidIdResources,
-  uuidIdSchema,
-} from "../test-utils/conformance-schemas.js";
+import { uuidIdResources } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
 
-const schema = uuidIdSchema;
+/** UUID ids, Blocks, and one Transition besides cancel's, so every write Action exists. */
+const schema = defineSchema({
+  block: { fields: {} },
+  booking: {
+    statuses: { inProgress: { blocking: true } },
+    transitions: { booked: ["inProgress"] },
+  },
+  resource: { idType: column.uuid() },
+});
+
 const [room] = uuidIdResources;
 
 // Monday 3 June 2030, 10:00–11:00 Lisbon (UTC+1).
@@ -343,6 +349,26 @@ const longer = { end: later.end.add({ minutes: 30 }), start: later.start };
 const cases: readonly AlsoCase[] = [
   {
     context: ({ booking }) => ({
+      booking: { ...booking, status: "inProgress" },
+      previous: booking,
+    }),
+    name: "transition",
+    run: async ({ booking, scheduler }, also) =>
+      await scheduler.transition({
+        also,
+        from: "booked",
+        id: booking.id,
+        to: "inProgress",
+      }),
+    unchanged: async ({ booking, reads }) => {
+      await expect(reads.getBooking(booking.id)).resolves.toStrictEqual(
+        booking
+      );
+    },
+    value: ({ booking }) => ({ ...booking, status: "inProgress" }),
+  },
+  {
+    context: ({ booking }) => ({
       booking: { ...booking, status: "cancelled" },
       previous: booking,
     }),
@@ -583,7 +609,7 @@ describe("also types", () => {
       Extract<Ok<Calls["cancelAlso"]>, { alreadyCancelled: false }>["also"]
     >().toEqualTypeOf<"done">();
     expectTypeOf<Err<Calls["cancelAlso"]>>().toEqualTypeOf<
-      CancelError | Vetoed<"no">
+      CancelError<S> | Vetoed<"no">
     >();
   });
 });

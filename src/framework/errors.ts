@@ -68,3 +68,18 @@ export interface Vetoed<E> {
   readonly _tag: "Vetoed";
   readonly reason: E;
 }
+
+/** The stored Status isn't what the call needed (`from` on `transition`). `status` is the stored one. */
+export interface StatusMismatch<St extends string = string> {
+  readonly _tag: "StatusMismatch";
+  readonly id: BookingId;
+  readonly status: St;
+}
+
+/** No declared Transition from the stored Status to `to` (reached through `cancel`). */
+export interface TransitionNotDeclared<St extends string = string> {
+  readonly _tag: "TransitionNotDeclared";
+  readonly id: BookingId;
+  readonly from: St;
+  readonly to: St;
+}

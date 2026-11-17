@@ -22,6 +22,7 @@ export type {
   InitialOf,
   Schema,
   StatusDecls,
+  TransitionEdge,
   TransitionTable,
   Transitions,
 } from "./schema/define-schema.js";
@@ -72,7 +73,12 @@ export type {
   CancelValue,
 } from "./framework/cancel.js";
 
-export type { Booking, ChangeAlso } from "./framework/booking.js";
+export type {
+  TransitionError,
+  TransitionParams,
+} from "./framework/transition.js";
+
+export type { Booking, ChangeAlso, FieldsPatch } from "./framework/booking.js";
 
 export type {
   FindSlotsError,
@@ -90,6 +96,8 @@ export type {
   ConflictingBooking,
   PolicyViolation,
   SlotConflict,
+  StatusMismatch,
+  TransitionNotDeclared,
   Vetoed,
 } from "./framework/errors.js";
 

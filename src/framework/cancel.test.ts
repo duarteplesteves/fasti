@@ -3,7 +3,12 @@ import { assert, describe, expect, expectTypeOf, it } from "vitest";
 import type { Adapter } from "../adapter/contract.js";
 import type { BookingId } from "../core/types.js";
 import { createScheduler } from "../index.js";
-import type { AdapterError, BookingNotFound, CancelError } from "../index.js";
+import type {
+  AdapterError,
+  BookingNotFound,
+  CancelError,
+  TransitionNotDeclared,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   uuidIdResources,
@@ -139,8 +144,12 @@ describe("cancel", () => {
     });
   });
 
-  it("fails with exactly BookingNotFound or AdapterError", () => {
-    expectTypeOf<CancelError>().toEqualTypeOf<BookingNotFound | AdapterError>();
+  it("fails with exactly BookingNotFound, TransitionNotDeclared or AdapterError", () => {
+    expectTypeOf<CancelError<typeof schema>>().toEqualTypeOf<
+      | BookingNotFound
+      | TransitionNotDeclared<"booked" | "cancelled">
+      | AdapterError
+    >();
     expectTypeOf<BookingNotFound>().toEqualTypeOf<{
       readonly _tag: "BookingNotFound";
       readonly id: BookingId;

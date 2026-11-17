@@ -1,7 +1,11 @@
 import type { Effect } from "effect";
 
 import type { RuleRecord, StatusOf } from "../adapter/records.js";
-import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
+import type {
+  AnySchema,
+  HasBlocks,
+  TransitionEdge,
+} from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import { statusCodec } from "../schema/status-codec.js";
 import { getAvailability, setAvailability } from "./availability.js";
@@ -32,6 +36,8 @@ import type { EffectAdapter } from "./effect-adapter.js";
 import { findSlots } from "./find-slots.js";
 import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
+import { transition } from "./transition.js";
+import type { TransitionError, TransitionParams } from "./transition.js";
 
 /** What every Action runs with. */
 export interface ActionContext<S extends AnySchema, Tx> {
@@ -42,7 +48,7 @@ export interface ActionContext<S extends AnySchema, Tx> {
 
 /**
  * Every Action, in form `F`: each declared once for both forms, so they can't drift (ADR 010).
- * `blocks` only when the schema declares `block`. `Tx` is the Adapter's transaction handle, as `also` gets it.
+ * `blocks` only when the schema declares `block`; `transition` only when some declared Transition doesn't end in `cancelled`. `Tx` is the Adapter's transaction handle, as `also` gets it.
  */
 export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
   /** Store a new Booking. */
@@ -56,10 +62,10 @@ export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
   /** Cancel a Booking, freeing its slot. Idempotent. */
   readonly cancel: WriteAction<
     F,
-    CancelParams,
+    CancelParams<S>,
     ChangeAlso<S, Tx>,
     CancelValue<S>,
-    CancelError
+    CancelError<S>
   >;
   /** Free slots on a Resource in a range, zoned in the caller's timezone. */
   readonly findSlots: ReadAction<
@@ -88,7 +94,19 @@ export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
   };
 } & (HasBlocks<S> extends true
   ? { readonly blocks: BlockActions<S, Tx, F> }
-  : unknown);
+  : unknown) &
+  ([TransitionEdge<S>] extends [never]
+    ? unknown
+    : {
+        /** Move a Booking along a declared Transition, compare-and-set on `from`. */
+        readonly transition: WriteAction<
+          F,
+          TransitionParams<S>,
+          ChangeAlso<S, Tx>,
+          Booking<S>,
+          TransitionError<S>
+        >;
+      });
 
 /** The Actions, Effect form, over an Adapter whose transaction handle is `Tx`. */
 export type SchedulerService<S extends AnySchema, Tx> = SchedulerActions<
@@ -125,8 +143,10 @@ export function makeScheduler<S extends AnySchema, Tx>({
       set: (params: SetAvailabilityParams<S>) => setAvailability(ctx, params),
     },
     book: (params: BookParams<S>) => book(ctx, params),
-    cancel: (params: CancelParams) => cancel(ctx, params),
+    cancel: (params: CancelParams<S>) => cancel(ctx, params),
     findSlots: (params: FindSlotsParams<S>) => findSlots(ctx, params),
+    // Always bound: on a schema with no edge, every call is InvalidParams before any Adapter call.
+    transition: (params: TransitionParams<S>) => transition(ctx, params),
   };
 
   // SAFETY: each Action takes an optional Effect-form `also` and merges its value as WithAlso describes; the plain form's is adapted in toPlain.
