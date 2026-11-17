@@ -44,6 +44,13 @@ export interface BookingNotFound {
   readonly id: BookingId;
 }
 
+/** The stored Status isn't one the call needs, e.g. reschedule of a non-blocking Booking. */
+export interface StatusMismatch<St extends string = string> {
+  readonly _tag: "StatusMismatch";
+  readonly id: BookingId;
+  readonly status: St;
+}
+
 /** No Block has this id. */
 export interface BlockNotFound {
   readonly _tag: "BlockNotFound";

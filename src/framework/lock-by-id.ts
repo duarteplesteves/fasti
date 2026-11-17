@@ -33,6 +33,8 @@ export interface LockedByIdParams<
   ) => Effect.Effect<Rec | null, AdapterError>;
   /** The failure when the row is missing. */
   readonly notFound: NF;
+  /** The Resource to lock instead of the stored one (reschedule's destination); `null` for the stored one. */
+  readonly destination: ResourceIdOf<S> | null;
   /** The locked work on the stored row; fail with `retry` when compare-and-set reports `changed`. */
   readonly work: (
     locked: EffectLocked<S, Tx>,
@@ -67,7 +69,7 @@ export function lockedById<
 
       return yield* writeUnit(
         ctx,
-        seen.resourceId,
+        params.destination ?? seen.resourceId,
         (locked) =>
           Effect.gen(function* lockedByIdUnit() {
             const stored = yield* params.read(locked);

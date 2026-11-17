@@ -4,6 +4,7 @@ import type { ResourceIdOf } from "../adapter/records.js";
 import { checkSearch, findFreeSlots } from "../core/find-free-slots.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
+import type { BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { floorMs } from "./booking.js";
 import { AdapterError } from "./errors.js";
@@ -24,6 +25,8 @@ export interface FindSlotsParams<S extends AnySchema> {
   readonly interval: number;
   /** IANA timezone that anchors the grid; slots are zoned in it. */
   readonly timezone: string;
+  /** Leave this Booking out of the conflict check: the slots it could be rescheduled to. */
+  readonly excludeBookingId?: BookingId;
 }
 
 /** A free slot from `findSlots`: the Core's Slot with the caller's typed Resource id. */
@@ -43,7 +46,8 @@ export function findSlots<S extends AnySchema, Tx>(
   { adapter, codec }: ActionContext<S, Tx>,
   params: FindSlotsParams<S>
 ): Effect.Effect<readonly Slot<S>[], FindSlotsError> {
-  const { duration, interval, resourceId, timezone } = params;
+  const { duration, excludeBookingId, interval, resourceId, timezone } = params;
+
   const from = floorMs(params.from);
   const to = floorMs(params.to);
 
@@ -74,7 +78,7 @@ export function findSlots<S extends AnySchema, Tx>(
     );
 
     const found = findFreeSlots({
-      bookings,
+      bookings: bookings.filter((b) => b.id !== excludeBookingId),
       duration,
       from,
       interval,
