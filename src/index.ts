@@ -19,7 +19,11 @@ export type {
   FieldDef,
   Fields,
   HasBlocks,
+  InitialOf,
   Schema,
+  StatusDecls,
+  TransitionTable,
+  Transitions,
 } from "./schema/define-schema.js";
 
 export { createScheduler } from "./framework/create-scheduler.js";
@@ -51,7 +55,7 @@ export type {
   UpdateBlockParams,
 } from "./framework/blocks.js";
 
-export type { BookError, BookParams } from "./framework/book.js";
+export type { BookError, BookParams, StatusParam } from "./framework/book.js";
 
 export type {
   CancelError,

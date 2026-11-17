@@ -115,7 +115,8 @@ export function literal(value: string): string {
 
 /**
  * The Booking table of `schema`, with your physical names, for your drizzle-kit schema file.
- * Columns are keyed by logical name. Status is `text` with a `CHECK` over its stored values.
+ * Columns are keyed by logical name. Status is `text` with a `CHECK` over its stored values,
+ * so declaring a Status changes the table: generate a migration, and re-run `backstopSql` if it blocks.
  */
 export function bookingTable<
   S extends AnySchema,

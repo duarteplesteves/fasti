@@ -20,6 +20,7 @@ export function noOverlapConstraint(schema: AnySchema): string {
  *
  * Correct for capacity 1 only: it forbids any overlap of blocking Bookings on a Resource.
  * drizzle-kit doesn't track the constraint: later generated migrations neither include nor drop it.
+ * It lists the blocking Statuses, so when you add, remove or flip a blocking Status, drop the constraint and re-run these statements in a new migration.
  */
 export function backstopSql(schema: AnySchema): readonly string[] {
   // SAFETY: defineSchema names every Booking column; AnySchema only widens the keys to string.

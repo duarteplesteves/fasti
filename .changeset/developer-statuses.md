@@ -1,0 +1,5 @@
+---
+"@fastijs/scheduler": minor
+---
+
+Developer Statuses and Transitions (ADR 009): `defineSchema({ booking: { statuses, transitions, initial } })` declares Statuses beyond `booked` and `cancelled`, each with `blocking`, the Transitions between them (`booked → cancelled` is always present), and the Statuses `book` may create a Booking in (default `["booked"]`). With more than one initial Status, `book` takes a required `status`; a non-blocking one skips the overlap check but not availability. Declared Statuses are stored, blocked on and backstopped like the base ones: the Drizzle `CHECK` constraint and `backstopSql` list them, so add a migration and re-run `backstopSql` when blocking Statuses change. Redeclaring a base Status, naming an unknown Status in `transitions` or `initial`, two Statuses sharing a stored value, and a Booking or Block Developer Field named `also` (now reserved) throw at definition time and are type errors. `Schema` gains two type parameters, `transitions` and `initial`; the Status codec gains `canMove(from, to)`.

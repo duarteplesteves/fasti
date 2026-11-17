@@ -12,6 +12,8 @@ export interface StatusCodec<St extends string> {
   readonly blockingStored: readonly string[];
   /** Every stored value. */
   readonly allStored: readonly string[];
+  /** Whether `from → to` is a declared Transition. */
+  readonly canMove: (from: St, to: St) => boolean;
 }
 
 /** The Status lookup table of a schema. Stored values are distinct, as `defineSchema` checks (I6). */
@@ -41,6 +43,9 @@ export function statusCodec<S extends AnySchema>(
 
   return {
     allStored: entries.map(([, s]) => s.stored),
+    canMove: (from, to) =>
+      Object.hasOwn(schema.transitions, from) &&
+      (schema.transitions[from]?.includes(to) ?? false),
     blockingStored: entries
       .filter(([, s]) => s.blocking)
       .map(([, s]) => s.stored),
