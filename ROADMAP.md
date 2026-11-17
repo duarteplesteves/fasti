@@ -95,9 +95,7 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Goal:** the complete base lifecycle.
 
-**Scope:** `reschedule`, `transition({ id, from, to })`, developer Statuses ([ADR 009](./docs/adr/009-booking-lifecycle.md)), and `also` on every write Action ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)).
-
-**Open:** writing a Block that cancels the blocking Bookings it overlaps, in the same unit of work (opt-in per call), instead of being refused.
+**Scope:** `reschedule`, `transition({ id, from, to })`, developer Statuses ([ADR 009](./docs/adr/009-booking-lifecycle.md)), and `also` on every write Action ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)). Spec: [#98](https://github.com/duarteplesteves/fasti/issues/98).
 
 ## 7. Policies — `0.4` (public)
 
@@ -156,4 +154,5 @@ Deferred past `1.0`, in no order.
 - **First-party integration plugins** (email, SMS, payments, calendar sync).
 - **Waitlists**, as an after-commit effect of `cancel`.
 - **Date overrides**: one date's hours changed, adding or removing time, as part of AvailabilityRule and so relaxable through the `availability` Policy. Today's whole-day `exceptions` are the crude form.
+- **Block writes that cancel overlapping Bookings**: opt-in per call, in the same unit of work, instead of being refused. Deferred from milestone 6. Workaround: `cancel` the Bookings, then create the Block; a Booking made in between gets the Block refused, which fails safe.
 - **Recurring Blocks**, using AvailabilityRule's `frequency`-discriminated recurrence. They matter once availability can be turned off (milestone 9); until then, recurring busy time can be left out of the rules. Guard: `SlotConflict`'s `kind: "block"` doesn't assume a Block is one stored row.
