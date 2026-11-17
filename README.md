@@ -236,6 +236,7 @@ const result = await scheduler.book({
 - `also` may be sync or async, and returns a `Result`. Its `value` comes back on the Action's value as `also` (a `blocks.delete` value is `{ also }`).
 - Returning `{ ok: false, error }` vetoes: everything rolls back, fasti's write included, and the Action fails with `{ _tag: "Vetoed", reason: error }`. A throw also rolls back, and the promise rejects with what was thrown.
 - Write only through `tx`: anything else isn't part of the unit and won't roll back. On the memory Adapter `tx` is `undefined`.
+- `also` may run more than once. The Drizzle Adapter reruns the whole unit, `also` included, when it fails with a deadlock or a serialization failure (`40P01`, `40001`), up to 3 attempts. When they run out, it fails as on the last attempt: an `AdapterError` if fasti's write failed, a rejection if `also` threw. Another reason to write only through `tx`.
 - What each Action passes, besides `tx` and `now`: `book` gets `booking`; `cancel` gets `booking` and `previous`; `availability.set` gets `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
 
