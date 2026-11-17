@@ -36,6 +36,8 @@ import type { EffectAdapter } from "./effect-adapter.js";
 import { findSlots } from "./find-slots.js";
 import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
+import { reschedule } from "./reschedule.js";
+import type { RescheduleError, RescheduleParams } from "./reschedule.js";
 import { transition } from "./transition.js";
 import type { TransitionError, TransitionParams } from "./transition.js";
 
@@ -58,6 +60,14 @@ export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
     BookAlso<S, Tx>,
     Booking<S>,
     BookError
+  >;
+  /** Move a Booking in time or to another Resource, keeping its id and Status. */
+  readonly reschedule: WriteAction<
+    F,
+    RescheduleParams<S>,
+    ChangeAlso<S, Tx>,
+    Booking<S>,
+    RescheduleError<S>
   >;
   /** Cancel a Booking, freeing its slot. Idempotent. */
   readonly cancel: WriteAction<
@@ -147,6 +157,7 @@ export function makeScheduler<S extends AnySchema, Tx>({
     findSlots: (params: FindSlotsParams<S>) => findSlots(ctx, params),
     // Always bound: on a schema with no edge, every call is InvalidParams before any Adapter call.
     transition: (params: TransitionParams<S>) => transition(ctx, params),
+    reschedule: (params: RescheduleParams<S>) => reschedule(ctx, params),
   };
 
   // SAFETY: each Action takes an optional Effect-form `also` and merges its value as WithAlso describes; the plain form's is adapted in toPlain.

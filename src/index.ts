@@ -74,6 +74,11 @@ export type {
 } from "./framework/cancel.js";
 
 export type {
+  RescheduleError,
+  RescheduleParams,
+} from "./framework/reschedule.js";
+
+export type {
   TransitionError,
   TransitionParams,
 } from "./framework/transition.js";

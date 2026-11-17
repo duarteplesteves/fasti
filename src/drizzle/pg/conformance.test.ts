@@ -17,6 +17,7 @@ import {
   vi,
 } from "vitest";
 
+import { defineAdapter } from "../../adapter/contract.js";
 import { createScheduler } from "../../framework/create-scheduler.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
@@ -98,6 +99,11 @@ function raise(code: string): SQL {
 }
 
 const url = postgresUrl();
+
+/** `hour`:00 UTC on Monday 3 June 2030. */
+function at(hour: number): Temporal.Instant {
+  return Temporal.Instant.from("2030-06-03T00:00:00Z").add({ hours: hour });
+}
 
 let database: TestDatabase;
 
@@ -445,6 +451,105 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
           sql`drop trigger fasti_test_fail on ${table}; drop function fasti_test_fail()`
         );
       }
+    });
+  });
+
+  describe("reschedule with the backstop", () => {
+    const schema = uuidIdSchema;
+    const [room] = uuidIdResources;
+
+    beforeAll(async () => {
+      for (const statement of backstopSql(schema)) {
+        // oxlint-disable-next-line no-await-in-loop -- in order: the extension before the constraint that needs it.
+        await database.db.execute(sql.raw(statement));
+      }
+    });
+
+    afterAll(async () => {
+      await database.db.execute(
+        sql`alter table ${tables.uuidBooking} drop constraint ${sql.identifier(noOverlapConstraint(schema))}`
+      );
+    });
+
+    it("gives SlotConflict when the backstop catches an outside write the lock missed", async () => {
+      await database.db.execute(
+        sql`truncate ${tables.uuidBooking}, ${tables.uuidRule}, ${tables.uuidBlock}`
+      );
+
+      const inner = drizzleAdapter(database.db);
+      const plain = createScheduler({ adapter: inner, schema });
+
+      await plain.availability.set({
+        resourceId: room,
+        rules: [
+          {
+            exceptions: [],
+            recurrence: { daysOfWeek: [1], frequency: "weekly", interval: 1 },
+            timeWindow: {
+              end: Temporal.PlainTime.from("17:00"),
+              start: Temporal.PlainTime.from("09:00"),
+            },
+            timezone: "UTC",
+          },
+        ],
+      });
+
+      const moving = await plain.book({
+        end: at(11),
+        resourceId: room,
+        start: at(10),
+      });
+
+      const outside = await plain.book({
+        end: at(15),
+        resourceId: room,
+        start: at(14),
+      });
+
+      assert(moving.ok && outside.ok, "expected both seed bookings");
+
+      // Hides the outside Booking from the unit's first read, as a write the lock can't see would be.
+      const adapter = defineAdapter<Tx, "blocks">((s) => {
+        const raw = inner(s);
+
+        return {
+          ...raw,
+          withResourceLock: async (id, work) =>
+            await raw.withResourceLock(id, async (locked) => {
+              let reads = 0;
+
+              return await work({
+                ...locked,
+                listBookings: async (q) => {
+                  reads += 1;
+
+                  return reads === 1 ? [] : await locked.listBookings(q);
+                },
+              });
+            }),
+        };
+      });
+
+      const result = await createScheduler({ adapter, schema }).reschedule({
+        end: at(15),
+        id: moving.value.id,
+        start: at(14),
+      });
+
+      expect(result).toStrictEqual({
+        error: {
+          _tag: "SlotConflict",
+          conflicts: [
+            {
+              end: at(15),
+              id: outside.value.id,
+              kind: "booking",
+              start: at(14),
+            },
+          ],
+        },
+        ok: false,
+      });
     });
   });
 });

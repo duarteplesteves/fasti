@@ -260,6 +260,7 @@ export function updateBlock<S extends AnySchema, Tx, R = never>(
 
   return lockedById(ctx, {
     also: params.also,
+    destination: null,
     notFound,
     read: (reads) => reads.getBlock(id),
     work: (locked, stored) =>
@@ -336,6 +337,7 @@ export function deleteBlock<S extends AnySchema, Tx, R = never>(
 
   return lockedById(ctx, {
     also: params.also,
+    destination: null,
     notFound,
     read: (reads) => reads.getBlock(id),
     work: (locked, stored) =>

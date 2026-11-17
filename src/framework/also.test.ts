@@ -346,7 +346,28 @@ const newRule = {
 
 const longer = { end: later.end.add({ minutes: 30 }), start: later.start };
 
+/** A free slot on the seeded Monday, 11:00–12:00 Lisbon. */
+const free = {
+  end: Temporal.Instant.from("2030-06-03T11:00:00Z"),
+  start: Temporal.Instant.from("2030-06-03T10:00:00Z"),
+};
+
 const cases: readonly AlsoCase[] = [
+  {
+    context: ({ booking }) => ({
+      booking: { ...booking, ...free },
+      previous: booking,
+    }),
+    name: "reschedule",
+    run: async ({ booking, scheduler }, also) =>
+      await scheduler.reschedule({ ...free, also, id: booking.id }),
+    unchanged: async ({ booking, reads }) => {
+      await expect(reads.getBooking(booking.id)).resolves.toStrictEqual(
+        booking
+      );
+    },
+    value: ({ booking }) => ({ ...booking, ...free }),
+  },
   {
     context: ({ booking }) => ({
       booking: { ...booking, status: "inProgress" },

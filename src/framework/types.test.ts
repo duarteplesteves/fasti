@@ -59,6 +59,7 @@ import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { EffectLocked } from "./effect-adapter.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
 import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
+import type { RescheduleError, RescheduleParams } from "./reschedule.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
 
@@ -347,6 +348,11 @@ describe("forms", () => {
         params: CancelParams<S>
       ) => Promise<Result<CancelValue<S>, CancelError<S>>>
     >();
+    expectTypeOf<Single<Plain["reschedule"]>>().toEqualTypeOf<
+      (
+        params: RescheduleParams<S>
+      ) => Promise<Result<Booking<S>, RescheduleError<S>>>
+    >();
     expectTypeOf<Single<Plain["findSlots"]>>().toEqualTypeOf<
       (
         params: FindSlotsParams<S>
@@ -363,7 +369,7 @@ describe("forms", () => {
       ) => Promise<Result<readonly RuleRecord[], GetAvailabilityError>>
     >();
     expectTypeOf<keyof Plain>().toEqualTypeOf<
-      "book" | "cancel" | "findSlots" | "availability"
+      "book" | "reschedule" | "cancel" | "findSlots" | "availability"
     >();
   });
 
@@ -391,7 +397,7 @@ describe("forms", () => {
       ) => Promise<Result<readonly Block<S>[], ListBlocksError>>
     >();
     expectTypeOf<keyof Scheduler<S, Tx>>().toEqualTypeOf<
-      "book" | "cancel" | "findSlots" | "availability" | "blocks"
+      "book" | "reschedule" | "cancel" | "findSlots" | "availability" | "blocks"
     >();
   });
 

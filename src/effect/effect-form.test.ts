@@ -7,7 +7,12 @@ import type { Adapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import { mintBookingId } from "../framework/booking-id.js";
 import { column, createScheduler, defineSchema } from "../index.js";
-import type { BlockNotFound, SlotConflict, TransitionError } from "../index.js";
+import type {
+  BlockNotFound,
+  SlotConflict,
+  StatusMismatch,
+  TransitionError,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   uuidIdResources,
@@ -227,6 +232,34 @@ describe("Effect form", () => {
     );
 
     expect(gone).toStrictEqual(Exit.succeed(id));
+  });
+
+  it("reschedule runs through the layer, with StatusMismatch in the error channel", async () => {
+    const { adapter, booking } = await seeded();
+
+    await expect(
+      viaEffect(adapter, (s) =>
+        s.reschedule({ end: at(4), id: booking.id, start: at(3) })
+      )
+    ).resolves.toStrictEqual(
+      Exit.succeed({ ...booking, end: at(4), start: at(3) })
+    );
+
+    await viaEffect(adapter, (s) => s.cancel({ id: booking.id }));
+
+    const refused = await viaEffect(adapter, (s) =>
+      s.reschedule({ end: at(6), id: booking.id, start: at(5) }).pipe(
+        Effect.catchTag("StatusMismatch", (error) => {
+          expectTypeOf(error).toEqualTypeOf<
+            StatusMismatch<"booked" | "cancelled">
+          >();
+
+          return Effect.succeed(error.status);
+        })
+      )
+    );
+
+    expect(refused).toStrictEqual(Exit.succeed("cancelled"));
   });
 
   it("dies on a defect from a contract-violating Adapter", async () => {
