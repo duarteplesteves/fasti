@@ -67,7 +67,12 @@ const MAX_ATTEMPTS = 3;
 /** 40001 serialization_failure or 40P01 deadlock_detected, found anywhere on the `cause` chain. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is whatever was thrown.
 function isTransient(error: unknown): boolean {
-  for (let e = error; e instanceof Object; e = "cause" in e ? e.cause : null) {
+  // At most 10 links, so a `cause` that loops back (a developer's thrown value can) ends the walk.
+  for (
+    let depth = 0, e = error;
+    e instanceof Object && depth < 10;
+    e = "cause" in e ? e.cause : null, depth += 1
+  ) {
     if ("code" in e && (e.code === "40001" || e.code === "40P01")) {
       return true;
     }
@@ -277,7 +282,7 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
         return blocks;
       }
 
-      const once: SchemaAdapter<S, TxOf<DB>, "blocks"> = {
+      const singleAttempt: SchemaAdapter<S, TxOf<DB>, "blocks"> = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
           await db.transaction(async (tx) => {
@@ -427,11 +432,11 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
       };
 
       return {
-        ...once,
+        ...singleAttempt,
         // The whole unit reruns on a transient error, `work` and the developer's writes in `tx` included.
         withResourceLock: async (lockedId, work) =>
           await retryTransient(
-            async () => await once.withResourceLock(lockedId, work)
+            async () => await singleAttempt.withResourceLock(lockedId, work)
           ),
       };
     }
