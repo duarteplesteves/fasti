@@ -2,16 +2,15 @@ import { Effect } from "effect";
 
 import type { BookingRecord, ResourceIdOf } from "../adapter/records.js";
 import { checkInstantRange } from "../core/checks.js";
-import { isSlotValid } from "../core/is-slot-valid.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { mintBookingId } from "./booking-id.js";
 import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
-import { AdapterError } from "./errors.js";
-import type { PolicyViolation, SlotConflict } from "./errors.js";
+import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
 import { conflictsAt } from "./occupancy.js";
+import { checkPlacement } from "./placement.js";
 import type { ActionContext } from "./scheduler-service.js";
 
 /** Params of `book`: one Resource, one half-open `[start, end)` range, and the schema's Developer Fields under `fields`. */
@@ -37,11 +36,18 @@ export function book<S extends AnySchema>(
   params: BookParams<S>
 ): Effect.Effect<Booking<S>, BookError> {
   const { resourceId } = params;
-  const coreId = String(resourceId);
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
   const end = floorMs(params.end);
-  const range = { end, kind: "booking", resourceId, start } as const;
+
+  const range = {
+    end,
+    excludeBookingId: null,
+    kind: "booking",
+    resourceId,
+    start,
+  } as const;
+
   // Before any Adapter call (Invariant 5).
   const checkedRange = checked(checkInstantRange(range, []), () => range);
 
@@ -51,35 +57,7 @@ export function book<S extends AnySchema>(
 
   return ctx.adapter.withResourceLock(resourceId, (locked) =>
     Effect.gen(function* bookUnit() {
-      const conflicts = yield* conflictsAt(locked, ctx.codec, range);
-
-      if (conflicts.length > 0) {
-        return yield* Effect.fail<SlotConflict>({
-          _tag: "SlotConflict",
-          conflicts,
-        });
-      }
-
-      const rules = yield* locked.getRules(resourceId);
-
-      const valid = isSlotValid({
-        bookings: [],
-        resourceId: coreId,
-        rules: rules.map((r) => ({ ...r, resourceId: coreId })),
-        slot: { end, start },
-      });
-
-      // Invalid stored rules are the Adapter's data (Invariant 6).
-      if (!valid.ok) {
-        return yield* Effect.fail(new AdapterError(valid.error));
-      }
-
-      if (!valid.value) {
-        return yield* Effect.fail<PolicyViolation>({
-          _tag: "PolicyViolation",
-          violations: [{ detail: {}, policy: "availability" }],
-        });
-      }
+      yield* checkPlacement(locked, ctx, range);
 
       // SAFETY: the base columns are set, and every schema field is set: required ones by BookParams' type, optional ones to their value or `null`.
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.

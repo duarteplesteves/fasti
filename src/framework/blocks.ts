@@ -12,9 +12,10 @@ import type { InvalidParams } from "../core/result.js";
 import type { BlockId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { mintBlockId } from "./booking-id.js";
-import { fieldValues, floorMs } from "./booking.js";
-import type { FieldValue, FieldsInput, FieldsParam } from "./booking.js";
+import { fieldPatch, fieldValues, floorMs } from "./booking.js";
+import type { FieldValue, FieldsParam, FieldsPatch } from "./booking.js";
 import type { AdapterError, BlockNotFound, SlotConflict } from "./errors.js";
+import { lockedById, retry } from "./lock-by-id.js";
 import { conflictsAt } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
 
@@ -47,12 +48,7 @@ export type UpdateBlockParams<S extends AnySchema> = {
     }
   | { readonly start?: never; readonly end?: never }
 ) &
-  ([keyof BlockFieldsOf<S>] extends [never]
-    ? unknown
-    : {
-        /** Developer Fields to change; the ones left out keep their value. */
-        readonly fields?: Partial<FieldsInput<BlockFieldsOf<S>>>;
-      });
+  FieldsPatch<BlockFieldsOf<S>>;
 
 /** Params of `blocks.delete`. */
 export interface DeleteBlockParams {
@@ -127,6 +123,7 @@ export function createBlock<S extends AnySchema>(
       // Only blocking Bookings conflict with a Block: Blocks may overlap each other (ADR 016).
       const conflicts = yield* conflictsAt(locked, codec, {
         end,
+        excludeBookingId: null,
         kind: "block",
         resourceId,
         start,
@@ -161,13 +158,6 @@ export function createBlock<S extends AnySchema>(
   );
 }
 
-/** An outside write moved or changed the row between read and write: start over. Never leaves the Action. */
-interface Retry {
-  readonly _tag: "Retry";
-}
-
-const retry: Retry = { _tag: "Retry" };
-
 /** Equal as stored values: Instants by `equals`, the rest by identity. */
 function sameStoredValue(a: FieldValue | undefined, b: FieldValue): boolean {
   return a instanceof Temporal.Instant && b instanceof Temporal.Instant
@@ -198,50 +188,23 @@ export function updateBlock<S extends AnySchema>(
     }
   }
 
-  // SAFETY: UpdateBlockParams<S> is `unknown` or has an optional `fields` of field values.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't narrow inside a generic.
-  const { fields: input = {} } = params as {
-    readonly fields?: Readonly<Record<string, FieldValue | undefined>>;
-  };
-
-  // Declared fields only, left-out ones untouched, Instants floored.
-  const fieldChanges = Object.fromEntries(
-    Object.keys(ctx.schema.block?.fields ?? {})
-      .filter((name) => input[name] !== undefined)
-      .map((name) => {
-        const value = input[name];
-
-        return [
-          name,
-          value instanceof Temporal.Instant ? floorMs(value) : value,
-        ];
-      })
+  const fieldChanges = fieldPatch(
+    // SAFETY: BlockFieldsOf<S> is the fields of `schema.block`, which isn't null when this Action exists.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
+    (ctx.schema.block?.fields ?? {}) as BlockFieldsOf<S>,
+    params
   );
 
-  const once = Effect.gen(function* updateBlockOnce() {
-    // Unlocked, only to learn which Resource to lock.
-    const seen = yield* ctx.adapter.getBlock(id);
-
-    if (seen === null) {
-      return yield* Effect.fail(notFound);
-    }
-
-    return yield* ctx.adapter.withResourceLock(seen.resourceId, (locked) =>
+  return lockedById(ctx, {
+    notFound,
+    read: (reads) => reads.getBlock(id),
+    work: (locked, stored) =>
       Effect.gen(function* updateBlockUnit() {
-        const stored = yield* locked.getBlock(id);
-
-        if (stored === null) {
-          return yield* Effect.fail(notFound);
-        }
-
-        if (stored.resourceId !== seen.resourceId) {
-          return yield* Effect.fail(retry);
-        }
-
         // Only a new range can meet a Booking; a fields-only change keeps the time it had (ADR 016).
         if (range !== null) {
           const conflicts = yield* conflictsAt(locked, ctx.codec, {
             ...range,
+            excludeBookingId: null,
             kind: "block",
             resourceId: stored.resourceId,
           });
@@ -280,12 +243,8 @@ export function updateBlock<S extends AnySchema>(
         }
 
         return { ...stored, ...changes };
-      })
-    );
+      }),
   });
-
-  // shortcut: Retry is unbounded, as in cancel; cap it if outside writers ever churn a row.
-  return Effect.catchTag(once, "Retry", () => updateBlock(ctx, params));
 }
 
 /** Remove a Block under its Resource's lock. */
@@ -296,35 +255,14 @@ export function deleteBlock<S extends AnySchema>(
   const { id } = params;
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };
 
-  const once = Effect.gen(function* deleteBlockOnce() {
-    // Unlocked, only to learn which Resource to lock.
-    const seen = yield* ctx.adapter.getBlock(id);
-
-    if (seen === null) {
-      return yield* Effect.fail(notFound);
-    }
-
-    return yield* ctx.adapter.withResourceLock(seen.resourceId, (locked) =>
-      Effect.gen(function* deleteBlockUnit() {
-        const stored = yield* locked.getBlock(id);
-
-        if (stored === null) {
-          return yield* Effect.fail(notFound);
-        }
-
-        if (stored.resourceId !== seen.resourceId) {
-          return yield* Effect.fail(retry);
-        }
-
-        const deleted = yield* locked.deleteBlock(id);
-
-        return deleted.ok ? undefined : yield* Effect.fail(notFound);
-      })
-    );
+  return lockedById(ctx, {
+    notFound,
+    read: (reads) => reads.getBlock(id),
+    work: (locked) =>
+      Effect.flatMap(locked.deleteBlock(id), (deleted) =>
+        deleted.ok ? Effect.void : Effect.fail(notFound)
+      ),
   });
-
-  // shortcut: Retry is unbounded, as in cancel; cap it if outside writers ever churn a row.
-  return Effect.catchTag(once, "Retry", () => deleteBlock(ctx, params));
 }
 
 /** The Resource's Blocks overlapping `[from, to)`, read without the lock. */
