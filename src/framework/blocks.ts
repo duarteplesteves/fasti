@@ -156,11 +156,11 @@ export interface BlockActions<S extends AnySchema, Tx, F extends Form> {
 }
 
 /** Store a new Block under the Resource Lock; a blocking Booking in the way is a SlotConflict (ADR 016). */
-export function createBlock<S extends AnySchema, Tx>(
+export function createBlock<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: CreateBlockParams<S> &
-    AlsoParam<AlsoContext<CreateBlockAlso<S, Tx>>, Tx>
-): WriteEffect<Block<S>, CreateBlockError> {
+    AlsoParam<AlsoContext<CreateBlockAlso<S, Tx>>, Tx, R>
+): WriteEffect<Block<S>, CreateBlockError, R> {
   const { codec, schema } = ctx;
   const { resourceId } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
@@ -228,11 +228,11 @@ function sameStoredValue(a: FieldValue | undefined, b: FieldValue): boolean {
 }
 
 /** Change a Block under its Resource's lock (compare-and-set); a no-op change writes nothing. */
-export function updateBlock<S extends AnySchema, Tx>(
+export function updateBlock<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: UpdateBlockParams<S> &
-    AlsoParam<AlsoContext<UpdateBlockAlso<S, Tx>>, Tx>
-): WriteEffect<Block<S>, UpdateBlockError> {
+    AlsoParam<AlsoContext<UpdateBlockAlso<S, Tx>>, Tx, R>
+): WriteEffect<Block<S>, UpdateBlockError, R> {
   const { id } = params;
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };
 
@@ -326,10 +326,11 @@ export function updateBlock<S extends AnySchema, Tx>(
 }
 
 /** Remove a Block under its Resource's lock. */
-export function deleteBlock<S extends AnySchema, Tx>(
+export function deleteBlock<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
-  params: DeleteBlockParams & AlsoParam<AlsoContext<DeleteBlockAlso<S, Tx>>, Tx>
-): WriteEffect<void, DeleteBlockError> {
+  params: DeleteBlockParams &
+    AlsoParam<AlsoContext<DeleteBlockAlso<S, Tx>>, Tx, R>
+): WriteEffect<void, DeleteBlockError, R> {
   const { id } = params;
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };
 

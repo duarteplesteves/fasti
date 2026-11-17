@@ -25,6 +25,7 @@ export interface LockedByIdParams<
   V,
   C,
   E,
+  R,
 > {
   /** Read the row by id, unlocked first, then again under the lock. */
   readonly read: (
@@ -38,7 +39,7 @@ export interface LockedByIdParams<
     stored: Rec
   ) => Effect.Effect<Outcome<V, C>, E | Retry>;
   /** The developer's `also`, run by `writeUnit` after `work`. */
-  readonly also: EffectAlso<C, Tx> | undefined;
+  readonly also: EffectAlso<C, Tx, R> | undefined;
 }
 
 /** Run `work` on a row addressed by id, under its Resource's lock: the one place an Action retries. */
@@ -50,11 +51,12 @@ export function lockedById<
   V,
   C,
   E,
+  R,
 >(
   ctx: ActionContext<S, Tx>,
-  params: LockedByIdParams<S, Tx, Rec, NF, V, C, E>
-): WriteEffect<V, E | NF> {
-  const once: WriteEffect<V, E | NF | Retry> = Effect.gen(
+  params: LockedByIdParams<S, Tx, Rec, NF, V, C, E, R>
+): WriteEffect<V, E | NF, R> {
+  const once: WriteEffect<V, E | NF | Retry, R> = Effect.gen(
     function* lockedByIdOnce() {
       // Unlocked, only to learn which Resource to lock.
       const seen = yield* params.read(ctx.adapter);

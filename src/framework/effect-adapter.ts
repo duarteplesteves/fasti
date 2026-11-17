@@ -77,11 +77,11 @@ export interface EffectLocked<S extends AnySchema, Tx> extends EffectReads<S> {
 
 /** An Adapter as Effects: the only place a Promise Adapter becomes Effect. */
 export interface EffectAdapter<S extends AnySchema, Tx> extends EffectReads<S> {
-  /** Run `work` under the Resource Lock; the unit commits iff `work` succeeds (Invariant 3). */
-  readonly withResourceLock: <A, E>(
+  /** Run `work` under the Resource Lock, with the caller's services (so its `Clock` too); the unit commits iff `work` succeeds (Invariant 3). */
+  readonly withResourceLock: <A, E, R>(
     resourceId: ResourceIdOf<S>,
-    work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E>
-  ) => Effect.Effect<A, E | AdapterError>;
+    work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E, R>
+  ) => Effect.Effect<A, E | AdapterError, R>;
 }
 
 /** Run an Adapter verb; any rejection is the Adapter failing. */
@@ -179,40 +179,42 @@ export function liftAdapter<S extends AnySchema, Tx>(
 
   return {
     ...liftReads(raw, hasBlocks),
-    withResourceLock: <A, E>(
+    withResourceLock: <A, E, R>(
       resourceId: ResourceIdOf<S>,
-      work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E>
+      work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E, R>
     ) =>
-      Effect.flatten(
-        attempt(async (): Promise<Exit.Exit<A, E>> => {
-          let failure: Exit.Exit<A, E> | undefined;
-          let thrown: unknown;
-          const rollback = new Error("fasti: the unit of work failed");
+      Effect.flatMap(Effect.context<R>(), (services) =>
+        Effect.flatten(
+          attempt(async (): Promise<Exit.Exit<A, E>> => {
+            let failure: Exit.Exit<A, E> | undefined;
+            let thrown: unknown;
+            const rollback = new Error("fasti: the unit of work failed");
 
-          try {
-            return await raw.withResourceLock(resourceId, async (locked) => {
-              const exit = await Effect.runPromiseExit(
-                work(liftLocked(locked, hasBlocks))
-              );
+            try {
+              return await raw.withResourceLock(resourceId, async (locked) => {
+                const exit = await Effect.runPromiseExitWith(services)(
+                  work(liftLocked(locked, hasBlocks))
+                );
 
-              if (Exit.isFailure(exit)) {
-                failure = exit;
-                thrown = rejectionFor(exit.cause, rollback);
-                // Rejecting rolls the unit back; the contract rejects with this same reason.
-                throw thrown;
+                if (Exit.isFailure(exit)) {
+                  failure = exit;
+                  thrown = rejectionFor(exit.cause, rollback);
+                  // Rejecting rolls the unit back; the contract rejects with this same reason.
+                  throw thrown;
+                }
+
+                return exit;
+              });
+            } catch (error) {
+              // The work's own failure (typed or defect) passes through; anything else is the Adapter's.
+              if (failure !== undefined && error === thrown) {
+                return failure;
               }
 
-              return exit;
-            });
-          } catch (error) {
-            // The work's own failure (typed or defect) passes through; anything else is the Adapter's.
-            if (failure !== undefined && error === thrown) {
-              return failure;
+              throw error;
             }
-
-            throw error;
-          }
-        })
+          })
+        )
       ),
   };
 }

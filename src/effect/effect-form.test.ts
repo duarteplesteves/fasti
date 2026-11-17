@@ -1,4 +1,5 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Context, Effect, Exit, Layer } from "effect";
+import { TestClock } from "effect/testing";
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import type { Adapter } from "../adapter/contract.js";
@@ -12,16 +13,25 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { Scheduler } from "./index.js";
-import type { SchedulerService } from "./index.js";
+import type { SchedulerService, TxOf } from "./index.js";
 
 const schema = uuidIdSchema;
 const [room] = uuidIdResources;
 
-class AppScheduler extends Scheduler<AppScheduler, typeof schema>()(
+type Tx = TxOf<ReturnType<typeof memoryAdapter>>;
+
+class AppScheduler extends Scheduler<AppScheduler, typeof schema, Tx>()(
   "test/AppScheduler"
 ) {}
 
-type Service = SchedulerService<typeof schema>;
+type Service = SchedulerService<typeof schema, Tx>;
+
+/** A developer service an `also` can require. */
+interface AuditLog {
+  readonly record: (note: string) => Effect.Effect<string>;
+}
+
+const Audit = Context.Service<AuditLog>("test/Audit");
 
 const weekdays = {
   exceptions: [],
@@ -238,5 +248,105 @@ describe("Effect form", () => {
         resourceId: room,
       })
     ).resolves.toStrictEqual([]);
+  });
+
+  it("TxOf is the Adapter's Tx, and `tx` in an `also` has it", () => {
+    interface DbTx {
+      readonly query: (sql: string) => Promise<readonly string[]>;
+    }
+
+    expectTypeOf<Tx>().toEqualTypeOf<undefined>();
+    expectTypeOf<TxOf<Adapter<DbTx, "blocks">>>().toEqualTypeOf<DbTx>();
+
+    function bookWithTx(s: SchedulerService<typeof schema, DbTx>) {
+      return s.book({
+        also: ({ tx }) => {
+          expectTypeOf(tx).toEqualTypeOf<DbTx>();
+
+          return Effect.void;
+        },
+        end: at(2),
+        resourceId: room,
+        start: at(1),
+      });
+    }
+
+    expectTypeOf(bookWithTx).toBeFunction();
+  });
+
+  it("an `also` that needs a service needs its Layer, and runs with it", async () => {
+    const { adapter } = await seeded();
+
+    const program = Effect.gen(function* bookAudited() {
+      const s = yield* AppScheduler;
+
+      return yield* s.book({
+        also: ({ booking }) =>
+          Effect.gen(function* audited() {
+            const audit = yield* Audit;
+
+            return yield* audit.record(`booked ${booking.id}`);
+          }),
+        end: at(4),
+        resourceId: room,
+        start: at(3),
+      });
+    });
+
+    expectTypeOf<Effect.Services<typeof program>>().toEqualTypeOf<
+      AppScheduler | AuditLog
+    >();
+
+    const withoutAudit = program.pipe(
+      Effect.provide(AppScheduler.layer({ adapter, schema }))
+    );
+
+    // @ts-expect-error -- Audit isn't provided.
+    expectTypeOf(Effect.runPromiseExit).toBeCallableWith(withoutAudit);
+
+    const exit = await Effect.runPromiseExit(
+      program.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            AppScheduler.layer({ adapter, schema }),
+            Layer.succeed(Audit, {
+              record: (note) => Effect.succeed(`audited: ${note}`),
+            })
+          )
+        )
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected the audited booking to succeed");
+    expect(exit.value.also).toBe(`audited: booked ${exit.value.id}`);
+  });
+
+  it("`now` in an `also` is the Clock's, so TestClock controls it", async () => {
+    const { adapter } = await seeded();
+    const frozen = Temporal.Instant.from("2031-01-01T00:00:00Z");
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookAtTestTime() {
+        yield* TestClock.setTime(frozen.epochMilliseconds);
+        const s = yield* AppScheduler;
+
+        return yield* s.book({
+          also: ({ now }) => Effect.succeed(now),
+          end: at(4),
+          resourceId: room,
+          start: at(3),
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            AppScheduler.layer({ adapter, schema }),
+            TestClock.layer()
+          )
+        )
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected the booking to succeed");
+    expect(exit.value.also).toStrictEqual(frozen);
   });
 });

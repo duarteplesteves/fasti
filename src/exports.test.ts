@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as adapter from "./adapter/index.js";
 import * as core from "./core/index.js";
@@ -96,6 +96,10 @@ describe("package export surface", () => {
       expect(Object.keys(e.module).toSorted()).toStrictEqual(e.names);
     }
   );
+
+  it("effect/index.js exports the type TxOf", () => {
+    expectTypeOf<effect.TxOf<adapter.Adapter<"tx">>>().toEqualTypeOf<"tx">();
+  });
 
   it("the package's only runtime dependency is effect (ADR 012)", () => {
     expect(pkg.dependencies).toStrictEqual({ effect: "^4.1" });

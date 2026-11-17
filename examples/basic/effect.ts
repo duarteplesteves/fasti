@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 
 import { drizzleAdapter } from "@fastijs/scheduler/drizzle/pg";
 import { Scheduler } from "@fastijs/scheduler/effect";
+import type { TxOf } from "@fastijs/scheduler/effect";
 import { Effect } from "effect";
 
 import { db, pool, schema, weekdays } from "./schema.ts";
 
-class AppScheduler extends Scheduler<AppScheduler, typeof schema>()(
-  "example/AppScheduler"
-) {}
+const adapter = drizzleAdapter(db);
+
+class AppScheduler extends Scheduler<
+  AppScheduler,
+  typeof schema,
+  TxOf<typeof adapter>
+>()("example/AppScheduler") {}
 
 // A fresh Resource, so the script can run again.
 const resourceId = crypto.randomUUID();
@@ -49,11 +54,7 @@ const program = Effect.gen(function* bookAndCancel() {
 
 try {
   await Effect.runPromise(
-    program.pipe(
-      Effect.provide(
-        AppScheduler.layer({ adapter: drizzleAdapter(db), schema })
-      )
-    )
+    program.pipe(Effect.provide(AppScheduler.layer({ adapter, schema })))
   );
 } finally {
   await pool.end();

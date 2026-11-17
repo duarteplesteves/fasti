@@ -30,10 +30,10 @@ export type CancelValue<S extends AnySchema> =
 export type CancelError = BookingNotFound | AdapterError;
 
 /** Set a Booking's status to `cancelled` under its Resource's lock. Idempotent: a repeat writes nothing. */
-export function cancel<S extends AnySchema, Tx>(
+export function cancel<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
-  params: CancelParams & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx>
-): WriteEffect<CancelValue<S>, CancelError> {
+  params: CancelParams & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
+): WriteEffect<CancelValue<S>, CancelError, R> {
   const { id } = params;
   const notFound: BookingNotFound = { _tag: "BookingNotFound", id };
   // SAFETY: every schema's statuses include `cancelled`; TS can't resolve BookingChanges through a generic S.

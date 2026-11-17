@@ -90,10 +90,10 @@ export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
   ? { readonly blocks: BlockActions<S, Tx, F> }
   : unknown);
 
-/** The Actions, Effect form. The Effect form doesn't name `Tx` yet, so it's `unknown` here. */
-export type SchedulerService<S extends AnySchema> = SchedulerActions<
+/** The Actions, Effect form, over an Adapter whose transaction handle is `Tx`. */
+export type SchedulerService<S extends AnySchema, Tx> = SchedulerActions<
   S,
-  unknown,
+  Tx,
   "effect"
 >;
 

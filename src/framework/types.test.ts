@@ -396,7 +396,7 @@ describe("forms", () => {
   it("keeps the Effect form's surface", () => {
     type S = typeof blockSchema;
 
-    type Service = SchedulerService<S>;
+    type Service = SchedulerService<S, Tx>;
 
     expectTypeOf<Single<Service["book"]>>().toEqualTypeOf<
       (params: BookParams<S>) => Effect.Effect<Booking<S>, BookError>
