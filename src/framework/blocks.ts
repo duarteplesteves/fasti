@@ -15,6 +15,7 @@ import { mintBlockId } from "./booking-id.js";
 import { fieldPatch, fieldValues, floorMs } from "./booking.js";
 import type { FieldValue, FieldsParam, FieldsPatch } from "./booking.js";
 import type { AdapterError, BlockNotFound, SlotConflict } from "./errors.js";
+import type { Form, ReadAction, WriteAction } from "./forms.js";
 import { lockedById, retry } from "./lock-by-id.js";
 import { conflictsAt } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
@@ -82,29 +83,44 @@ export type DeleteBlockError = BlockNotFound | AdapterError;
 /** Every way `blocks.list` can fail. */
 export type ListBlocksError = InvalidParams | AdapterError;
 
-/** The Block Actions, Effect form: on a scheduler only when the schema declares `block`. */
-export interface BlockActions<S extends AnySchema> {
+/** The Block Actions in form `F`: on a scheduler only when the schema declares `block`. */
+export interface BlockActions<S extends AnySchema, F extends Form> {
   /** Store a new Block, if no blocking Booking overlaps it. Blocks may overlap each other. */
-  readonly create: (
-    params: CreateBlockParams<S>
-  ) => Effect.Effect<Block<S>, CreateBlockError>;
+  readonly create: WriteAction<
+    F,
+    CreateBlockParams<S>,
+    never,
+    Block<S>,
+    CreateBlockError
+  >;
   /** Move, resize or re-annotate a Block. A new range mustn't overlap a blocking Booking. */
-  readonly update: (
-    params: UpdateBlockParams<S>
-  ) => Effect.Effect<Block<S>, UpdateBlockError>;
+  readonly update: WriteAction<
+    F,
+    UpdateBlockParams<S>,
+    never,
+    Block<S>,
+    UpdateBlockError
+  >;
   /** Remove a Block, freeing its time. */
-  readonly delete: (
-    params: DeleteBlockParams
-  ) => Effect.Effect<void, DeleteBlockError>;
+  readonly delete: WriteAction<
+    F,
+    DeleteBlockParams,
+    never,
+    void,
+    DeleteBlockError
+  >;
   /** The Resource's Blocks overlapping the range, sorted by start, then id. */
-  readonly list: (
-    params: ListBlocksParams<S>
-  ) => Effect.Effect<readonly Block<S>[], ListBlocksError>;
+  readonly list: ReadAction<
+    F,
+    ListBlocksParams<S>,
+    readonly Block<S>[],
+    ListBlocksError
+  >;
 }
 
 /** Store a new Block under the Resource Lock; a blocking Booking in the way is a SlotConflict (ADR 016). */
-export function createBlock<S extends AnySchema>(
-  { adapter, codec, schema }: ActionContext<S>,
+export function createBlock<S extends AnySchema, Tx>(
+  { adapter, codec, schema }: ActionContext<S, Tx>,
   params: CreateBlockParams<S>
 ): Effect.Effect<Block<S>, CreateBlockError> {
   const { resourceId } = params;
@@ -166,8 +182,8 @@ function sameStoredValue(a: FieldValue | undefined, b: FieldValue): boolean {
 }
 
 /** Change a Block under its Resource's lock (compare-and-set); a no-op change writes nothing. */
-export function updateBlock<S extends AnySchema>(
-  ctx: ActionContext<S>,
+export function updateBlock<S extends AnySchema, Tx>(
+  ctx: ActionContext<S, Tx>,
   params: UpdateBlockParams<S>
 ): Effect.Effect<Block<S>, UpdateBlockError> {
   const { id } = params;
@@ -248,8 +264,8 @@ export function updateBlock<S extends AnySchema>(
 }
 
 /** Remove a Block under its Resource's lock. */
-export function deleteBlock<S extends AnySchema>(
-  ctx: ActionContext<S>,
+export function deleteBlock<S extends AnySchema, Tx>(
+  ctx: ActionContext<S, Tx>,
   params: DeleteBlockParams
 ): Effect.Effect<void, DeleteBlockError> {
   const { id } = params;
@@ -266,8 +282,8 @@ export function deleteBlock<S extends AnySchema>(
 }
 
 /** The Resource's Blocks overlapping `[from, to)`, read without the lock. */
-export function listBlocks<S extends AnySchema>(
-  { adapter }: ActionContext<S>,
+export function listBlocks<S extends AnySchema, Tx>(
+  { adapter }: ActionContext<S, Tx>,
   params: ListBlocksParams<S>
 ): Effect.Effect<readonly Block<S>[], ListBlocksError> {
   const from = floorMs(params.from);

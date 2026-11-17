@@ -17,6 +17,7 @@ export const retry: Retry = { _tag: "Retry" };
 /** Params of `lockedById`. */
 export interface LockedByIdParams<
   S extends AnySchema,
+  Tx,
   Rec extends { readonly resourceId: ResourceIdOf<S> },
   NF,
   V,
@@ -30,7 +31,7 @@ export interface LockedByIdParams<
   readonly notFound: NF;
   /** The locked work on the stored row; fail with `retry` when compare-and-set reports `changed`. */
   readonly work: (
-    locked: EffectLocked<S>,
+    locked: EffectLocked<S, Tx>,
     stored: Rec
   ) => Effect.Effect<V, E | Retry>;
 }
@@ -38,13 +39,14 @@ export interface LockedByIdParams<
 /** Run `work` on a row addressed by id, under its Resource's lock: the one place an Action retries. */
 export function lockedById<
   S extends AnySchema,
+  Tx,
   Rec extends { readonly resourceId: ResourceIdOf<S> },
   NF,
   V,
   E,
 >(
-  ctx: ActionContext<S>,
-  params: LockedByIdParams<S, Rec, NF, V, E>
+  ctx: ActionContext<S, Tx>,
+  params: LockedByIdParams<S, Tx, Rec, NF, V, E>
 ): Effect.Effect<V, E | NF | AdapterError> {
   const once = Effect.gen(function* lockedByIdOnce() {
     // Unlocked, only to learn which Resource to lock.

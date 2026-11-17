@@ -39,8 +39,8 @@ export interface Slot<S extends AnySchema> {
 export type FindSlotsError = InvalidParams | AdapterError;
 
 /** Free slots on a Resource: no blocking Booking or Block overlaps them and they fit availability. Unlocked reads. */
-export function findSlots<S extends AnySchema>(
-  { adapter, codec }: ActionContext<S>,
+export function findSlots<S extends AnySchema, Tx>(
+  { adapter, codec }: ActionContext<S, Tx>,
   params: FindSlotsParams<S>
 ): Effect.Effect<readonly Slot<S>[], FindSlotsError> {
   const { duration, interval, resourceId, timezone } = params;

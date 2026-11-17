@@ -1,3 +1,4 @@
+import type { Effect } from "effect";
 import { describe, expectTypeOf, it } from "vitest";
 
 import type {
@@ -12,8 +13,10 @@ import type {
   UpdateBlockResult,
   VerbGroup,
 } from "../adapter/index.js";
+import type { RuleRecord } from "../adapter/records.js";
 import type { InvalidParams, Result } from "../core/result.js";
 import type { BookingId } from "../core/types.js";
+import type { SchedulerService } from "../effect/index.js";
 import type {
   BlockId,
   Block,
@@ -42,10 +45,20 @@ import type {
   textIdSchema,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
+import type {
+  GetAvailabilityError,
+  GetAvailabilityParams,
+  SetAvailabilityError,
+  SetAvailabilityParams,
+  SetAvailabilityValue,
+} from "./availability.js";
 import type { BookError, BookParams } from "./book.js";
 import { mintBlockId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
+import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
+import type { EffectLocked } from "./effect-adapter.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
+import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
 
@@ -138,8 +151,8 @@ describe("book types", () => {
       InvalidParams | SlotConflict | PolicyViolation | AdapterError
     >();
     expectTypeOf<
-      Scheduler<typeof textIdSchema>["book"]
-    >().returns.toEqualTypeOf<
+      ReturnType<Scheduler<typeof textIdSchema, undefined>["book"]>
+    >().toEqualTypeOf<
       Promise<Result<Booking<typeof textIdSchema>, BookError>>
     >();
     expectTypeOf<
@@ -201,13 +214,15 @@ describe("Blocks types", () => {
   });
 
   it("has `blocks` only when the schema declares `block`", () => {
-    expectTypeOf<Scheduler<typeof defaultSchema>>().not.toHaveProperty(
+    expectTypeOf<
+      Scheduler<typeof defaultSchema, undefined>
+    >().not.toHaveProperty("blocks");
+    expectTypeOf<Scheduler<typeof blockSchema, undefined>>().toHaveProperty(
       "blocks"
     );
-    expectTypeOf<Scheduler<typeof blockSchema>>().toHaveProperty("blocks");
     expectTypeOf<
-      Scheduler<typeof blockSchema>["blocks"]["create"]
-    >().returns.toEqualTypeOf<
+      ReturnType<Scheduler<typeof blockSchema, undefined>["blocks"]["create"]>
+    >().toEqualTypeOf<
       Promise<Result<Block<typeof blockSchema>, CreateBlockError>>
     >();
     expectTypeOf<Block<typeof blockSchema>["id"]>().toEqualTypeOf<BlockId>();
@@ -281,16 +296,16 @@ describe("Block exports", () => {
     expectTypeOf<ListBlocksQuery<S>>().toHaveProperty("overlapping");
     expectTypeOf<BlockReads<S>>().toHaveProperty("listBlocks");
     expectTypeOf<BlockWrites<S>>().toHaveProperty("insertBlock");
-    expectTypeOf<BlockActions<S>["list"]>()
-      .parameter(0)
-      .toEqualTypeOf<ListBlocksParams<S>>();
+    expectTypeOf<
+      Parameters<BlockActions<S, "effect">["list"]>[0]
+    >().toEqualTypeOf<ListBlocksParams<S>>();
     expectTypeOf<ListBlocksError>().toExtend<CreateBlockError>();
-    expectTypeOf<BlockActions<S>["update"]>()
-      .parameter(0)
-      .toEqualTypeOf<UpdateBlockParams<S>>();
-    expectTypeOf<BlockActions<S>["delete"]>()
-      .parameter(0)
-      .toEqualTypeOf<DeleteBlockParams>();
+    expectTypeOf<
+      Parameters<BlockActions<S, "effect">["update"]>[0]
+    >().toEqualTypeOf<UpdateBlockParams<S>>();
+    expectTypeOf<
+      Parameters<BlockActions<S, "effect">["delete"]>[0]
+    >().toEqualTypeOf<DeleteBlockParams>();
     expectTypeOf<BlockNotFound>().toExtend<UpdateBlockError>();
     expectTypeOf<BlockNotFound>().toExtend<DeleteBlockError>();
     expectTypeOf<BlockWrites<S>>().toHaveProperty("updateBlock");
@@ -298,5 +313,126 @@ describe("Block exports", () => {
     expectTypeOf<BlockChanges<S>>().not.toHaveProperty("resourceId");
     expectTypeOf<UpdateBlockResult>().toExtend<{ ok: boolean }>();
     expectTypeOf<DeleteBlockResult>().toExtend<{ ok: boolean }>();
+  });
+});
+
+/** An Action's plain overload, as a single signature: what the old `Plain<T>` produced. */
+type Single<A extends (params: never) => object> = (
+  params: Parameters<A>[0]
+) => ReturnType<A>;
+
+interface Tx {
+  readonly txBrand: true;
+}
+
+/** Never called: only the types are checked. */
+async function noAlsoYet(scheduler: Scheduler<typeof defaultSchema, Tx>) {
+  return await scheduler.book({
+    // @ts-expect-error -- no Action takes `also` until it lands.
+    also: () => ({ ok: true, value: 1 }),
+    end: instant,
+    resourceId: "staff-a",
+    start: instant,
+  });
+}
+
+/** Never called: only the inferred Scheduler types are checked. */
+function schedulersByAdapter() {
+  return {
+    memory: createScheduler({ adapter: memoryAdapter(), schema: blockSchema }),
+    plain: createScheduler({ adapter: plainAdapter, schema: defaultSchema }),
+  };
+}
+
+describe("forms", () => {
+  it("keeps the old plain surface for every Action, without Blocks", () => {
+    type S = typeof defaultSchema;
+
+    type Plain = Scheduler<S, Tx>;
+
+    expectTypeOf<Single<Plain["book"]>>().toEqualTypeOf<
+      (params: BookParams<S>) => Promise<Result<Booking<S>, BookError>>
+    >();
+    expectTypeOf<Single<Plain["cancel"]>>().toEqualTypeOf<
+      (params: CancelParams) => Promise<Result<CancelValue<S>, CancelError>>
+    >();
+    expectTypeOf<Single<Plain["findSlots"]>>().toEqualTypeOf<
+      (
+        params: FindSlotsParams<S>
+      ) => Promise<Result<readonly Slot<S>[], FindSlotsError>>
+    >();
+    expectTypeOf<Single<Plain["availability"]["set"]>>().toEqualTypeOf<
+      (
+        params: SetAvailabilityParams<S>
+      ) => Promise<Result<SetAvailabilityValue, SetAvailabilityError>>
+    >();
+    expectTypeOf<Single<Plain["availability"]["get"]>>().toEqualTypeOf<
+      (
+        params: GetAvailabilityParams<S>
+      ) => Promise<Result<readonly RuleRecord[], GetAvailabilityError>>
+    >();
+    expectTypeOf<keyof Plain>().toEqualTypeOf<
+      "book" | "cancel" | "findSlots" | "availability"
+    >();
+    expectTypeOf(noAlsoYet).toBeFunction();
+  });
+
+  it("keeps the old plain surface for every Block Action, with Blocks", () => {
+    type S = typeof blockSchema;
+
+    type Blocks = Scheduler<S, Tx>["blocks"];
+
+    expectTypeOf<Single<Blocks["create"]>>().toEqualTypeOf<
+      (
+        params: CreateBlockParams<S>
+      ) => Promise<Result<Block<S>, CreateBlockError>>
+    >();
+    expectTypeOf<Single<Blocks["update"]>>().toEqualTypeOf<
+      (
+        params: UpdateBlockParams<S>
+      ) => Promise<Result<Block<S>, UpdateBlockError>>
+    >();
+    expectTypeOf<Single<Blocks["delete"]>>().toEqualTypeOf<
+      (params: DeleteBlockParams) => Promise<Result<void, DeleteBlockError>>
+    >();
+    expectTypeOf<Single<Blocks["list"]>>().toEqualTypeOf<
+      (
+        params: ListBlocksParams<S>
+      ) => Promise<Result<readonly Block<S>[], ListBlocksError>>
+    >();
+    expectTypeOf<keyof Scheduler<S, Tx>>().toEqualTypeOf<
+      "book" | "cancel" | "findSlots" | "availability" | "blocks"
+    >();
+  });
+
+  it("keeps the Effect form's surface", () => {
+    type S = typeof blockSchema;
+
+    type Service = SchedulerService<S>;
+
+    expectTypeOf<Single<Service["book"]>>().toEqualTypeOf<
+      (params: BookParams<S>) => Effect.Effect<Booking<S>, BookError>
+    >();
+    expectTypeOf<Single<Service["findSlots"]>>().toEqualTypeOf<
+      (
+        params: FindSlotsParams<S>
+      ) => Effect.Effect<readonly Slot<S>[], FindSlotsError>
+    >();
+    expectTypeOf<Single<Service["blocks"]["delete"]>>().toEqualTypeOf<
+      (params: DeleteBlockParams) => Effect.Effect<void, DeleteBlockError>
+    >();
+  });
+
+  it("infers Tx from the Adapter in createScheduler", () => {
+    expectTypeOf(schedulersByAdapter).returns.toEqualTypeOf<{
+      memory: Scheduler<typeof blockSchema, undefined>;
+      plain: Scheduler<typeof defaultSchema, Tx>;
+    }>();
+  });
+
+  it("exposes the Adapter's tx on the locked handle", () => {
+    expectTypeOf<
+      EffectLocked<typeof defaultSchema, Tx>["tx"]
+    >().toEqualTypeOf<Tx>();
   });
 });

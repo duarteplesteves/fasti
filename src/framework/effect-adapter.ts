@@ -48,8 +48,10 @@ export interface EffectReads<S extends AnySchema> {
   ) => Effect.Effect<BlockRecord<S>[], AdapterError>;
 }
 
-/** The handle inside a unit of work, as Effects. No `tx` until `also` (checkpoint 6). */
-export interface EffectLocked<S extends AnySchema> extends EffectReads<S> {
+/** The handle inside a unit of work, as Effects. */
+export interface EffectLocked<S extends AnySchema, Tx> extends EffectReads<S> {
+  /** The Adapter's transaction handle for this unit. */
+  readonly tx: Tx;
   readonly insertBooking: (
     booking: BookingRecord<S>
   ) => Effect.Effect<InsertBookingResult, AdapterError>;
@@ -74,11 +76,11 @@ export interface EffectLocked<S extends AnySchema> extends EffectReads<S> {
 }
 
 /** An Adapter as Effects: the only place a Promise Adapter becomes Effect. */
-export interface EffectAdapter<S extends AnySchema> extends EffectReads<S> {
+export interface EffectAdapter<S extends AnySchema, Tx> extends EffectReads<S> {
   /** Run `work` under the Resource Lock; the unit commits iff `work` succeeds (Invariant 3). */
   readonly withResourceLock: <A, E>(
     resourceId: ResourceIdOf<S>,
-    work: (locked: EffectLocked<S>) => Effect.Effect<A, E>
+    work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E>
   ) => Effect.Effect<A, E | AdapterError>;
 }
 
@@ -122,9 +124,10 @@ function liftReads<S extends AnySchema>(
 function liftLocked<S extends AnySchema, Tx>(
   raw: LockedAdapter<S, Tx, VerbGroup>,
   hasBlocks: boolean
-): EffectLocked<S> {
+): EffectLocked<S, Tx> {
   return {
     ...liftReads(raw, hasBlocks),
+    tx: raw.tx,
     deleteBlock: (id) =>
       blockVerb(
         hasBlocks,
@@ -156,7 +159,7 @@ function liftLocked<S extends AnySchema, Tx>(
 export function liftAdapter<S extends AnySchema, Tx>(
   bound: SchemaAdapter<S, Tx, GroupsOf<S>>,
   schema: S
-): EffectAdapter<S> {
+): EffectAdapter<S, Tx> {
   const hasBlocks = schema.block !== null;
   // SAFETY: GroupsOf<S> is "blocks" exactly when `schema.block` isn't null, and the Block verbs are only called then.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
@@ -166,7 +169,7 @@ export function liftAdapter<S extends AnySchema, Tx>(
     ...liftReads(raw, hasBlocks),
     withResourceLock: <A, E>(
       resourceId: ResourceIdOf<S>,
-      work: (locked: EffectLocked<S>) => Effect.Effect<A, E>
+      work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E>
     ) =>
       Effect.flatten(
         attempt(async (): Promise<Exit.Exit<A, E>> => {
