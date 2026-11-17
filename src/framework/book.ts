@@ -59,10 +59,10 @@ export type BookError =
   | AdapterError;
 
 /** Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and inside availability (ADR 014: overlap first). */
-export function book<S extends AnySchema, Tx>(
+export function book<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
-  params: BookParams<S> & AlsoParam<{ readonly booking: Booking<S> }, Tx>
-): WriteEffect<Booking<S>, BookError> {
+  params: BookParams<S> & AlsoParam<{ readonly booking: Booking<S> }, Tx, R>
+): WriteEffect<Booking<S>, BookError, R> {
   const { resourceId } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);

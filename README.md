@@ -128,9 +128,12 @@ The same Actions, with the same params, values and errors, as Effects. Declare y
 
 ```typescript
 import { Scheduler } from "@fastijs/scheduler/effect";
+import type { TxOf } from "@fastijs/scheduler/effect";
 import { Effect } from "effect";
 
-class AppScheduler extends Scheduler<AppScheduler, typeof schema>()("app/Scheduler") {}
+const adapter = drizzleAdapter(db);
+
+class AppScheduler extends Scheduler<AppScheduler, typeof schema, TxOf<typeof adapter>>()("app/Scheduler") {}
 
 const program = Effect.gen(function* bookOne() {
   const scheduler = yield* AppScheduler;
@@ -141,9 +144,11 @@ const program = Effect.gen(function* bookOne() {
 });
 
 await Effect.runPromise(
-  program.pipe(Effect.provide(AppScheduler.layer({ adapter: drizzleAdapter(db), schema })))
+  program.pipe(Effect.provide(AppScheduler.layer({ adapter, schema })))
 );
 ```
+
+The third type parameter is your Adapter's transaction handle, the `tx` an `also` gets. In this form `also` returns an Effect: it may require your own services (they join the Action's requirements), and its `now` comes from Effect's `Clock`, so `TestClock` controls it.
 
 Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it finishes, then commits or rolls back.
 

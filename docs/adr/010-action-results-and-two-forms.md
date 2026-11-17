@@ -54,3 +54,19 @@ Building the Framework in checkpoint 4 settled two details:
 
   `layer` is a static on the returned class, so the shape above (`layer({ schema, adapter })`) is unchanged. The class follows Effect's own `Context.Service` idiom, and its id is the developer's, so two schedulers over different schemas can live in one app.
 - **Developer Fields are nested on input.** `book` takes them under `fields` (`{ resourceId, start, end, fields: { customerName } }`), so a field can never collide with a param fasti adds later. `fields` is absent when the schema declares none, optional when every field is optional, and required otherwise. Returned Bookings stay flat: Developer Fields sit next to `id`, `start` and `status`, as they do in the developer's table.
+
+## Amendment (2026-11-17): the Effect form names the Adapter's `Tx`
+
+`also` (ADR 015) gets the Adapter's transaction handle as `tx`. The plain form infers `Tx` from the Adapter passed to `createScheduler`, but the Effect form's service class is declared before any Adapter exists, so it has to name `Tx` itself.
+
+- **`Tx` is a required third type parameter:** `Scheduler<Self, S, Tx>()`. `fasti/effect` exports `TxOf<A>` to derive it from an Adapter:
+
+  ```ts
+  const adapter = drizzleAdapter(db);
+  class AppScheduler extends Scheduler<AppScheduler, typeof schema, TxOf<typeof adapter>>()("app/Scheduler") {}
+  const live = AppScheduler.layer({ schema, adapter });
+  ```
+
+  `layer` then accepts only an Adapter with that `Tx`. This breaks every existing Effect-form declaration, which must add the third argument.
+- **Rejected: `Tx = unknown` as a default.** It would keep existing declarations compiling, but `tx` in an Effect-form `also` would be `unknown`, and every developer would cast it. A typed `tx` is the point of `also`, so we accept the break.
+- **`also` in the Effect form is a full Effect.** Its requirements join the Action's (`Effect<V, E, R>`), and the Adapter lift runs each unit of work with the caller's services. Its `now` comes from those services' `Clock`, so `TestClock` controls it.

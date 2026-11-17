@@ -53,15 +53,15 @@ export interface GetAvailabilityParams<S extends AnySchema> {
 export type GetAvailabilityError = AdapterError;
 
 /** Replace a Resource's rules under its Resource Lock (PUT); invalid rules store nothing. */
-export function setAvailability<S extends AnySchema, Tx>(
+export function setAvailability<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   {
     also,
     resourceId,
     rules,
   }: SetAvailabilityParams<S> &
-    AlsoParam<AlsoContext<SetAvailabilityAlso<Tx>>, Tx>
-): WriteEffect<SetAvailabilityValue, SetAvailabilityError> {
+    AlsoParam<AlsoContext<SetAvailabilityAlso<Tx>>, Tx, R>
+): WriteEffect<SetAvailabilityValue, SetAvailabilityError, R> {
   const coreId = String(resourceId);
 
   const valid = checked(
