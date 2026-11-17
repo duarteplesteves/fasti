@@ -163,13 +163,11 @@ function bookFromPack(start: Temporal.Instant, end: Temporal.Instant) {
   return scheduler.book({
     also: async ({ tx }) => {
       // A guarded update: race-free, and it changes no row when the pack is empty.
-      const spent = await tx
+      const [row] = await tx
         .update(pack)
         .set({ remaining: sql`${pack.remaining} - 1` })
         .where(and(eq(pack.id, packId), gt(pack.remaining, 0)))
         .returning({ remaining: pack.remaining });
-
-      const [row] = spent;
 
       return row === undefined
         ? { error: "no credits left" as const, ok: false as const }

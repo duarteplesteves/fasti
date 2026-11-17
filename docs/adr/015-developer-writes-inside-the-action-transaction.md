@@ -53,7 +53,7 @@ Building `also` (#98) settled five details the decision left open:
   |---|---|
   | `book` | `{ tx, booking, now }` |
   | `reschedule`, `cancel`, `transition` | `{ tx, booking, previous, now }` |
-  | `availability.set` | `{ tx, resourceId, rules, previous, now }` |
+  | `availability.set` | `{ tx, rules, previous, now }` (no `resourceId`, unlike the Decision above) |
   | `blocks.create` | `{ tx, block, now }` |
   | `blocks.update` | `{ tx, block, previous, now }` |
   | `blocks.delete` | `{ tx, previous, now }` |
