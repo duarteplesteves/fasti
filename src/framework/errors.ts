@@ -44,7 +44,7 @@ export interface BookingNotFound {
   readonly id: BookingId;
 }
 
-/** The stored Status isn't one the call needs, e.g. reschedule of a non-blocking Booking. */
+/** The stored Status isn't what the call needed: `from` on `transition`, a non-blocking Booking on `reschedule`. `status` is the stored one. */
 export interface StatusMismatch<St extends string = string> {
   readonly _tag: "StatusMismatch";
   readonly id: BookingId;
@@ -74,13 +74,6 @@ export class AdapterError extends Error {
 export interface Vetoed<E> {
   readonly _tag: "Vetoed";
   readonly reason: E;
-}
-
-/** The stored Status isn't what the call needed (`from` on `transition`). `status` is the stored one. */
-export interface StatusMismatch<St extends string = string> {
-  readonly _tag: "StatusMismatch";
-  readonly id: BookingId;
-  readonly status: St;
 }
 
 /** No declared Transition from the stored Status to `to` (reached through `cancel`). */
