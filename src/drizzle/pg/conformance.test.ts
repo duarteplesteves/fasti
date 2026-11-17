@@ -1,10 +1,21 @@
 import { randomUUID } from "node:crypto";
 
 import { count, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { AnyPgTable } from "drizzle-orm/pg-core";
 import { integer, pgTable, uuid } from "drizzle-orm/pg-core";
-import { assert, afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  assert,
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { createScheduler } from "../../framework/create-scheduler.js";
 import type { AnySchema } from "../../schema/define-schema.js";
@@ -19,6 +30,7 @@ import {
 } from "../../test-utils/conformance-schemas.js";
 import { postgresUrl, testDatabase } from "../../test-utils/postgres.js";
 import type { TestDatabase } from "../../test-utils/postgres.js";
+import { unwrap } from "../../test-utils/results.js";
 import { bookingId, insert, newBooking } from "../../testing/fixtures.js";
 import { conformanceCases, runCase, testAdapter } from "../../testing/index.js";
 import type { TestAdapterParams, TxProbe } from "../../testing/index.js";
@@ -77,6 +89,13 @@ const tables = {
   uuidBooking: bookingTable(uuidIdSchema),
   uuidRule: availabilityRuleTable(uuidIdSchema),
 };
+
+/** A statement that raises `code` from the database, as a driver error. */
+function raise(code: string): SQL {
+  return sql.raw(
+    `do $$ begin raise exception 'test' using errcode = '${code}'; end $$`
+  );
+}
 
 const url = postgresUrl();
 
@@ -240,6 +259,192 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
         cause: { code: "23503" },
         message: "drizzleAdapter: insertBlock failed",
       },
+    });
+  });
+
+  describe("transient errors (ADR 008)", () => {
+    const [roomA, roomB] = uuidIdResources;
+    const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
+    const slot = { end: start.add({ hours: 1 }), start };
+
+    beforeEach(async () => {
+      await database.db.execute(
+        sql`truncate ${tables.uuidBooking}, ${tables.uuidRule}, ${testProbe}`
+      );
+
+      const scheduler = createScheduler({
+        adapter: drizzleAdapter(database.db),
+        schema: uuidIdSchema,
+      });
+
+      for (const resourceId of uuidIdResources) {
+        // oxlint-disable-next-line no-await-in-loop -- two Resources, setup only.
+        await scheduler.availability.set({
+          resourceId,
+          rules: [
+            {
+              exceptions: [],
+              recurrence: {
+                daysOfWeek: [1, 2, 3, 4, 5],
+                frequency: "weekly",
+                interval: 1,
+              },
+              timeWindow: {
+                end: Temporal.PlainTime.from("17:00"),
+                start: Temporal.PlainTime.from("09:00"),
+              },
+              timezone: "Europe/Lisbon",
+            },
+          ],
+        });
+      }
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("an `also` that deadlocks with a concurrent unit through tx succeeds on retry, and both Actions commit", async () => {
+      const scheduler = createScheduler({
+        adapter: drizzleAdapter(database.db),
+        schema: uuidIdSchema,
+      });
+
+      const rows = [randomUUID(), randomUUID()] as const;
+
+      await database.db.insert(testProbe).values(rows.map((id) => ({ id })));
+
+      // Both units hold their first row before either asks for its second: a deadlock.
+      let arrived = 0;
+      const bothHold = Promise.withResolvers<undefined>();
+
+      /** An `also` that locks the probe rows in this order through `tx`. */
+      function lockInOrder(first: string, second: string) {
+        return async ({ tx }: { readonly tx: Tx }) => {
+          await tx.execute(
+            sql`select 1 from ${testProbe} where id = ${first} for update`
+          );
+          arrived += 1;
+
+          if (arrived === 2) {
+            bothHold.resolve(undefined);
+          }
+
+          await bothHold.promise;
+          await tx.execute(
+            sql`select 1 from ${testProbe} where id = ${second} for update`
+          );
+
+          return { ok: true, value: null } as const;
+        };
+      }
+
+      const results = await Promise.all([
+        scheduler.book({
+          ...slot,
+          also: lockInOrder(rows[0], rows[1]),
+          resourceId: roomA,
+        }),
+        scheduler.book({
+          ...slot,
+          also: lockInOrder(rows[1], rows[0]),
+          resourceId: roomB,
+        }),
+      ]);
+
+      const reads = drizzleAdapter(database.db)(uuidIdSchema);
+
+      for (const result of results) {
+        // oxlint-disable-next-line no-await-in-loop -- two results.
+        await expect(
+          reads.getBooking(unwrap(result).id)
+        ).resolves.not.toBeNull();
+      }
+    });
+
+    it("a unit that always fails with 40001 rejects after 3 attempts", async () => {
+      let attempts = 0;
+      const adapter = drizzleAdapter(database.db)(uuidIdSchema);
+
+      await expect(
+        adapter.withResourceLock(roomA, async ({ tx }) => {
+          attempts += 1;
+          await tx.execute(raise("40001"));
+        })
+      ).rejects.toMatchObject({ cause: { code: "40001" } });
+      expect(attempts).toBe(3);
+    });
+
+    it("a non-transient error isn't retried", async () => {
+      let attempts = 0;
+      const adapter = drizzleAdapter(database.db)(uuidIdSchema);
+
+      await expect(
+        adapter.withResourceLock(roomA, async ({ tx }) => {
+          attempts += 1;
+          await tx.execute(raise("P0001"));
+        })
+      ).rejects.toMatchObject({ cause: { code: "P0001" } });
+      expect(attempts).toBe(1);
+    });
+
+    it("through the Framework, 40001 from `also` rejects after 3 attempts", async () => {
+      const scheduler = createScheduler({
+        adapter: drizzleAdapter(database.db),
+        schema: uuidIdSchema,
+      });
+
+      let attempts = 0;
+
+      await expect(
+        scheduler.book({
+          ...slot,
+          also: async ({ tx }) => {
+            attempts += 1;
+            await tx.execute(raise("40001"));
+
+            return { ok: true, value: null };
+          },
+          resourceId: roomA,
+        })
+      ).rejects.toMatchObject({ cause: { code: "40001" } });
+      expect(attempts).toBe(3);
+    });
+
+    it("through the Framework, 40001 from fasti's own verb is an AdapterError after 3 attempts", async () => {
+      const table = sql`${tables.uuidBooking}`;
+
+      await database.db.execute(sql`
+        create function fasti_test_fail() returns trigger language plpgsql
+        as $$ begin raise exception 'test' using errcode = '40001'; end $$`);
+      await database.db.execute(
+        sql`create trigger fasti_test_fail before insert on ${table} for each row execute function fasti_test_fail()`
+      );
+
+      try {
+        const transaction = vi.spyOn(database.db, "transaction");
+
+        const scheduler = createScheduler({
+          adapter: drizzleAdapter(database.db),
+          schema: uuidIdSchema,
+        });
+
+        const result = await scheduler.book({ ...slot, resourceId: roomA });
+
+        assert(!result.ok, "expected an error");
+        expect(result.error).toMatchObject({
+          _tag: "AdapterError",
+          cause: {
+            cause: { code: "40001" },
+            message: "drizzleAdapter: insertBooking failed",
+          },
+        });
+        expect(transaction).toHaveBeenCalledTimes(3);
+      } finally {
+        await database.db.execute(
+          sql`drop trigger fasti_test_fail on ${table}; drop function fasti_test_fail()`
+        );
+      }
     });
   });
 });
