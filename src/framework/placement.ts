@@ -17,6 +17,8 @@ export interface CheckPlacementParams<S extends AnySchema> {
   readonly end: Temporal.Instant;
   /** Leave this Booking out of the overlap check, e.g. the one being moved; `null` for none. */
   readonly excludeBookingId: BookingId | null;
+  /** Whether the Booking's Status blocks; a non-blocking one can't conflict, so it skips the overlap check. */
+  readonly blocking: boolean;
 }
 
 /** Whether a Booking may sit at `[start, end)`: the overlap Invariant first, then `availability`; an Invariant failure comes back alone (ADR 014). */
@@ -25,14 +27,19 @@ export function checkPlacement<S extends AnySchema>(
   ctx: ActionContext<S>,
   params: CheckPlacementParams<S>
 ): Effect.Effect<void, SlotConflict | PolicyViolation | AdapterError> {
-  const { end, resourceId, start } = params;
+  const { blocking, end, excludeBookingId, resourceId, start } = params;
   const coreId = String(resourceId);
 
   return Effect.gen(function* checkPlacementUnit() {
-    const conflicts = yield* conflictsAt(locked, ctx.codec, {
-      ...params,
-      kind: "booking",
-    });
+    const conflicts = blocking
+      ? yield* conflictsAt(locked, ctx.codec, {
+          end,
+          excludeBookingId,
+          kind: "booking",
+          resourceId,
+          start,
+        })
+      : [];
 
     if (conflicts.length > 0) {
       return yield* Effect.fail<SlotConflict>({

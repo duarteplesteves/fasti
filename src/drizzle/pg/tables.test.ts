@@ -1,9 +1,15 @@
-import { getTableConfig, integer, pgTable, text } from "drizzle-orm/pg-core";
+import {
+  getTableConfig,
+  integer,
+  PgDialect,
+  pgTable,
+  text,
+} from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import { column } from "../../schema/column.js";
 import { defineSchema } from "../../schema/define-schema.js";
-import { blockTable, bookingTable } from "./index.js";
+import { backstopSql, blockTable, bookingTable } from "./index.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
 
@@ -99,5 +105,32 @@ describe(blockTable, () => {
       // @ts-expect-error a schema without `block` has no Block table
       blockTable(defineSchema({}))
     ).toThrow(TypeError);
+  });
+});
+
+describe("declared Statuses in the database guards", () => {
+  const schema = defineSchema({
+    booking: {
+      statuses: {
+        paid: { blocking: true },
+        request: { blocking: false },
+      },
+    },
+    names: { statuses: { paid: "PAID" } },
+  });
+
+  it("lists a declared Status in the CHECK constraint", () => {
+    const [check] = getTableConfig(bookingTable(schema)).checks;
+    const query = check && new PgDialect().sqlToQuery(check.value);
+
+    expect(query?.sql).toBe(
+      `"booking"."status" in ('booked', 'cancelled', 'PAID', 'request')`
+    );
+  });
+
+  it("lists a declared blocking Status, and only those, in backstopSql", () => {
+    expect(backstopSql(schema)[1]).toMatch(
+      /where \("status" in \('booked', 'PAID'\)\)$/u
+    );
   });
 });

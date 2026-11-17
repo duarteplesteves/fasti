@@ -8,7 +8,7 @@ import type {
 import { column } from "./column.js";
 import type { AnyColumn, Column } from "./column.js";
 import { defineSchema } from "./define-schema.js";
-import type { BaseStatus } from "./define-schema.js";
+import type { BaseStatus, InitialOf } from "./define-schema.js";
 
 describe(defineSchema, () => {
   it("resolves defaults: text ids, logical names, the two base Statuses", () => {
@@ -48,21 +48,126 @@ describe(defineSchema, () => {
           booking: "booking",
         },
       },
+      initial: ["booked"],
       resource: { idType: { kind: "text" } },
       statuses: {
         booked: { blocking: true, stored: "booked" },
         cancelled: { blocking: false, stored: "cancelled" },
       },
+      transitions: { booked: ["cancelled"], cancelled: [] },
     });
   });
 
   it("throws when two Statuses share a stored value (I6)", () => {
     expect(() =>
+      // @ts-expect-error two Statuses share "X"
       defineSchema({ names: { statuses: { booked: "X", cancelled: "X" } } })
     ).toThrow(/stored value "X"/u);
     expect(() =>
+      // @ts-expect-error `cancelled` already stores "cancelled"
       defineSchema({ names: { statuses: { booked: "cancelled" } } })
     ).toThrow(/stored value "cancelled"/u);
+    expect(() =>
+      defineSchema({
+        booking: { statuses: { paid: { blocking: true } } },
+        // @ts-expect-error `paid` already stores "paid"
+        names: { statuses: { booked: "paid" } },
+      })
+    ).toThrow(/stored value "paid"/u);
+  });
+
+  it("resolves declared Statuses, with booked → cancelled always present and initial defaulting to booked", () => {
+    const schema = defineSchema({
+      booking: { statuses: { paid: { blocking: true } } },
+      names: { statuses: { paid: "PAID" } },
+    });
+
+    expect(schema.statuses.paid).toStrictEqual({
+      blocking: true,
+      stored: "PAID",
+    });
+    expect(schema.transitions).toStrictEqual({
+      booked: ["cancelled"],
+      cancelled: [],
+      paid: [],
+    });
+    expect(schema.initial).toStrictEqual(["booked"]);
+  });
+
+  it("resolves declared Transitions and initial Statuses", () => {
+    const schema = defineSchema({
+      booking: {
+        initial: ["booked", "request"],
+        statuses: {
+          request: { blocking: false },
+          visit: { blocking: true },
+        },
+        transitions: {
+          booked: ["visit", "cancelled"],
+          cancelled: ["booked"],
+          request: ["booked"],
+        },
+      },
+    });
+
+    expect(schema.transitions).toStrictEqual({
+      booked: ["visit", "cancelled"],
+      cancelled: ["booked"],
+      request: ["booked"],
+      visit: [],
+    });
+    expect(schema.initial).toStrictEqual(["booked", "request"]);
+  });
+
+  it("throws on a redeclared base Status, an unknown Status in transitions or initial, or an empty initial", () => {
+    expect(() =>
+      defineSchema({
+        // @ts-expect-error `booked` is a base Status
+        booking: { statuses: { booked: { blocking: false } } },
+      })
+    ).toThrow(/"booked" is a base Status/u);
+    expect(() =>
+      // @ts-expect-error `paid` isn't a Status
+      defineSchema({ booking: { transitions: { paid: ["booked"] } } })
+    ).toThrow(/`transitions` names "paid"/u);
+    expect(() =>
+      // @ts-expect-error `paid` isn't a Status
+      defineSchema({ booking: { transitions: { booked: ["paid"] } } })
+    ).toThrow(/`transitions` names "paid"/u);
+    expect(() =>
+      // @ts-expect-error `paid` isn't a Status
+      defineSchema({ booking: { initial: ["paid"] } })
+    ).toThrow(/`initial` names "paid"/u);
+    expect(() =>
+      // @ts-expect-error `initial` can't be empty
+      defineSchema({ booking: { initial: [] } })
+    ).toThrow(/at least one Status/u);
+  });
+
+  it("throws on a declared Status without `blocking` (plain JS)", () => {
+    expect(() =>
+      // @ts-expect-error `blocking` is required
+      defineSchema({ booking: { statuses: { paid: {} } } })
+    ).toThrow(/Status "paid" needs `blocking/u);
+  });
+
+  it("throws on a Booking or Block Developer Field named `also`", () => {
+    expect(() =>
+      defineSchema({
+        booking: {
+          // @ts-expect-error `also` is reserved
+          fields: { also: { required: false, type: column.text() } },
+        },
+      })
+    ).toThrow(/Booking Developer Field can't be named "also"/u);
+    expect(() =>
+      defineSchema({
+        block: {
+          // @ts-expect-error `also` is reserved
+          fields: { also: { required: false, type: column.text() } },
+        },
+      })
+    ).toThrow(/Block Developer Field can't be named "also"/u);
   });
 
   it("throws when two columns or tables share a physical name", () => {
@@ -234,6 +339,39 @@ describe("schema types", () => {
     expectTypeOf<
       BookingRecord<typeof schema>["start"]
     >().toEqualTypeOf<Temporal.Instant>();
+  });
+
+  it("types declared Statuses, the resolved Transitions and the initial Statuses", () => {
+    const schema = defineSchema({
+      booking: {
+        initial: ["booked", "request"],
+        statuses: {
+          paid: { blocking: true },
+          request: { blocking: false },
+        },
+        transitions: { booked: ["paid"], request: ["booked"] },
+      },
+    });
+
+    expectTypeOf<StatusOf<typeof schema>>().toEqualTypeOf<
+      BaseStatus | "paid" | "request"
+    >();
+    expectTypeOf<(typeof schema.transitions.booked)[number]>().toEqualTypeOf<
+      "paid" | "cancelled"
+    >();
+    expectTypeOf<
+      (typeof schema.transitions.paid)[number]
+    >().toEqualTypeOf<never>();
+    expectTypeOf<InitialOf<typeof schema>>().toEqualTypeOf<
+      "booked" | "request"
+    >();
+    const base = defineSchema({});
+
+    expectTypeOf<InitialOf<typeof base>>().toEqualTypeOf<"booked">();
+    expectTypeOf(base.transitions).toEqualTypeOf<{
+      readonly booked: readonly "cancelled"[];
+      readonly cancelled: readonly never[];
+    }>();
   });
 
   it("rejects renaming a column that doesn't exist", () => {

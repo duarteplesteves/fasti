@@ -28,3 +28,26 @@ describe(statusCodec, () => {
     expect(codec.allStored).toStrictEqual(["CONFIRMED", "cancelled"]);
   });
 });
+
+describe("statusCodec canMove", () => {
+  const codec = statusCodec(
+    defineSchema({
+      booking: {
+        statuses: { visit: { blocking: true } },
+        transitions: { booked: ["visit"], cancelled: ["booked"] },
+      },
+    })
+  );
+
+  it("is true for declared Transitions", () => {
+    expect(codec.canMove("booked", "visit")).toBeTruthy();
+    expect(codec.canMove("booked", "cancelled")).toBeTruthy();
+    expect(codec.canMove("cancelled", "booked")).toBeTruthy();
+  });
+
+  it("is false for undeclared ones", () => {
+    expect(codec.canMove("visit", "cancelled")).toBeFalsy();
+    expect(codec.canMove("visit", "booked")).toBeFalsy();
+    expect(codec.canMove("booked", "booked")).toBeFalsy();
+  });
+});
