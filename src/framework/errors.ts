@@ -62,3 +62,9 @@ export class AdapterError extends Error {
     this.cause = cause;
   }
 }
+
+/** The developer's `also` refused; everything rolled back. */
+export interface Vetoed<E> {
+  readonly _tag: "Vetoed";
+  readonly reason: E;
+}

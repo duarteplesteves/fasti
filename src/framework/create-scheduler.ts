@@ -4,7 +4,7 @@ import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { makeScheduler } from "./scheduler-service.js";
-import type { SchedulerService } from "./scheduler-service.js";
+import type { SchedulerActions } from "./scheduler-service.js";
 
 /** Params of {@link createScheduler}. */
 export interface CreateSchedulerParams<S extends AnySchema, Tx> {
@@ -14,17 +14,12 @@ export interface CreateSchedulerParams<S extends AnySchema, Tx> {
   readonly adapter: Adapter<Tx, GroupsOf<S>>;
 }
 
-/** The plain form of an Effect service: each Action resolves to a {@link Result}; nested groups map too. */
-export type Plain<T> = {
-  readonly [K in keyof T]: T[K] extends (
-    params: infer P
-  ) => Effect.Effect<infer A, infer E>
-    ? (params: P) => Promise<Result<A, E>>
-    : Plain<T[K]>;
-};
-
 /** The Actions, plain form: no Effect in sight; expected failures are values, defects reject. */
-export type Scheduler<S extends AnySchema> = Plain<SchedulerService<S>>;
+export type Scheduler<S extends AnySchema, Tx> = SchedulerActions<
+  S,
+  Tx,
+  "plain"
+>;
 
 /** A typed failure becomes `error`; a defect or interruption is thrown, so the promise rejects. */
 function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
@@ -47,18 +42,27 @@ function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
 }
 
 /** An Action in the walk below; its params pass through untouched, so they stay `unknown` here. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Plain<T> types the params at the call site.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SchedulerActions types the params at the call site.
 type AnyAction = (params: unknown) => Effect.Effect<unknown, unknown>;
 
+/** The plain form as {@link toPlain} builds it, before it's typed as a {@link Scheduler}. */
+interface PlainTree {
+  readonly [name: string]:
+    | PlainTree
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- as in AnyAction.
+    | ((params: unknown) => Promise<Result<unknown, unknown>>);
+}
+
 /** Wrap every Action in `service`, recursing into groups, to run its Effect and map the Exit. */
-function toPlain<T extends object>(service: T): Plain<T> {
+// oxlint-disable-next-line anti-slop/no-object-parameters -- our own service tree, typed by SchedulerActions at createScheduler.
+function toPlain(service: object): PlainTree {
   const entries = Object.entries(service).map(
     ([name, member]: [string, unknown]) => {
       // oxlint-disable-next-line anti-slop/no-runtime-typeof -- our own service tree: a member is an Action or a group.
       if (typeof member !== "function") {
         // SAFETY: a non-function member of a service is a group of Actions.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-        return [name, toPlain(member as object)];
+        return [name, toPlain(member as object)] as const;
       }
 
       // SAFETY: a function member of a service is an Action.
@@ -70,13 +74,11 @@ function toPlain<T extends object>(service: T): Plain<T> {
         return exitToResult(await Effect.runPromiseExit(action(params)));
       }
 
-      return [name, plain];
+      return [name, plain] as const;
     }
   );
 
-  // SAFETY: Plain<T> mirrors exactly this walk.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries can't keep a mapped type.
-  return Object.fromEntries(entries) as Plain<T>;
+  return Object.fromEntries<PlainTree[string]>(entries);
 }
 
 /**
@@ -90,6 +92,8 @@ function toPlain<T extends object>(service: T): Plain<T> {
  */
 export function createScheduler<S extends AnySchema, Tx>(
   params: CreateSchedulerParams<S, Tx>
-): Scheduler<S> {
-  return toPlain(makeScheduler(params));
+): Scheduler<S, Tx> {
+  // SAFETY: SchedulerActions<S, Tx, "plain"> is the "effect" form with each Run mapped as this walk does.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the walk can't carry the form parameter.
+  return toPlain(makeScheduler(params)) as Scheduler<S, Tx>;
 }

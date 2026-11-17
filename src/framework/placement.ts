@@ -22,9 +22,9 @@ export interface CheckPlacementParams<S extends AnySchema> {
 }
 
 /** Whether a Booking may sit at `[start, end)`: the overlap Invariant first, then `availability`; an Invariant failure comes back alone (ADR 014). */
-export function checkPlacement<S extends AnySchema>(
-  locked: EffectLocked<S>,
-  ctx: ActionContext<S>,
+export function checkPlacement<S extends AnySchema, Tx>(
+  locked: EffectLocked<S, Tx>,
+  ctx: ActionContext<S, Tx>,
   params: CheckPlacementParams<S>
 ): Effect.Effect<void, SlotConflict | PolicyViolation | AdapterError> {
   const { blocking, end, excludeBookingId, resourceId, start } = params;

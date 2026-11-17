@@ -39,8 +39,8 @@ export interface GetAvailabilityParams<S extends AnySchema> {
 export type GetAvailabilityError = AdapterError;
 
 /** Replace a Resource's rules under its Resource Lock (PUT); invalid rules store nothing. */
-export function setAvailability<S extends AnySchema>(
-  { adapter }: ActionContext<S>,
+export function setAvailability<S extends AnySchema, Tx>(
+  { adapter }: ActionContext<S, Tx>,
   { resourceId, rules }: SetAvailabilityParams<S>
 ): Effect.Effect<SetAvailabilityValue, SetAvailabilityError> {
   const coreId = String(resourceId);
@@ -65,8 +65,8 @@ export function setAvailability<S extends AnySchema>(
 }
 
 /** A Resource's rules, read without the lock; `[]` for an unknown Resource. */
-export function getAvailability<S extends AnySchema>(
-  { adapter }: ActionContext<S>,
+export function getAvailability<S extends AnySchema, Tx>(
+  { adapter }: ActionContext<S, Tx>,
   { resourceId }: GetAvailabilityParams<S>
 ): Effect.Effect<readonly RuleRecord[], GetAvailabilityError> {
   return adapter.getRules(resourceId);

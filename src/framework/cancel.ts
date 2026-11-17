@@ -26,8 +26,8 @@ export interface CancelValue<S extends AnySchema> {
 export type CancelError = BookingNotFound | AdapterError;
 
 /** Set a Booking's status to `cancelled` under its Resource's lock. Idempotent: a repeat writes nothing. */
-export function cancel<S extends AnySchema>(
-  ctx: ActionContext<S>,
+export function cancel<S extends AnySchema, Tx>(
+  ctx: ActionContext<S, Tx>,
   params: CancelParams
 ): Effect.Effect<CancelValue<S>, CancelError> {
   const { id } = params;

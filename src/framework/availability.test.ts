@@ -115,7 +115,7 @@ describe("availability", () => {
   });
 
   it("types: get's value feeds set's rules; exact error unions", () => {
-    type Availability = Scheduler<typeof schema>["availability"];
+    type Availability = Scheduler<typeof schema, undefined>["availability"];
 
     type GetValue =
       Awaited<ReturnType<Availability["get"]>> extends Result<infer A, unknown>
