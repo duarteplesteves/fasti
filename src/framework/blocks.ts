@@ -21,7 +21,12 @@ import type { Retry } from "./lock-by-id.js";
 import { conflictsAt } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
-import type { AlsoParam, Outcome, WriteEffect } from "./write-unit.js";
+import type {
+  AlsoContext,
+  AlsoParam,
+  Outcome,
+  WriteEffect,
+} from "./write-unit.js";
 
 /** A Block as an Action returns it: flat, Developer Fields included. */
 export type Block<S extends AnySchema> = BlockRecord<S>;
@@ -99,9 +104,6 @@ export interface DeleteBlockAlso<S extends AnySchema, Tx> {
   readonly now: Temporal.Instant;
 }
 
-/** An `also` context without what `writeUnit` adds. */
-type Context<T> = Omit<T, "tx" | "now">;
-
 /** Every way `blocks.create` can fail. */
 export type CreateBlockError = InvalidParams | SlotConflict | AdapterError;
 
@@ -156,7 +158,8 @@ export interface BlockActions<S extends AnySchema, Tx, F extends Form> {
 /** Store a new Block under the Resource Lock; a blocking Booking in the way is a SlotConflict (ADR 016). */
 export function createBlock<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: CreateBlockParams<S> & AlsoParam<Context<CreateBlockAlso<S, Tx>>, Tx>
+  params: CreateBlockParams<S> &
+    AlsoParam<AlsoContext<CreateBlockAlso<S, Tx>>, Tx>
 ): WriteEffect<Block<S>, CreateBlockError> {
   const { codec, schema } = ctx;
   const { resourceId } = params;
@@ -175,7 +178,7 @@ export function createBlock<S extends AnySchema, Tx>(
     resourceId,
     (locked) =>
       Effect.gen(function* createBlockUnit(): Effect.fn.Return<
-        Outcome<Block<S>, Context<CreateBlockAlso<S, Tx>>>,
+        Outcome<Block<S>, AlsoContext<CreateBlockAlso<S, Tx>>>,
         SlotConflict | AdapterError
       > {
         // Only blocking Bookings conflict with a Block: Blocks may overlap each other (ADR 016).
@@ -227,7 +230,8 @@ function sameStoredValue(a: FieldValue | undefined, b: FieldValue): boolean {
 /** Change a Block under its Resource's lock (compare-and-set); a no-op change writes nothing. */
 export function updateBlock<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: UpdateBlockParams<S> & AlsoParam<Context<UpdateBlockAlso<S, Tx>>, Tx>
+  params: UpdateBlockParams<S> &
+    AlsoParam<AlsoContext<UpdateBlockAlso<S, Tx>>, Tx>
 ): WriteEffect<Block<S>, UpdateBlockError> {
   const { id } = params;
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };
@@ -260,7 +264,7 @@ export function updateBlock<S extends AnySchema, Tx>(
     read: (reads) => reads.getBlock(id),
     work: (locked, stored) =>
       Effect.gen(function* updateBlockUnit(): Effect.fn.Return<
-        Outcome<Block<S>, Context<UpdateBlockAlso<S, Tx>>>,
+        Outcome<Block<S>, AlsoContext<UpdateBlockAlso<S, Tx>>>,
         SlotConflict | AdapterError | Retry
       > {
         // Only a new range can meet a Booking; a fields-only change keeps the time it had (ADR 016).
@@ -324,7 +328,7 @@ export function updateBlock<S extends AnySchema, Tx>(
 /** Remove a Block under its Resource's lock. */
 export function deleteBlock<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: DeleteBlockParams & AlsoParam<Context<DeleteBlockAlso<S, Tx>>, Tx>
+  params: DeleteBlockParams & AlsoParam<AlsoContext<DeleteBlockAlso<S, Tx>>, Tx>
 ): WriteEffect<void, DeleteBlockError> {
   const { id } = params;
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };

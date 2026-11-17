@@ -8,7 +8,12 @@ import type { AdapterError, BookingNotFound } from "./errors.js";
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import type { ActionContext } from "./scheduler-service.js";
-import type { AlsoParam, Outcome, WriteEffect } from "./write-unit.js";
+import type {
+  AlsoContext,
+  AlsoParam,
+  Outcome,
+  WriteEffect,
+} from "./write-unit.js";
 
 /** Params of `cancel`. */
 export interface CancelParams {
@@ -27,7 +32,7 @@ export type CancelError = BookingNotFound | AdapterError;
 /** Set a Booking's status to `cancelled` under its Resource's lock. Idempotent: a repeat writes nothing. */
 export function cancel<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: CancelParams & AlsoParam<Omit<ChangeAlso<S, Tx>, "tx" | "now">, Tx>
+  params: CancelParams & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx>
 ): WriteEffect<CancelValue<S>, CancelError> {
   const { id } = params;
   const notFound: BookingNotFound = { _tag: "BookingNotFound", id };
@@ -41,7 +46,7 @@ export function cancel<S extends AnySchema, Tx>(
     read: (reads) => reads.getBooking(id),
     work: (locked, booking) =>
       Effect.gen(function* cancelUnit(): Effect.fn.Return<
-        Outcome<CancelValue<S>, Omit<ChangeAlso<S, Tx>, "tx" | "now">>,
+        Outcome<CancelValue<S>, AlsoContext<ChangeAlso<S, Tx>>>,
         AdapterError | Retry
       > {
         if (booking.status === "cancelled") {

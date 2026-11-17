@@ -6,10 +6,13 @@ import type { EffectLocked } from "./effect-adapter.js";
 import type { AdapterError, Vetoed } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
 
-/** What a write unit did. Done: run `also` with `context`. NoOp: nothing changed, so skip `also` (a repeat cancel). */
+/** What a write unit did. Done: run `also` with `context`. NoOp: skip `also` (a repeat cancel; a no-op `blocks.update` still returns Done, by ADR 015). */
 export type Outcome<V, C> =
   | { readonly _tag: "Done"; readonly value: V; readonly context: C }
   | { readonly _tag: "NoOp"; readonly value: V };
+
+/** An `also` context without the `tx` and `now` that `writeUnit` adds. */
+export type AlsoContext<T> = Omit<T, "tx" | "now">;
 
 /** The `also` an Action receives, in Effect form: the plain form's is adapted in `toPlain`. */
 export type EffectAlso<C, Tx> = (

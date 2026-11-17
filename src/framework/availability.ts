@@ -9,7 +9,7 @@ import type { AnySchema } from "../schema/define-schema.js";
 import type { AdapterError } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
-import type { AlsoParam, WriteEffect } from "./write-unit.js";
+import type { AlsoContext, AlsoParam, WriteEffect } from "./write-unit.js";
 
 /** An Availability Rule as the caller gives it: no `resourceId`, `exceptions` optional. A {@link RuleRecord} is one, so `get` feeds `set`. */
 export type AvailabilityRuleInput = Omit<AvailabilityRule, "resourceId">;
@@ -60,7 +60,7 @@ export function setAvailability<S extends AnySchema, Tx>(
     resourceId,
     rules,
   }: SetAvailabilityParams<S> &
-    AlsoParam<Omit<SetAvailabilityAlso<Tx>, "tx" | "now">, Tx>
+    AlsoParam<AlsoContext<SetAvailabilityAlso<Tx>>, Tx>
 ): WriteEffect<SetAvailabilityValue, SetAvailabilityError> {
   const coreId = String(resourceId);
 
