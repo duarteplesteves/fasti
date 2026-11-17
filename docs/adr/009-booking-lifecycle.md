@@ -47,3 +47,14 @@ We choose option 4.
 - **Positive:** Bad Transitions and silent overwrites are stopped before they reach the database. Developers can still drive the lifecycle from XState or similar in their own backend.
 - **Negative:** Flipping a Status's `blocking` flag, or removing a Status that rows still use, is a schema change. The developer migrates it, and nothing checks stored rows at runtime.
 - **Negative:** Preconditions can't be declared in `defineSchema`, because it is plain data. They live in the policies, separately from the Transition table.
+
+## Amendment (2026-11-17): the lifecycle as built in checkpoint 6
+
+Building `transition`, `reschedule` and developer Statuses (#98) settled four details the decision left open:
+
+- **When `transition` exists.** "Only when the developer declares Statuses" is sharpened to: exactly when some declared Transition doesn't end in `cancelled`, derived from the Transition table (`TransitionEdge<S>`), with no separate flag. A schema that only adds `cancelled → booked` needs `transition`; one that only declares Statuses, or only edges into `cancelled` (which belong to `cancel`), doesn't get it. At runtime `transition` is always bound: called from plain JS on a schema without such an edge, every pair fails the declared-Transition check and returns `InvalidParams` before any Adapter call.
+- **Two new errors**, plain readonly objects (ADR 010), which together are the Invariant "the Transition is declared, and the Booking exists with the expected Status" (ADR 014):
+  - `StatusMismatch { id, status }`: the stored Status isn't what the call needed, with the stored one in `status`. For `transition` the expected Status is `from` (the compare-and-set the decision calls `changed`); for `reschedule` it is any blocking Status.
+  - `TransitionNotDeclared { id, from, to }`: no declared edge from the stored Status to `to`. In practice it is reached through `cancel`; `transition` checks its `from → to` pair before reading, as `InvalidParams` at `["to"]`.
+- **Where `availability` applies.** To `book` and `reschedule`, the Actions that choose a time; not to `transition` or `cancel`. Moving into a blocking Status from a non-blocking one re-checks overlap only. Policies on Transition edges arrive with the policies milestone.
+- **Booking into a non-blocking initial Status** skips the overlap check, but `availability` still applies.

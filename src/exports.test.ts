@@ -101,6 +101,30 @@ describe("package export surface", () => {
     expectTypeOf<effect.TxOf<adapter.Adapter<"tx">>>().toEqualTypeOf<"tx">();
   });
 
+  it("index.js exports the 0.3 error, params and `also` context types", () => {
+    type S = root.AnySchema;
+
+    expectTypeOf<
+      root.StatusMismatch["_tag"]
+    >().toEqualTypeOf<"StatusMismatch">();
+    expectTypeOf<
+      root.TransitionNotDeclared["_tag"]
+    >().toEqualTypeOf<"TransitionNotDeclared">();
+    expectTypeOf<root.Vetoed<"no">>().toEqualTypeOf<{
+      readonly _tag: "Vetoed";
+      readonly reason: "no";
+    }>();
+    expectTypeOf<root.RescheduleParams<S>>().toHaveProperty("id");
+    expectTypeOf<root.TransitionParams<S>>().toHaveProperty("from");
+    expectTypeOf<root.CancelParams<S>>().toHaveProperty("id");
+    expectTypeOf<root.BookAlso<S, "tx">["tx"]>().toEqualTypeOf<"tx">();
+    expectTypeOf<root.ChangeAlso<S, "tx">>().toHaveProperty("previous");
+    expectTypeOf<root.SetAvailabilityAlso<"tx">>().toHaveProperty("rules");
+    expectTypeOf<root.CreateBlockAlso<S, "tx">>().toHaveProperty("block");
+    expectTypeOf<root.UpdateBlockAlso<S, "tx">>().toHaveProperty("previous");
+    expectTypeOf<root.DeleteBlockAlso<S, "tx">>().toHaveProperty("previous");
+  });
+
   it("the package's only runtime dependency is effect (ADR 012)", () => {
     expect(pkg.dependencies).toStrictEqual({ effect: "^4.1" });
   });
