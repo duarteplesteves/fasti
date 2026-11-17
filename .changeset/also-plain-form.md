@@ -1,5 +1,0 @@
----
-"@fastijs/scheduler": minor
----
-
-`also` on every existing write Action (ADR 015): `book`, `cancel`, `availability.set` and `blocks.create / update / delete` take an optional `also({ tx, now, ... })` that runs after fasti's write, on the same unit of work. It may be sync or async and returns a `Result`: its value comes back as `also` on the Action's value, and a failure rolls everything back and fails the Action with `Vetoed { reason }` (only in the error union when `also` is passed). A throw rolls back and rejects. `also` doesn't run when nothing changed (a repeat `cancel`); a no-op `blocks.update` still runs it, with `block === previous`. **Breaking (types only):** `CancelValue` is now a union on `alreadyCancelled: true | false`. When a unit fails, the Adapter's `withResourceLock` now rejects with the original error behind an `AdapterError`, or with what `also` threw, so an Adapter can classify it. New exports: `Vetoed`, `BookAlso`, `ChangeAlso`, `SetAvailabilityAlso`, `CreateBlockAlso`, `UpdateBlockAlso`, `DeleteBlockAlso`. In the Effect form, `also` returns an Effect; its services and a typed `tx` come later.
