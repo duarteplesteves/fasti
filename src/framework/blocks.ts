@@ -17,8 +17,16 @@ import type { FieldValue, FieldsParam, FieldsPatch } from "./booking.js";
 import type { AdapterError, BlockNotFound, SlotConflict } from "./errors.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
 import { lockedById, retry } from "./lock-by-id.js";
+import type { Retry } from "./lock-by-id.js";
 import { conflictsAt } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
+import { writeUnit } from "./write-unit.js";
+import type {
+  AlsoContext,
+  AlsoParam,
+  Outcome,
+  WriteEffect,
+} from "./write-unit.js";
 
 /** A Block as an Action returns it: flat, Developer Fields included. */
 export type Block<S extends AnySchema> = BlockRecord<S>;
@@ -67,6 +75,35 @@ export interface ListBlocksParams<S extends AnySchema> {
   readonly to: Temporal.Instant;
 }
 
+/** What `blocks.create`'s `also` gets: the new Block, on fasti's unit of work. */
+export interface CreateBlockAlso<S extends AnySchema, Tx> {
+  /** The Adapter's transaction handle: write through it to share the unit. */
+  readonly tx: Tx;
+  /** The Block just stored. */
+  readonly block: Block<S>;
+  /** The Clock's time, read on the unit. */
+  readonly now: Temporal.Instant;
+}
+
+/** What `blocks.update`'s `also` gets: the Block after and before; the same object when nothing changed. */
+export interface UpdateBlockAlso<
+  S extends AnySchema,
+  Tx,
+> extends CreateBlockAlso<S, Tx> {
+  /** The Block as it was. */
+  readonly previous: Block<S>;
+}
+
+/** What `blocks.delete`'s `also` gets: the Block that was removed. */
+export interface DeleteBlockAlso<S extends AnySchema, Tx> {
+  /** The Adapter's transaction handle: write through it to share the unit. */
+  readonly tx: Tx;
+  /** The Block as it was. */
+  readonly previous: Block<S>;
+  /** The Clock's time, read on the unit. */
+  readonly now: Temporal.Instant;
+}
+
 /** Every way `blocks.create` can fail. */
 export type CreateBlockError = InvalidParams | SlotConflict | AdapterError;
 
@@ -83,13 +120,13 @@ export type DeleteBlockError = BlockNotFound | AdapterError;
 /** Every way `blocks.list` can fail. */
 export type ListBlocksError = InvalidParams | AdapterError;
 
-/** The Block Actions in form `F`: on a scheduler only when the schema declares `block`. `_Tx` as in `SchedulerActions`. */
-export interface BlockActions<S extends AnySchema, _Tx, F extends Form> {
+/** The Block Actions in form `F`: on a scheduler only when the schema declares `block`. `Tx` as in `SchedulerActions`. */
+export interface BlockActions<S extends AnySchema, Tx, F extends Form> {
   /** Store a new Block, if no blocking Booking overlaps it. Blocks may overlap each other. */
   readonly create: WriteAction<
     F,
     CreateBlockParams<S>,
-    never,
+    CreateBlockAlso<S, Tx>,
     Block<S>,
     CreateBlockError
   >;
@@ -97,7 +134,7 @@ export interface BlockActions<S extends AnySchema, _Tx, F extends Form> {
   readonly update: WriteAction<
     F,
     UpdateBlockParams<S>,
-    never,
+    UpdateBlockAlso<S, Tx>,
     Block<S>,
     UpdateBlockError
   >;
@@ -105,7 +142,7 @@ export interface BlockActions<S extends AnySchema, _Tx, F extends Form> {
   readonly delete: WriteAction<
     F,
     DeleteBlockParams,
-    never,
+    DeleteBlockAlso<S, Tx>,
     void,
     DeleteBlockError
   >;
@@ -120,9 +157,11 @@ export interface BlockActions<S extends AnySchema, _Tx, F extends Form> {
 
 /** Store a new Block under the Resource Lock; a blocking Booking in the way is a SlotConflict (ADR 016). */
 export function createBlock<S extends AnySchema, Tx>(
-  { adapter, codec, schema }: ActionContext<S, Tx>,
-  params: CreateBlockParams<S>
-): Effect.Effect<Block<S>, CreateBlockError> {
+  ctx: ActionContext<S, Tx>,
+  params: CreateBlockParams<S> &
+    AlsoParam<AlsoContext<CreateBlockAlso<S, Tx>>, Tx>
+): WriteEffect<Block<S>, CreateBlockError> {
+  const { codec, schema } = ctx;
   const { resourceId } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
@@ -134,43 +173,50 @@ export function createBlock<S extends AnySchema, Tx>(
     return Effect.fail(range.error);
   }
 
-  return adapter.withResourceLock(resourceId, (locked) =>
-    Effect.gen(function* createBlockUnit() {
-      // Only blocking Bookings conflict with a Block: Blocks may overlap each other (ADR 016).
-      const conflicts = yield* conflictsAt(locked, codec, {
-        end,
-        excludeBookingId: null,
-        kind: "block",
-        resourceId,
-        start,
-      });
-
-      if (conflicts.length > 0) {
-        return yield* Effect.fail<SlotConflict>({
-          _tag: "SlotConflict",
-          conflicts,
+  return writeUnit(
+    ctx,
+    resourceId,
+    (locked) =>
+      Effect.gen(function* createBlockUnit(): Effect.fn.Return<
+        Outcome<Block<S>, AlsoContext<CreateBlockAlso<S, Tx>>>,
+        SlotConflict | AdapterError
+      > {
+        // Only blocking Bookings conflict with a Block: Blocks may overlap each other (ADR 016).
+        const conflicts = yield* conflictsAt(locked, codec, {
+          end,
+          excludeBookingId: null,
+          kind: "block",
+          resourceId,
+          start,
         });
-      }
 
-      // SAFETY: the base columns are set, and every Block field is set: required ones by CreateBlockParams' type, optional ones to their value or `null`.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
-      const record = {
-        ...fieldValues<BlockFieldsOf<S>>(
-          // SAFETY: BlockFieldsOf<S> is the fields of `schema.block`, which isn't null when this Action exists.
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
-          (schema.block?.fields ?? {}) as BlockFieldsOf<S>,
-          params
-        ),
-        end,
-        id: mintBlockId(),
-        resourceId,
-        start,
-      } as BlockRecord<S>;
+        if (conflicts.length > 0) {
+          return yield* Effect.fail<SlotConflict>({
+            _tag: "SlotConflict",
+            conflicts,
+          });
+        }
 
-      yield* locked.insertBlock(record);
+        // SAFETY: the base columns are set, and every Block field is set: required ones by CreateBlockParams' type, optional ones to their value or `null`.
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
+        const record = {
+          ...fieldValues<BlockFieldsOf<S>>(
+            // SAFETY: BlockFieldsOf<S> is the fields of `schema.block`, which isn't null when this Action exists.
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
+            (schema.block?.fields ?? {}) as BlockFieldsOf<S>,
+            params
+          ),
+          end,
+          id: mintBlockId(),
+          resourceId,
+          start,
+        } as BlockRecord<S>;
 
-      return record;
-    })
+        yield* locked.insertBlock(record);
+
+        return { _tag: "Done", context: { block: record }, value: record };
+      }),
+    params.also
   );
 }
 
@@ -184,8 +230,9 @@ function sameStoredValue(a: FieldValue | undefined, b: FieldValue): boolean {
 /** Change a Block under its Resource's lock (compare-and-set); a no-op change writes nothing. */
 export function updateBlock<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: UpdateBlockParams<S>
-): Effect.Effect<Block<S>, UpdateBlockError> {
+  params: UpdateBlockParams<S> &
+    AlsoParam<AlsoContext<UpdateBlockAlso<S, Tx>>, Tx>
+): WriteEffect<Block<S>, UpdateBlockError> {
   const { id } = params;
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };
 
@@ -212,10 +259,14 @@ export function updateBlock<S extends AnySchema, Tx>(
   );
 
   return lockedById(ctx, {
+    also: params.also,
     notFound,
     read: (reads) => reads.getBlock(id),
     work: (locked, stored) =>
-      Effect.gen(function* updateBlockUnit() {
+      Effect.gen(function* updateBlockUnit(): Effect.fn.Return<
+        Outcome<Block<S>, AlsoContext<UpdateBlockAlso<S, Tx>>>,
+        SlotConflict | AdapterError | Retry
+      > {
         // Only a new range can meet a Booking; a fields-only change keeps the time it had (ADR 016).
         if (range !== null) {
           const conflicts = yield* conflictsAt(locked, ctx.codec, {
@@ -245,8 +296,13 @@ export function updateBlock<S extends AnySchema, Tx>(
           )
         ) as BlockChanges<S>;
 
+        // A no-op still runs `also`, with `block === previous`.
         if (Object.keys(changes).length === 0) {
-          return stored;
+          return {
+            _tag: "Done",
+            context: { block: stored, previous: stored },
+            value: stored,
+          };
         }
 
         const updated = yield* locked.updateBlock({
@@ -258,7 +314,13 @@ export function updateBlock<S extends AnySchema, Tx>(
           return yield* Effect.fail(retry);
         }
 
-        return { ...stored, ...changes };
+        const block = { ...stored, ...changes };
+
+        return {
+          _tag: "Done",
+          context: { block, previous: stored },
+          value: block,
+        };
       }),
   });
 }
@@ -266,17 +328,24 @@ export function updateBlock<S extends AnySchema, Tx>(
 /** Remove a Block under its Resource's lock. */
 export function deleteBlock<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: DeleteBlockParams
-): Effect.Effect<void, DeleteBlockError> {
+  params: DeleteBlockParams & AlsoParam<AlsoContext<DeleteBlockAlso<S, Tx>>, Tx>
+): WriteEffect<void, DeleteBlockError> {
   const { id } = params;
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };
 
   return lockedById(ctx, {
+    also: params.also,
     notFound,
     read: (reads) => reads.getBlock(id),
-    work: (locked) =>
+    work: (locked, stored) =>
       Effect.flatMap(locked.deleteBlock(id), (deleted) =>
-        deleted.ok ? Effect.void : Effect.fail(notFound)
+        deleted.ok
+          ? Effect.succeed({
+              _tag: "Done",
+              context: { previous: stored },
+              value: undefined,
+            } as const)
+          : Effect.fail(notFound)
       ),
   });
 }

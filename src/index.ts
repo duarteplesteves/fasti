@@ -37,6 +37,7 @@ export type {
   AvailabilityRuleInput,
   GetAvailabilityError,
   GetAvailabilityParams,
+  SetAvailabilityAlso,
   SetAvailabilityError,
   SetAvailabilityParams,
   SetAvailabilityValue,
@@ -45,17 +46,25 @@ export type {
 export type {
   Block,
   BlockActions,
+  CreateBlockAlso,
   CreateBlockError,
   CreateBlockParams,
+  DeleteBlockAlso,
   DeleteBlockError,
   DeleteBlockParams,
   ListBlocksError,
   ListBlocksParams,
+  UpdateBlockAlso,
   UpdateBlockError,
   UpdateBlockParams,
 } from "./framework/blocks.js";
 
-export type { BookError, BookParams, StatusParam } from "./framework/book.js";
+export type {
+  BookAlso,
+  BookError,
+  BookParams,
+  StatusParam,
+} from "./framework/book.js";
 
 export type {
   CancelError,
@@ -63,7 +72,7 @@ export type {
   CancelValue,
 } from "./framework/cancel.js";
 
-export type { Booking } from "./framework/booking.js";
+export type { Booking, ChangeAlso } from "./framework/booking.js";
 
 export type {
   FindSlotsError,
@@ -81,6 +90,7 @@ export type {
   ConflictingBooking,
   PolicyViolation,
   SlotConflict,
+  Vetoed,
 } from "./framework/errors.js";
 
 export type { InvalidParams, Issue, Result } from "./core/result.js";

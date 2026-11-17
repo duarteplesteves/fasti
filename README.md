@@ -211,12 +211,34 @@ if (!overLunch.ok && overLunch.error._tag === "SlotConflict") {
 
 **In a custom Adapter.** A schema with `block` needs an Adapter that implements the Block verb group, and the types enforce it: declare it as `Adapter<Tx, "blocks">` (or `defineAdapter<Tx, "blocks">`) and add `getBlock` and `listBlocks` to the reads, and `insertBlock`, `updateBlock` (compare-and-set, `"changed"`) and `deleteBlock` (`"missing"`) to the locked handle. See [Writing a custom Adapter](#writing-a-custom-adapter). `testAdapter` runs the Conformance Suite's Blocks cases whenever your schema declares `block`.
 
+## Your writes in the same transaction (`also`)
+
+Every write Action (`book`, `cancel`, `availability.set`, `blocks.create`, `blocks.update`, `blocks.delete`) takes an optional `also`. fasti calls it after its own write, on the same unit of work, with the Adapter's `tx` and the Clock's `now` ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)):
+
+```ts
+const result = await scheduler.book({
+  resourceId,
+  start,
+  end,
+  also: async ({ tx, booking }) => {
+    await tx.insert(auditLog).values({ bookingId: booking.id });
+    return { ok: true, value: "logged" };
+  },
+});
+// result.value is the Booking plus `also: "logged"`.
+```
+
+- `also` may be sync or async, and returns a `Result`. Its `value` comes back on the Action's value as `also` (a `blocks.delete` value is `{ also }`).
+- Returning `{ ok: false, error }` vetoes: everything rolls back, fasti's write included, and the Action fails with `{ _tag: "Vetoed", reason: error }`. A throw also rolls back, and the promise rejects with what was thrown.
+- Write only through `tx`: anything else isn't part of the unit and won't roll back. On the memory Adapter `tx` is `undefined`.
+- What each Action passes, besides `tx` and `now`: `book` gets `booking`; `cancel` gets `booking` and `previous`; `availability.set` gets `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
+- `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
+
 ## Not yet
 
 `0.1.0` books and cancels. These are planned (see the [roadmap](./ROADMAP.md)):
 
 - `reschedule` and Status Transitions beyond `booked` and `cancelled`.
-- Writing your own rows in the Action's transaction (`also`).
 - Policies beyond availability, `relax` on the Actions, and `notice` (past starts are bookable today).
 - `getBooking` and `listBookings` Actions; read through your own database meanwhile.
 - Retrying transient database errors.

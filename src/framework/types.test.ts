@@ -325,17 +325,6 @@ interface Tx {
   readonly txBrand: true;
 }
 
-/** Never called: only the types are checked. */
-async function noAlsoYet(scheduler: Scheduler<typeof defaultSchema, Tx>) {
-  return await scheduler.book({
-    // @ts-expect-error -- no Action takes `also` until it lands.
-    also: () => ({ ok: true, value: 1 }),
-    end: instant,
-    resourceId: "staff-a",
-    start: instant,
-  });
-}
-
 /** Never called: only the inferred Scheduler types are checked. */
 function schedulersByAdapter() {
   return {
@@ -374,7 +363,6 @@ describe("forms", () => {
     expectTypeOf<keyof Plain>().toEqualTypeOf<
       "book" | "cancel" | "findSlots" | "availability"
     >();
-    expectTypeOf(noAlsoYet).toBeFunction();
   });
 
   it("keeps the old plain surface for every Block Action, with Blocks", () => {
