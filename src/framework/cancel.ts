@@ -5,6 +5,7 @@ import type { BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { Booking } from "./booking.js";
 import type { AdapterError, BookingNotFound } from "./errors.js";
+import { lockedById, retry } from "./lock-by-id.js";
 import type { ActionContext } from "./scheduler-service.js";
 
 /** Params of `cancel`. */
@@ -24,13 +25,6 @@ export interface CancelValue<S extends AnySchema> {
 /** Every way `cancel` can fail. */
 export type CancelError = BookingNotFound | AdapterError;
 
-/** An outside write moved or changed the row between read and write: start over. Never leaves `cancel`. */
-interface Retry {
-  readonly _tag: "Retry";
-}
-
-const retry: Retry = { _tag: "Retry" };
-
 /** Set a Booking's status to `cancelled` under its Resource's lock. Idempotent: a repeat writes nothing. */
 export function cancel<S extends AnySchema>(
   ctx: ActionContext<S>,
@@ -42,26 +36,11 @@ export function cancel<S extends AnySchema>(
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
   const changes = { status: "cancelled" } as BookingChanges<S>;
 
-  const once = Effect.gen(function* cancelOnce() {
-    // Unlocked, only to learn which Resource to lock.
-    const seen = yield* ctx.adapter.getBooking(id);
-
-    if (seen === null) {
-      return yield* Effect.fail(notFound);
-    }
-
-    return yield* ctx.adapter.withResourceLock(seen.resourceId, (locked) =>
+  return lockedById(ctx, {
+    notFound,
+    read: (reads) => reads.getBooking(id),
+    work: (locked, booking) =>
       Effect.gen(function* cancelUnit() {
-        const booking = yield* locked.getBooking(id);
-
-        if (booking === null) {
-          return yield* Effect.fail(notFound);
-        }
-
-        if (booking.resourceId !== seen.resourceId) {
-          return yield* Effect.fail(retry);
-        }
-
         if (booking.status === "cancelled") {
           return { alreadyCancelled: true, booking };
         }
@@ -82,10 +61,6 @@ export function cancel<S extends AnySchema>(
           alreadyCancelled: false,
           booking: { ...booking, ...changes },
         };
-      })
-    );
+      }),
   });
-
-  // shortcut: Retry is unbounded; cap it if outside writers ever churn a row.
-  return Effect.catchTag(once, "Retry", () => cancel(ctx, params));
 }

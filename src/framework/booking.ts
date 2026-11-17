@@ -52,3 +52,33 @@ export function fieldValues<F extends Fields>(
     })
   );
 }
+
+/** A partial `fields` update: absent with no Developer Fields; the ones left out keep their value. */
+export type FieldsPatch<F extends Fields> = [keyof F] extends [never]
+  ? unknown
+  : {
+      /** Developer Fields to change; the ones left out keep their value. */
+      readonly fields?: Partial<FieldsInput<F>>;
+    };
+
+/** The fields a patch changes: declared names only, `undefined` dropped, Instants ms-floored. */
+export function fieldPatch<F extends Fields>(
+  fields: F,
+  params: FieldsPatch<F>
+): Record<string, FieldValue> {
+  // SAFETY: FieldsPatch<F> is `unknown` or has an optional `fields` of field values.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't narrow inside a generic.
+  const { fields: input = {} } = params as {
+    readonly fields?: Readonly<Record<string, FieldValue | undefined>>;
+  };
+
+  return Object.fromEntries(
+    Object.keys(fields).flatMap((name) => {
+      const value = input[name];
+
+      return value === undefined
+        ? []
+        : [[name, value instanceof Temporal.Instant ? floorMs(value) : value]];
+    })
+  );
+}

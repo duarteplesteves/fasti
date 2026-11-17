@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { toCoreBooking } from "../adapter/records.js";
 import type { ResourceIdOf, StatusOf } from "../adapter/records.js";
 import { detectConflicts } from "../core/detect-conflicts.js";
+import type { DetectConflictsParams } from "../core/detect-conflicts.js";
 import type { BlockId, Booking, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
@@ -90,6 +91,7 @@ export function conflictsAt<S extends AnySchema>(
   codec: StatusCodec<StatusOf<S>>,
   {
     end,
+    excludeBookingId,
     kind,
     resourceId,
     start,
@@ -98,16 +100,24 @@ export function conflictsAt<S extends AnySchema>(
     readonly resourceId: ResourceIdOf<S>;
     readonly start: Temporal.Instant;
     readonly end: Temporal.Instant;
+    /** Leave this Booking out, e.g. the one being moved; `null` for none. */
+    readonly excludeBookingId: BookingId | null;
   }
 ): Effect.Effect<readonly Conflict[], AdapterError> {
   return Effect.flatMap(
     occupants(reads, codec, kind, resourceId, { from: start, to: end }),
     ({ bookings, kindById }) => {
-      const r = detectConflicts({
+      const params: DetectConflictsParams<BookingId | BlockId> = {
         bookings,
         candidate: { end, start },
         resourceId: String(resourceId),
-      });
+      };
+
+      if (excludeBookingId !== null) {
+        params.excludeBookingId = excludeBookingId;
+      }
+
+      const r = detectConflicts(params);
 
       // Callers check the params up front, so only invalid stored data fails here (Invariant 6).
       return r.ok
