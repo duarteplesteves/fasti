@@ -29,7 +29,7 @@ describe.each([
   ["integer ids", integerIdSchema, integerIdResources],
 ] as const)("memoryAdapter, %s", (_label, schema, resources) => {
   const params = {
-    groups: { backstop: false },
+    groups: { backstop: false, tx: null },
     makeAdapter: memoryAdapter,
     reset,
     resources,

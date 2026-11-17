@@ -1,4 +1,7 @@
-import { sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { count, sql } from "drizzle-orm";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type { AnyPgTable } from "drizzle-orm/pg-core";
 import { integer, pgTable, uuid } from "drizzle-orm/pg-core";
 import { assert, afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -18,7 +21,7 @@ import { postgresUrl, testDatabase } from "../../test-utils/postgres.js";
 import type { TestDatabase } from "../../test-utils/postgres.js";
 import { bookingId, insert, newBooking } from "../../testing/fixtures.js";
 import { conformanceCases, runCase, testAdapter } from "../../testing/index.js";
-import type { TestAdapterParams } from "../../testing/index.js";
+import type { TestAdapterParams, TxProbe } from "../../testing/index.js";
 import { noOverlapConstraint } from "./backstop.js";
 import { encodeBooking } from "./codec.js";
 import { createDrizzleAdapter } from "./drizzle-adapter.js";
@@ -40,6 +43,23 @@ const testStaff = pgTable("test_staff", { id: integer().primaryKey() });
 /** The developer's own Resource table, which the uuid-id schema's Blocks reference. */
 const testRooms = pgTable("test_rooms", { id: uuid().primaryKey() });
 
+/** A scratch table of the developer's own, written through `tx` by the `tx` probe. */
+const testProbe = pgTable("test_probe", { id: uuid().primaryKey() });
+
+/** What `drizzleAdapter(database.db)` hands a unit of work as `tx`. */
+type Tx = Parameters<Parameters<NodePgDatabase["transaction"]>[0]>[0];
+
+const probe: TxProbe<Tx> = {
+  async count() {
+    const [row] = await database.db.select({ n: count() }).from(testProbe);
+
+    return row?.n ?? 0;
+  },
+  async write(tx) {
+    await tx.insert(testProbe).values({ id: randomUUID() });
+  },
+};
+
 const tables = {
   integerBooking: bookingTable(integerIdSchema, {
     references: () => testStaff.id,
@@ -47,6 +67,7 @@ const tables = {
   integerRule: availabilityRuleTable(integerIdSchema, {
     references: () => testStaff.id,
   }),
+  testProbe,
   testRooms,
   testStaff,
   textBlock: blockTable(textIdSchema),
@@ -66,10 +87,10 @@ function suite<S extends AnySchema>(
   schema: S,
   booking: AnyPgTable,
   others: readonly AnyPgTable[],
-  resources: TestAdapterParams<S, unknown>["resources"]
+  resources: TestAdapterParams<S, Tx>["resources"]
 ): void {
-  const params: TestAdapterParams<S, unknown> = {
-    groups: { backstop: true },
+  const params: TestAdapterParams<S, Tx> = {
+    groups: { backstop: true, tx: probe },
     makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       await database.db.execute(

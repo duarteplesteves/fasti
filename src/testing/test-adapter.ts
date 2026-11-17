@@ -11,7 +11,8 @@ import { rollbackCases } from "./cases/rollback.js";
 import { roundTripCases } from "./cases/round-trips.js";
 import { ruleCases } from "./cases/rules.js";
 import { searchCases } from "./cases/search.js";
-import type { ConformanceCase } from "./conformance-case.js";
+import { txCases } from "./cases/tx.js";
+import type { ConformanceCase, TxProbe } from "./conformance-case.js";
 
 /** Params of {@link testAdapter} and {@link runCase}. */
 export interface TestAdapterParams<S extends AnySchema, Tx> {
@@ -23,8 +24,14 @@ export interface TestAdapterParams<S extends AnySchema, Tx> {
   readonly reset: () => Promise<void>;
   /** Two existing Resource ids, so Bookings satisfy your foreign key. */
   readonly resources: readonly [ResourceIdOf<S>, ResourceIdOf<S>];
-  /** Opt-in groups: `backstop` only if your Adapter ships a database constraint. The `blocks` cases run iff `schema` declares `block`. */
-  readonly groups: { readonly backstop: boolean };
+  /**
+   * Opt-in groups: `backstop` only if your Adapter ships a database constraint; `tx` a probe over a table of your own, or `null` if `tx` is no transaction (e.g. in memory).
+   * The `blocks` cases run iff `schema` declares `block`.
+   */
+  readonly groups: {
+    readonly backstop: boolean;
+    readonly tx: TxProbe<Tx> | null;
+  };
 }
 
 /** Every Conformance Suite case. Filter by `tags` and run one with {@link runCase}. */
@@ -37,6 +44,7 @@ export const conformanceCases: readonly ConformanceCase[] = [
   ...lockCases,
   ...backstopCases,
   ...blockCases,
+  ...txCases,
 ];
 
 /** Run one case: reset, make a fresh Adapter for the schema, run it. Rejects when the case fails. */
@@ -47,6 +55,7 @@ export async function runCase<S extends AnySchema, Tx>(
   await params.reset();
   await c.run({
     adapter: params.makeAdapter()(params.schema),
+    probe: params.groups.tx,
     resources: params.resources,
     schema: params.schema,
   });
@@ -54,7 +63,7 @@ export async function runCase<S extends AnySchema, Tx>(
 
 /**
  * Register the Conformance Suite as Vitest tests: one `it` per case.
- * Cases of a group you didn't opt into, or `blocks` cases for a schema without `block`, are registered as skipped.
+ * Cases of a group you didn't opt into (`backstop: false`, `tx: null`), or `blocks` cases for a schema without `block`, are registered as skipped.
  */
 export function testAdapter<S extends AnySchema, Tx>(
   params: TestAdapterParams<S, Tx>
@@ -63,7 +72,8 @@ export function testAdapter<S extends AnySchema, Tx>(
     for (const c of conformanceCases) {
       const skipped =
         (c.tags.includes("backstop") && !params.groups.backstop) ||
-        (c.tags.includes("blocks") && params.schema.block === null);
+        (c.tags.includes("blocks") && params.schema.block === null) ||
+        (c.tags.includes("tx") && params.groups.tx === null);
 
       it.skipIf(skipped)(c.name, async () => {
         await runCase(c, params);

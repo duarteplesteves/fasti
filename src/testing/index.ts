@@ -2,6 +2,7 @@ export type {
   CaseContext,
   CaseTag,
   ConformanceCase,
+  TxProbe,
 } from "./conformance-case.js";
 
 export { conformanceCases, runCase, testAdapter } from "./test-adapter.js";
