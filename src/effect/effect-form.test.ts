@@ -1,3 +1,4 @@
+// oxlint-disable max-classes-per-file -- one service class per schema under test.
 import { Cause, Context, Effect, Exit, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
@@ -5,8 +6,8 @@ import { assert, describe, expect, expectTypeOf, it } from "vitest";
 import type { Adapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import { mintBookingId } from "../framework/booking-id.js";
-import { createScheduler } from "../index.js";
-import type { BlockNotFound, SlotConflict } from "../index.js";
+import { column, createScheduler, defineSchema } from "../index.js";
+import type { BlockNotFound, SlotConflict, TransitionError } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   uuidIdResources,
@@ -348,5 +349,71 @@ describe("Effect form", () => {
 
     assert(Exit.isSuccess(exit), "expected the booking to succeed");
     expect(exit.value.also).toStrictEqual(frozen);
+  });
+});
+
+/** UUID ids, Blocks, and `booked → inProgress`, so the Effect form has `transition`. */
+const lifecycleSchema = defineSchema({
+  block: { fields: {} },
+  booking: {
+    statuses: { inProgress: { blocking: true } },
+    transitions: { booked: ["inProgress"] },
+  },
+  resource: { idType: column.uuid() },
+});
+
+class LifecycleScheduler extends Scheduler<
+  LifecycleScheduler,
+  typeof lifecycleSchema,
+  Tx
+>()("test/LifecycleScheduler") {}
+
+describe("Effect form transition", () => {
+  it("runs through the layer, with StatusMismatch in the error channel", async () => {
+    const adapter = memoryAdapter();
+    const plain = createScheduler({ adapter, schema: lifecycleSchema });
+
+    await plain.availability.set({ resourceId: room, rules: [weekdays] });
+
+    const booked = await plain.book({
+      end: at(2),
+      resourceId: room,
+      start: at(1),
+    });
+
+    assert(booked.ok, "expected the seed booking to succeed");
+    const { id } = booked.value;
+
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(
+        Effect.gen(function* moveTwice() {
+          const scheduler = yield* LifecycleScheduler;
+
+          const moved = yield* scheduler.transition({
+            from: "booked",
+            id,
+            to: "inProgress",
+          });
+
+          const stale = yield* Effect.flip(
+            scheduler.transition({ from: "booked", id, to: "inProgress" })
+          );
+
+          return { moved, stale };
+        }),
+        LifecycleScheduler.layer({ adapter, schema: lifecycleSchema })
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected both calls to run");
+    expect(exit.value.moved.status).toBe("inProgress");
+    expect(exit.value.stale).toStrictEqual({
+      _tag: "StatusMismatch",
+      id,
+      status: "inProgress",
+    });
+    expectTypeOf(exit.value.stale).toEqualTypeOf<
+      TransitionError<typeof lifecycleSchema>
+    >();
   });
 });

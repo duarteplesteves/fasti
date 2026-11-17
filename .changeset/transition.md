@@ -1,0 +1,5 @@
+---
+"@fastijs/scheduler": minor
+---
+
+`transition({ id, from, to, fields, also })` moves a Booking along a declared Transition (ADR 009), compare-and-set on `from`: a stale `from` gives `StatusMismatch { id, status }` with the stored Status. `to` is narrowed by `from` and never `cancelled` (use `cancel`); an undeclared pair gives `InvalidParams` at `["to"]` before any Adapter call. `transition` exists on the Scheduler exactly when some declared Transition doesn't end in `cancelled` (`TransitionEdge<S>`). Moving into a blocking Status from a non-blocking one re-checks overlap; availability isn't checked. `cancel` now follows the declared Transitions: from a Status with no edge to `cancelled` it gives `TransitionNotDeclared { id, from, to }`, and it takes a partial `fields` patch. **Breaking (types only):** `CancelParams` and `CancelError` now take the schema as a type parameter. New exports: `TransitionParams`, `TransitionError`, `TransitionEdge`, `StatusMismatch`, `TransitionNotDeclared`, `FieldsPatch`.

@@ -140,6 +140,27 @@ export const changeCases: readonly ConformanceCase[] = [
     tags: [],
   },
   {
+    name: "updateBooking can change a Booking into a blocking Status",
+    async run({ adapter, resources, schema }) {
+      const b = newBooking(schema, {
+        optionalFields: "null",
+        resourceId: resources[0],
+        status: "cancelled",
+      });
+
+      await insert(adapter, b);
+
+      expect(await update(adapter, b, { status: "booked" })).toStrictEqual({
+        ok: true,
+      });
+      expect(await adapter.getBooking(b.id)).toStrictEqual({
+        ...b,
+        status: "booked",
+      });
+    },
+    tags: [],
+  },
+  {
     name: "reads inside a unit of work see that unit's own writes",
     async run({ adapter, resources, schema }) {
       const b = newBooking(schema, {

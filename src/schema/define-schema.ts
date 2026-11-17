@@ -222,6 +222,20 @@ export type AnySchema = Schema<
 /** The Statuses `book` may create a Booking of `S` in. */
 export type InitialOf<S extends AnySchema> = S["initial"][number];
 
+/** The Transitions `transition` can make: every declared one except into `cancelled`, which belongs to `cancel`. `to` is narrowed by `from`. */
+export type TransitionEdge<S extends AnySchema> = {
+  [K in keyof S["statuses"] & string]: [
+    Exclude<S["transitions"][K][number], "cancelled">,
+  ] extends [never]
+    ? never
+    : {
+        /** The Status the Booking must be in now: a compare-and-set. */
+        readonly from: K;
+        /** The Status to move it to. */
+        readonly to: Exclude<S["transitions"][K][number], "cancelled">;
+      };
+}[keyof S["statuses"] & string];
+
 /** A schema that declares Blocks, for use as a constraint. */
 export type BlockSchema = AnySchema & {
   readonly block: { readonly fields: Fields };

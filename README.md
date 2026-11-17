@@ -113,7 +113,8 @@ if (!result.ok) {
 | Action             | Value                                    | Errors (`_tag`)                                                       |
 | ------------------ | ---------------------------------------- | --------------------------------------------------------------------- |
 | `book`             | the `Booking`, `status: "booked"`        | `InvalidParams`, `SlotConflict`, `PolicyViolation`, `AdapterError`    |
-| `cancel`           | `{ booking, alreadyCancelled }`          | `BookingNotFound`, `AdapterError`                                     |
+| `cancel`           | `{ booking, alreadyCancelled }`          | `BookingNotFound`, `TransitionNotDeclared`, `AdapterError`            |
+| `transition`       | the `Booking`, in its new Status         | `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `AdapterError` |
 | `findSlots`        | `Slot[]`, zoned in `timezone`            | `InvalidParams`, `AdapterError`                                       |
 | `availability.set` | `{ rules }`, replacing the whole set     | `InvalidParams`, `AdapterError`                                       |
 | `availability.get` | the stored rules                         | `AdapterError`                                                        |
@@ -121,6 +122,7 @@ if (!result.ok) {
 - An overlap is checked before availability, so an overlapping Booking outside hours is a `SlotConflict` alone ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)).
 - Domain errors are plain objects with no `message`, safe to send to a client as JSON. `AdapterError` is an `Error` whose `cause` is your driver's error ([ADR 010](./docs/adr/010-action-results-and-two-forms.md)).
 - `cancel` is idempotent. `book` is not: each call mints a new id, so dedupe retries in your backend.
+- `transition({ id, from, to })` moves a Booking along a declared Transition, compare-and-set on `from`: if the stored Status isn't `from`, it's a `StatusMismatch` carrying the stored one. `to` is narrowed by `from`, and `cancelled` is never a `to` (use `cancel`). It exists when some declared Transition doesn't end in `cancelled`. Moving into a blocking Status from a non-blocking one re-checks overlap; availability is never checked. `cancel` from a Status with no Transition to `cancelled` gives `TransitionNotDeclared`. Both take a partial `fields` patch.
 
 ## Effect
 
@@ -218,7 +220,7 @@ if (!overLunch.ok && overLunch.error._tag === "SlotConflict") {
 
 ## Your writes in the same transaction (`also`)
 
-Every write Action (`book`, `cancel`, `availability.set`, `blocks.create`, `blocks.update`, `blocks.delete`) takes an optional `also`. fasti calls it after its own write, on the same unit of work, with the Adapter's `tx` and the Clock's `now` ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)):
+Every write Action (`book`, `cancel`, `transition`, `availability.set`, `blocks.create`, `blocks.update`, `blocks.delete`) takes an optional `also`. fasti calls it after its own write, on the same unit of work, with the Adapter's `tx` and the Clock's `now` ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)):
 
 ```ts
 const result = await scheduler.book({
@@ -237,14 +239,14 @@ const result = await scheduler.book({
 - Returning `{ ok: false, error }` vetoes: everything rolls back, fasti's write included, and the Action fails with `{ _tag: "Vetoed", reason: error }`. A throw also rolls back, and the promise rejects with what was thrown.
 - Write only through `tx`: anything else isn't part of the unit and won't roll back. On the memory Adapter `tx` is `undefined`.
 - `also` may run more than once. The Drizzle Adapter reruns the whole unit, `also` included, when it fails with a deadlock or a serialization failure (`40P01`, `40001`), up to 3 attempts. When they run out, it fails as on the last attempt: an `AdapterError` if fasti's write failed, a rejection if `also` threw. Another reason to write only through `tx`.
-- What each Action passes, besides `tx` and `now`: `book` gets `booking`; `cancel` gets `booking` and `previous`; `availability.set` gets `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
+- What each Action passes, besides `tx` and `now`: `book` gets `booking`; `cancel` and `transition` get `booking` and `previous`; `availability.set` gets `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
 
 ## Not yet
 
 `0.1.0` books and cancels. These are planned (see the [roadmap](./ROADMAP.md)):
 
-- `reschedule` and Status Transitions beyond `booked` and `cancelled`.
+- `reschedule`.
 - Policies beyond availability, `relax` on the Actions, and `notice` (past starts are bookable today).
 - `getBooking` and `listBookings` Actions; read through your own database meanwhile.
 - Retrying transient database errors.
