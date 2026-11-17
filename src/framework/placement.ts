@@ -23,14 +23,14 @@ export interface CheckPlacementParams<S extends AnySchema> {
 export function checkPlacement<S extends AnySchema>(
   locked: EffectLocked<S>,
   ctx: ActionContext<S>,
-  p: CheckPlacementParams<S>
+  params: CheckPlacementParams<S>
 ): Effect.Effect<void, SlotConflict | PolicyViolation | AdapterError> {
-  const { end, resourceId, start } = p;
+  const { end, resourceId, start } = params;
   const coreId = String(resourceId);
 
   return Effect.gen(function* checkPlacementUnit() {
     const conflicts = yield* conflictsAt(locked, ctx.codec, {
-      ...p,
+      ...params,
       kind: "booking",
     });
 

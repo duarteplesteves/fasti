@@ -11,6 +11,7 @@ export interface Retry {
   readonly _tag: "Retry";
 }
 
+/** The one `Retry` value: fail with it from `lockedById`'s `work`. */
 export const retry: Retry = { _tag: "Retry" };
 
 /** Params of `lockedById`. */
@@ -34,7 +35,7 @@ export interface LockedByIdParams<
   ) => Effect.Effect<V, E | Retry>;
 }
 
-/** Run `work` on a row addressed by id, under its Resource's lock; the one place an Action retries (I-3). */
+/** Run `work` on a row addressed by id, under its Resource's lock: the one place an Action retries. */
 export function lockedById<
   S extends AnySchema,
   Rec extends { readonly resourceId: ResourceIdOf<S> },
@@ -43,37 +44,33 @@ export function lockedById<
   E,
 >(
   ctx: ActionContext<S>,
-  p: LockedByIdParams<S, Rec, NF, V, E>
+  params: LockedByIdParams<S, Rec, NF, V, E>
 ): Effect.Effect<V, E | NF | AdapterError> {
   const once = Effect.gen(function* lockedByIdOnce() {
     // Unlocked, only to learn which Resource to lock.
-    const seen = yield* p.read(ctx.adapter);
+    const seen = yield* params.read(ctx.adapter);
 
     if (seen === null) {
-      return yield* Effect.fail(p.notFound);
+      return yield* Effect.fail(params.notFound);
     }
 
     return yield* ctx.adapter.withResourceLock(seen.resourceId, (locked) =>
       Effect.gen(function* lockedByIdUnit() {
-        const stored = yield* p.read(locked);
+        const stored = yield* params.read(locked);
 
         if (stored === null) {
-          return yield* Effect.fail(p.notFound);
+          return yield* Effect.fail(params.notFound);
         }
 
         if (stored.resourceId !== seen.resourceId) {
           return yield* Effect.fail(retry);
         }
 
-        return yield* p.work(locked, stored);
+        return yield* params.work(locked, stored);
       })
     );
   });
 
   // shortcut: Retry is unbounded; cap it if outside writers ever churn a row.
-  return Effect.catchIf(
-    once,
-    (e): e is Retry => e === retry,
-    () => lockedById(ctx, p)
-  );
+  return Effect.catchTag(once, "Retry", () => lockedById(ctx, params));
 }
