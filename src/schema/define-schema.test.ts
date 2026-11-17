@@ -144,6 +144,13 @@ describe(defineSchema, () => {
     ).toThrow(/at least one Status/u);
   });
 
+  it("throws on a declared Status without `blocking` (plain JS)", () => {
+    expect(() =>
+      // @ts-expect-error `blocking` is required
+      defineSchema({ booking: { statuses: { paid: {} } } })
+    ).toThrow(/Status "paid" needs `blocking/u);
+  });
+
   it("throws on a Booking or Block Developer Field named `also`", () => {
     expect(() =>
       defineSchema({

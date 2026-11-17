@@ -45,6 +45,9 @@ export type StatusDecls = Readonly<
   Record<string, { readonly blocking: boolean }>
 >;
 
+/** Every Status of a schema declaring `D`: the base ones plus the declared ones. */
+export type StatusesOf<D extends StatusDecls> = BaseStatus | (keyof D & string);
+
 /** A Transition table: each Status → the Statuses it may move to. */
 export type TransitionTable<St extends string> = Readonly<
   Partial<Record<St, readonly St[]>>
@@ -115,17 +118,12 @@ export interface DefineSchemaParams<
     /** The Transitions each Status may make (ADR 009); `booked → cancelled` is always added. */
     readonly transitions?: T &
       NoInfer<
-        TransitionTable<BaseStatus | (keyof D & string)> &
+        TransitionTable<StatusesOf<D>> &
           Readonly<Record<Exclude<keyof T, BaseStatus | keyof D>, never>>
       >;
     /** The Statuses `book` may create a Booking in; defaults to `["booked"]`. With more than one, `book` takes a `status`. */
     readonly initial?: I &
-      NoInfer<
-        readonly [
-          BaseStatus | (keyof D & string),
-          ...(BaseStatus | (keyof D & string))[],
-        ]
-      >;
+      NoInfer<readonly [StatusesOf<D>, ...StatusesOf<D>[]]>;
   };
   /** Declare Blocks, with their Developer Fields (`{}` for none); absent, the schema has no Blocks. A name that collides with a Block column is a type error. */
   readonly block?: { readonly fields: B };
@@ -148,7 +146,7 @@ export interface DefineSchemaParams<
     /** Stored Status values; two Statuses sharing one is a type error. */
     readonly statuses?: N &
       Partial<Record<BaseStatus | NoInfer<keyof D & string>, string>> &
-      NoInfer<DistinctStored<N, BaseStatus | (keyof D & string)>>;
+      NoInfer<DistinctStored<N, StatusesOf<D>>>;
   };
 }
 
@@ -316,14 +314,21 @@ function resolveLifecycle(
     ["cancelled", false],
   ]);
 
-  for (const [status, d] of Object.entries(booking?.statuses ?? {})) {
+  for (const [status, decl] of Object.entries(booking?.statuses ?? {})) {
     if (blocking.has(status)) {
       throw new Error(
         `defineSchema: "${status}" is a base Status; it can't be redeclared.`
       );
     }
 
-    blocking.set(status, d.blocking);
+    // Plain-JS callers can leave it out; a silent non-blocking Status would let overlaps through.
+    if (![true, false].includes(decl.blocking)) {
+      throw new TypeError(
+        `defineSchema: Status "${status}" needs \`blocking: true\` or \`blocking: false\`.`
+      );
+    }
+
+    blocking.set(status, decl.blocking);
   }
 
   const names = [...blocking.keys()];
@@ -409,12 +414,12 @@ export function defineSchema<
 ): Schema<
   R,
   F,
-  BaseStatus | (keyof D & string),
+  StatusesOf<D>,
   B,
-  ResolveTransitions<T, BaseStatus | (keyof D & string)>,
-  I[number] & (BaseStatus | (keyof D & string))
+  ResolveTransitions<T, StatusesOf<D>>,
+  I[number] & StatusesOf<D>
 > {
-  type St = BaseStatus | (keyof D & string);
+  type St = StatusesOf<D>;
 
   const { names } = params;
   // SAFETY: R falls back to its default, Column<"text", string>, exactly when `resource` is absent.

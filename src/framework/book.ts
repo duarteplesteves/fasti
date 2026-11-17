@@ -74,10 +74,10 @@ export function book<S extends AnySchema>(
   const { initial } = ctx.schema;
   // SAFETY: StatusParam<S> is `unknown` or `{ status }`; a plain-JS caller may pass anything, checked next.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't narrow inside a generic.
-  const given = (params as { readonly status?: unknown }).status;
+  const requested = (params as { readonly status?: unknown }).status;
 
   const wanted =
-    given === undefined && initial.length === 1 ? initial[0] : given;
+    requested === undefined && initial.length === 1 ? initial[0] : requested;
 
   const status = initial.find((s) => s === wanted);
 
