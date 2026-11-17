@@ -8,6 +8,8 @@ import type { AvailabilityRule } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { AdapterError } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
+import { writeUnit } from "./write-unit.js";
+import type { AlsoParam, WriteEffect } from "./write-unit.js";
 
 /** An Availability Rule as the caller gives it: no `resourceId`, `exceptions` optional. A {@link RuleRecord} is one, so `get` feeds `set`. */
 export type AvailabilityRuleInput = Omit<AvailabilityRule, "resourceId">;
@@ -26,6 +28,18 @@ export interface SetAvailabilityValue {
   readonly rules: readonly RuleRecord[];
 }
 
+/** What `availability.set`'s `also` gets: the rules after and before, `previous` read under the lock. */
+export interface SetAvailabilityAlso<Tx> {
+  /** The Adapter's transaction handle: write through it to share the unit. */
+  readonly tx: Tx;
+  /** The rules as just stored. */
+  readonly rules: readonly RuleRecord[];
+  /** The rules as they were. */
+  readonly previous: readonly RuleRecord[];
+  /** The Clock's time, read on the unit. */
+  readonly now: Temporal.Instant;
+}
+
 /** Every way `availability.set` can fail. */
 export type SetAvailabilityError = InvalidParams | AdapterError;
 
@@ -40,9 +54,14 @@ export type GetAvailabilityError = AdapterError;
 
 /** Replace a Resource's rules under its Resource Lock (PUT); invalid rules store nothing. */
 export function setAvailability<S extends AnySchema, Tx>(
-  { adapter }: ActionContext<S, Tx>,
-  { resourceId, rules }: SetAvailabilityParams<S>
-): Effect.Effect<SetAvailabilityValue, SetAvailabilityError> {
+  ctx: ActionContext<S, Tx>,
+  {
+    also,
+    resourceId,
+    rules,
+  }: SetAvailabilityParams<S> &
+    AlsoParam<Omit<SetAvailabilityAlso<Tx>, "tx" | "now">, Tx>
+): WriteEffect<SetAvailabilityValue, SetAvailabilityError> {
   const coreId = String(resourceId);
 
   const valid = checked(
@@ -56,11 +75,22 @@ export function setAvailability<S extends AnySchema, Tx>(
 
   const stored = valid.value;
 
-  return Effect.as(
-    adapter.withResourceLock(resourceId, (locked) =>
-      locked.replaceRules({ resourceId, rules: stored })
-    ),
-    { rules: stored }
+  return writeUnit(
+    ctx,
+    resourceId,
+    (locked) =>
+      Effect.gen(function* setAvailabilityUnit() {
+        const previous = yield* locked.getRules(resourceId);
+
+        yield* locked.replaceRules({ resourceId, rules: stored });
+
+        return {
+          _tag: "Done",
+          context: { previous, rules: stored },
+          value: { rules: stored },
+        } as const;
+      }),
+    also
   );
 }
 

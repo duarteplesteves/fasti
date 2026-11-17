@@ -41,6 +41,38 @@ function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
   return { error: found.success, ok: false };
 }
 
+/** A plain `also`: sync or async, a {@link Result} either way. SchedulerActions types its context and Result at the call site. */
+type PlainAlso = (
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- see above.
+  ctx: unknown
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- see above.
+) => Result<unknown, unknown> | Promise<Result<unknown, unknown>>;
+
+/** Params with a plain `also` swapped for its Effect form; a throw or rejection inside it becomes a defect. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- params pass through untouched apart from `also`.
+function effectParams(params: unknown): unknown {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- plain-JS callers may pass anything as params.
+  if (typeof params !== "object" || params === null || !("also" in params)) {
+    return params;
+  }
+
+  // SAFETY: a write Action's `also` is a PlainAlso in the plain form, by WriteAction's type.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+  const also = params.also as PlainAlso;
+
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- as above: the Action, not this walk, owns the params' type.
+  return {
+    ...params,
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- as in PlainAlso.
+    also: (ctx: unknown) =>
+      Effect.flatMap(
+        Effect.promise(async () => await also(ctx)),
+        (result) =>
+          result.ok ? Effect.succeed(result.value) : Effect.fail(result.error)
+      ),
+  };
+}
+
 /** An Action in the walk below; its params pass through untouched, so they stay `unknown` here. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SchedulerActions types the params at the call site.
 type AnyAction = (params: unknown) => Effect.Effect<unknown, unknown>;
@@ -71,7 +103,9 @@ function toPlain(service: object): PlainTree {
 
       // oxlint-disable-next-line anti-slop/no-unknown-parameters -- as in AnyAction.
       async function plain(params: unknown) {
-        return exitToResult(await Effect.runPromiseExit(action(params)));
+        return exitToResult(
+          await Effect.runPromiseExit(action(effectParams(params)))
+        );
       }
 
       return [name, plain] as const;

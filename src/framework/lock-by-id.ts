@@ -5,6 +5,8 @@ import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectLocked, EffectReads } from "./effect-adapter.js";
 import type { AdapterError } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
+import { writeUnit } from "./write-unit.js";
+import type { EffectAlso, Outcome, WriteEffect } from "./write-unit.js";
 
 /** An outside write moved or changed the row between read and write: start over. Never leaves `lockedById`. */
 export interface Retry {
@@ -21,6 +23,7 @@ export interface LockedByIdParams<
   Rec extends { readonly resourceId: ResourceIdOf<S> },
   NF,
   V,
+  C,
   E,
 > {
   /** Read the row by id, unlocked first, then again under the lock. */
@@ -33,7 +36,9 @@ export interface LockedByIdParams<
   readonly work: (
     locked: EffectLocked<S, Tx>,
     stored: Rec
-  ) => Effect.Effect<V, E | Retry>;
+  ) => Effect.Effect<Outcome<V, C>, E | Retry>;
+  /** The developer's `also`, run by `writeUnit` after `work`. */
+  readonly also: EffectAlso<C, Tx> | undefined;
 }
 
 /** Run `work` on a row addressed by id, under its Resource's lock: the one place an Action retries. */
@@ -43,36 +48,47 @@ export function lockedById<
   Rec extends { readonly resourceId: ResourceIdOf<S> },
   NF,
   V,
+  C,
   E,
 >(
   ctx: ActionContext<S, Tx>,
-  params: LockedByIdParams<S, Tx, Rec, NF, V, E>
-): Effect.Effect<V, E | NF | AdapterError> {
-  const once = Effect.gen(function* lockedByIdOnce() {
-    // Unlocked, only to learn which Resource to lock.
-    const seen = yield* params.read(ctx.adapter);
+  params: LockedByIdParams<S, Tx, Rec, NF, V, C, E>
+): WriteEffect<V, E | NF> {
+  const once: WriteEffect<V, E | NF | Retry> = Effect.gen(
+    function* lockedByIdOnce() {
+      // Unlocked, only to learn which Resource to lock.
+      const seen = yield* params.read(ctx.adapter);
 
-    if (seen === null) {
-      return yield* Effect.fail(params.notFound);
+      if (seen === null) {
+        return yield* Effect.fail(params.notFound);
+      }
+
+      return yield* writeUnit(
+        ctx,
+        seen.resourceId,
+        (locked) =>
+          Effect.gen(function* lockedByIdUnit() {
+            const stored = yield* params.read(locked);
+
+            if (stored === null) {
+              return yield* Effect.fail(params.notFound);
+            }
+
+            if (stored.resourceId !== seen.resourceId) {
+              return yield* Effect.fail(retry);
+            }
+
+            return yield* params.work(locked, stored);
+          }),
+        params.also
+      );
     }
-
-    return yield* ctx.adapter.withResourceLock(seen.resourceId, (locked) =>
-      Effect.gen(function* lockedByIdUnit() {
-        const stored = yield* params.read(locked);
-
-        if (stored === null) {
-          return yield* Effect.fail(params.notFound);
-        }
-
-        if (stored.resourceId !== seen.resourceId) {
-          return yield* Effect.fail(retry);
-        }
-
-        return yield* params.work(locked, stored);
-      })
-    );
-  });
+  );
 
   // shortcut: Retry is unbounded; cap it if outside writers ever churn a row.
-  return Effect.catchTag(once, "Retry", () => lockedById(ctx, params));
+  return Effect.catchIf(
+    once,
+    (error): error is Retry => error === retry,
+    () => lockedById(ctx, params)
+  );
 }

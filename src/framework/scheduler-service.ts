@@ -8,6 +8,7 @@ import { getAvailability, setAvailability } from "./availability.js";
 import type {
   GetAvailabilityError,
   GetAvailabilityParams,
+  SetAvailabilityAlso,
   SetAvailabilityError,
   SetAvailabilityParams,
   SetAvailabilityValue,
@@ -21,8 +22,8 @@ import type {
   UpdateBlockParams,
 } from "./blocks.js";
 import { book } from "./book.js";
-import type { BookError, BookParams } from "./book.js";
-import type { Booking } from "./booking.js";
+import type { BookAlso, BookError, BookParams } from "./book.js";
+import type { Booking, ChangeAlso } from "./booking.js";
 import { cancel } from "./cancel.js";
 import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { CreateSchedulerParams } from "./create-scheduler.js";
@@ -41,16 +42,22 @@ export interface ActionContext<S extends AnySchema, Tx> {
 
 /**
  * Every Action, in form `F`: each declared once for both forms, so they can't drift (ADR 010).
- * `blocks` only when the schema declares `block`. `_Tx` is the Adapter's transaction handle; unused until `also` contexts carry it.
+ * `blocks` only when the schema declares `block`. `Tx` is the Adapter's transaction handle, as `also` gets it.
  */
-export type SchedulerActions<S extends AnySchema, _Tx, F extends Form> = {
+export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
   /** Store a new Booking. */
-  readonly book: WriteAction<F, BookParams<S>, never, Booking<S>, BookError>;
+  readonly book: WriteAction<
+    F,
+    BookParams<S>,
+    BookAlso<S, Tx>,
+    Booking<S>,
+    BookError
+  >;
   /** Cancel a Booking, freeing its slot. Idempotent. */
   readonly cancel: WriteAction<
     F,
     CancelParams,
-    never,
+    ChangeAlso<S, Tx>,
     CancelValue<S>,
     CancelError
   >;
@@ -67,7 +74,7 @@ export type SchedulerActions<S extends AnySchema, _Tx, F extends Form> = {
     readonly set: WriteAction<
       F,
       SetAvailabilityParams<S>,
-      never,
+      SetAvailabilityAlso<Tx>,
       SetAvailabilityValue,
       SetAvailabilityError
     >;
@@ -80,7 +87,7 @@ export type SchedulerActions<S extends AnySchema, _Tx, F extends Form> = {
     >;
   };
 } & (HasBlocks<S> extends true
-  ? { readonly blocks: BlockActions<S, _Tx, F> }
+  ? { readonly blocks: BlockActions<S, Tx, F> }
   : unknown);
 
 /** The Actions, Effect form. The Effect form doesn't name `Tx` yet, so it's `unknown` here. */
@@ -122,7 +129,7 @@ export function makeScheduler<S extends AnySchema, Tx>({
     findSlots: (params: FindSlotsParams<S>) => findSlots(ctx, params),
   };
 
-  // SAFETY: each Action implements its WriteAction's plain overload; the `also` overload is unreachable until `also` lands (its param is never).
+  // SAFETY: each Action takes an optional Effect-form `also` and merges its value as WithAlso describes; the plain form's is adapted in toPlain.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an overloaded interface can't be implemented by a single-signature arrow.
   return (
     schema.block === null ? base : { ...base, blocks }

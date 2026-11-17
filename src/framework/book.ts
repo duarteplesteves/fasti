@@ -12,6 +12,8 @@ import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
 import { conflictsAt } from "./occupancy.js";
 import { checkPlacement } from "./placement.js";
 import type { ActionContext } from "./scheduler-service.js";
+import { writeUnit } from "./write-unit.js";
+import type { AlsoParam, WriteEffect } from "./write-unit.js";
 
 type IsUnion<T, U = T> = T extends unknown
   ? [U] extends [T]
@@ -39,6 +41,16 @@ export type BookParams<S extends AnySchema> = {
 } & FieldsParam<S["booking"]["fields"]> &
   StatusParam<S>;
 
+/** What `book`'s `also` gets: the new Booking, on fasti's unit of work. */
+export interface BookAlso<S extends AnySchema, Tx> {
+  /** The Adapter's transaction handle: write through it to share the unit. */
+  readonly tx: Tx;
+  /** The Booking just stored. */
+  readonly booking: Booking<S>;
+  /** The Clock's time, read on the unit. */
+  readonly now: Temporal.Instant;
+}
+
 /** Every way `book` can fail. */
 export type BookError =
   | InvalidParams
@@ -49,8 +61,8 @@ export type BookError =
 /** Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and inside availability (ADR 014: overlap first). */
 export function book<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: BookParams<S>
-): Effect.Effect<Booking<S>, BookError> {
+  params: BookParams<S> & AlsoParam<{ readonly booking: Booking<S> }, Tx>
+): WriteEffect<Booking<S>, BookError> {
   const { resourceId } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
@@ -93,38 +105,46 @@ export function book<S extends AnySchema, Tx>(
     });
   }
 
-  return ctx.adapter.withResourceLock(resourceId, (locked) =>
-    Effect.gen(function* bookUnit() {
-      yield* checkPlacement(locked, ctx, {
-        ...range,
-        blocking: ctx.codec.isBlocking(status),
-      });
-
-      // SAFETY: the base columns are set, and every schema field is set: required ones by BookParams' type, optional ones to their value or `null`.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
-      const record = {
-        ...fieldValues<S["booking"]["fields"]>(
-          ctx.schema.booking.fields,
-          params
-        ),
-        end,
-        id: mintBookingId(),
-        resourceId,
-        start,
-        status,
-      } as BookingRecord<S>;
-
-      const inserted = yield* locked.insertBooking(record);
-
-      if (!inserted.ok) {
-        // The backstop caught an outside write the lock can't see: report what is there now.
-        return yield* Effect.fail<SlotConflict>({
-          _tag: "SlotConflict",
-          conflicts: yield* conflictsAt(locked, ctx.codec, range),
+  return writeUnit(
+    ctx,
+    resourceId,
+    (locked) =>
+      Effect.gen(function* bookUnit() {
+        yield* checkPlacement(locked, ctx, {
+          ...range,
+          blocking: ctx.codec.isBlocking(status),
         });
-      }
 
-      return record;
-    })
+        // SAFETY: the base columns are set, and every schema field is set: required ones by BookParams' type, optional ones to their value or `null`.
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
+        const record = {
+          ...fieldValues<S["booking"]["fields"]>(
+            ctx.schema.booking.fields,
+            params
+          ),
+          end,
+          id: mintBookingId(),
+          resourceId,
+          start,
+          status,
+        } as BookingRecord<S>;
+
+        const inserted = yield* locked.insertBooking(record);
+
+        if (!inserted.ok) {
+          // The backstop caught an outside write the lock can't see: report what is there now.
+          return yield* Effect.fail<SlotConflict>({
+            _tag: "SlotConflict",
+            conflicts: yield* conflictsAt(locked, ctx.codec, range),
+          });
+        }
+
+        return {
+          _tag: "Done",
+          context: { booking: record },
+          value: record,
+        } as const;
+      }),
+    params.also
   );
 }

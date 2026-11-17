@@ -1,4 +1,4 @@
-import { Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Result as EffectResult } from "effect";
 
 import type {
   AdapterReads,
@@ -155,6 +155,18 @@ function liftLocked<S extends AnySchema, Tx>(
   };
 }
 
+/** The rollback reason for a failed unit, so the Adapter can classify it (e.g. as transient): an AdapterError's original rejection, a defect as thrown, otherwise `rollback`. */
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- a rejection reason is whatever was thrown; the Adapter classifies it.
+function rejectionFor(cause: Cause.Cause<unknown>, rollback: Error): unknown {
+  const found = Cause.findError(cause);
+
+  if (EffectResult.isFailure(found)) {
+    return Cause.squash(cause);
+  }
+
+  return found.success instanceof AdapterError ? found.success.cause : rollback;
+}
+
 /** Wrap a Promise Adapter bound to `schema` as an {@link EffectAdapter}. Without `block`, the Block verbs never reach it. */
 export function liftAdapter<S extends AnySchema, Tx>(
   bound: SchemaAdapter<S, Tx, GroupsOf<S>>,
@@ -174,6 +186,7 @@ export function liftAdapter<S extends AnySchema, Tx>(
       Effect.flatten(
         attempt(async (): Promise<Exit.Exit<A, E>> => {
           let failure: Exit.Exit<A, E> | undefined;
+          let thrown: unknown;
           const rollback = new Error("fasti: the unit of work failed");
 
           try {
@@ -184,15 +197,16 @@ export function liftAdapter<S extends AnySchema, Tx>(
 
               if (Exit.isFailure(exit)) {
                 failure = exit;
+                thrown = rejectionFor(exit.cause, rollback);
                 // Rejecting rolls the unit back; the contract rejects with this same reason.
-                throw rollback;
+                throw thrown;
               }
 
               return exit;
             });
           } catch (error) {
             // The work's own failure (typed or defect) passes through; anything else is the Adapter's.
-            if (error === rollback && failure !== undefined) {
+            if (failure !== undefined && error === thrown) {
               return failure;
             }
 

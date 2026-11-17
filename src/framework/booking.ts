@@ -25,6 +25,18 @@ export type FieldsParam<F extends Fields> = [keyof F] extends [never]
     ? { readonly fields?: FieldsInput<F> }
     : { readonly fields: FieldsInput<F> };
 
+/** What `also` gets from an Action that changes a Booking: the Booking after and before. */
+export interface ChangeAlso<S extends AnySchema, Tx> {
+  /** The Adapter's transaction handle: write through it to share the unit. */
+  readonly tx: Tx;
+  /** The Booking as just stored. */
+  readonly booking: Booking<S>;
+  /** The Booking as it was. */
+  readonly previous: Booking<S>;
+  /** The Clock's time, read on the unit. */
+  readonly now: Temporal.Instant;
+}
+
 /** Truncate to the millisecond, toward the past: the precision every Adapter stores. */
 export function floorMs(instant: Temporal.Instant): Temporal.Instant {
   return Temporal.Instant.fromEpochMilliseconds(instant.epochMilliseconds);
