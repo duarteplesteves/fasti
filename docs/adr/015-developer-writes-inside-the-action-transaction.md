@@ -42,3 +42,24 @@ We choose option 3.
 - **Negative:** `also` runs under the Resource Lock. A slow `also` delays every other write to that Resource.
 - **Negative:** Several Actions can't share one transaction.
 - **Negative:** The in-memory Adapter can't make the developer's own writes atomic, and databases without interactive transactions (Cloudflare D1) can't run `also` atomically at all.
+
+## Amendment (2026-11-17): `also` as built in checkpoint 6
+
+Building `also` (#98) settled five details the decision left open:
+
+- **Block Actions take `also` too**, since Blocks (ADR 016) are write Actions under the Resource Lock. Every Action's context, each with `tx` and `now`:
+
+  | Actions | Context |
+  |---|---|
+  | `book` | `{ tx, booking, now }` |
+  | `reschedule`, `cancel`, `transition` | `{ tx, booking, previous, now }` |
+  | `availability.set` | `{ tx, rules, previous, now }` (no `resourceId`, unlike the Decision above) |
+  | `blocks.create` | `{ tx, block, now }` |
+  | `blocks.update` | `{ tx, block, previous, now }` |
+  | `blocks.delete` | `{ tx, previous, now }` |
+
+  On success, `also: A` joins the flat Booking or Block, `availability.set`'s `{ rules }`, `cancel`'s `{ booking, alreadyCancelled: false }`, and is the whole value of `blocks.delete` as `{ also: A }`. `Vetoed` joins the error union only when `also` is passed. `now` is read once per call from Effect's `Clock`.
+- **`also` is a reserved field name.** A Booking or Block Developer Field named `also` is a type error and throws in `defineSchema`, so the returned value's `also` key can never clash with a Developer Field.
+- **A `blocks.update` that changes nothing still runs `also`**, under the lock, with `block` equal to `previous`. Unlike a repeat `cancel`, nothing like a refund is at stake, and it keeps the value type free of a union.
+- **Retries can rerun `also`.** The Drizzle Postgres Adapter reruns the whole unit of work, `also` included, on a serialization failure or deadlock (ADR 008's "Adapters retry their own transient errors", now in force), up to 3 attempts. So `also` must write only through `tx`. When attempts run out, a failure from fasti's own write is an `AdapterError`, and one from inside `also` rejects with what was thrown: a deadlock hit by a plain `also`'s query surfaces as a rejection, not an `AdapterError`.
+- **The Adapter's `withResourceLock` rejects with the original error** behind an `AdapterError`, or with what `also` threw, so an Adapter can classify it for retry.

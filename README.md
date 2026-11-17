@@ -112,7 +112,7 @@ if (!result.ok) {
 
 | Action             | Value                                    | Errors (`_tag`)                                                       |
 | ------------------ | ---------------------------------------- | --------------------------------------------------------------------- |
-| `book`             | the `Booking`, `status: "booked"`        | `InvalidParams`, `SlotConflict`, `PolicyViolation`, `AdapterError`    |
+| `book`             | the `Booking`, in its initial Status     | `InvalidParams`, `SlotConflict`, `PolicyViolation`, `AdapterError`    |
 | `reschedule`       | the moved `Booking`, same id and Status  | `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `PolicyViolation`, `AdapterError` |
 | `cancel`           | `{ booking, alreadyCancelled }`          | `BookingNotFound`, `TransitionNotDeclared`, `AdapterError`            |
 | `transition`       | the `Booking`, in its new Status         | `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `AdapterError` |
@@ -126,6 +126,7 @@ if (!result.ok) {
 - `transition({ id, from, to })` moves a Booking along a declared Transition, compare-and-set on `from`: if the stored Status isn't `from`, it's a `StatusMismatch` carrying the stored one. `to` is narrowed by `from`, and `cancelled` is never a `to` (use `cancel`). It exists when some declared Transition doesn't end in `cancelled`. Moving into a blocking Status from a non-blocking one re-checks overlap; availability is never checked. `cancel` from a Status with no Transition to `cancelled` gives `TransitionNotDeclared`. Both take a partial `fields` patch.
 - `reschedule({ id, start, end, resourceId?, fields? })` moves a blocking Booking in time, or to another Resource when you pass `resourceId`. It ignores the Booking itself in the overlap check and takes the lock on the destination only. A Booking in a non-blocking Status (e.g. `cancelled`) gives `StatusMismatch { id, status }`.
 - `findSlots({ ..., excludeBookingId })` leaves that Booking out of the overlap check, so a UI can offer only the times `reschedule` accepts.
+- Given an [`also`](#your-writes-in-the-same-transaction-also), every write Action can also fail with `Vetoed`.
 
 ## Effect
 
@@ -221,37 +222,84 @@ if (!overLunch.ok && overLunch.error._tag === "SlotConflict") {
 
 **In a custom Adapter.** A schema with `block` needs an Adapter that implements the Block verb group, and the types enforce it: declare it as `Adapter<Tx, "blocks">` (or `defineAdapter<Tx, "blocks">`) and add `getBlock` and `listBlocks` to the reads, and `insertBlock`, `updateBlock` (compare-and-set, `"changed"`) and `deleteBlock` (`"missing"`) to the locked handle. See [Writing a custom Adapter](#writing-a-custom-adapter). `testAdapter` runs the Conformance Suite's Blocks cases whenever your schema declares `block`.
 
+## Statuses and Transitions
+
+Two Statuses ship: `booked`, which blocks its slot, and `cancelled`, which doesn't. Declare your own in `defineSchema`, with the Transitions between them ([ADR 009](./docs/adr/009-booking-lifecycle.md)):
+
+```typescript
+export const schema = defineSchema({
+  booking: {
+    fields: { customerName: { required: true, type: column.text() } },
+    statuses: {
+      inProgress: { blocking: true },
+      noShow: { blocking: false },
+      done: { blocking: false },
+      request: { blocking: false },
+    },
+    transitions: {
+      request: ["booked", "cancelled"],
+      booked: ["inProgress", "noShow"], // booked → cancelled is always there
+      inProgress: ["done"], // inProgress can't be cancelled
+      cancelled: ["booked"], // un-cancel
+    },
+    initial: ["booked", "request"], // the Statuses `book` may create in; default ["booked"]
+  },
+});
+
+const request = await scheduler.book({ ...slot, fields, status: "request" }); // `status` is required: `initial` has two
+
+await scheduler.transition({ id, from: "request", to: "booked" }); // re-checks overlap: `booked` blocks
+await scheduler.transition({ id, from: "booked", to: "done" }); // type error: no booked → done
+```
+
+- `blocking` is all fasti reads from a Status. A blocking Status takes part in the overlap check, `findSlots` and the backstop; a non-blocking one frees its slot.
+- A Status with no Transitions leaving it is terminal. `cancel` is the only way into `cancelled`, and works only from Statuses with a Transition to it; from any other, it fails with `TransitionNotDeclared`.
+- `book` takes `status` only when `initial` has more than one entry. Booking into a non-blocking Status skips the overlap check, but availability still applies.
+- `scheduler.transition` exists when some declared Transition doesn't end in `cancelled`. A schema that declares only Statuses, or only Transitions into `cancelled`, has no `transition`.
+- Stored values can be renamed under `names.statuses`, like the base ones. Redeclaring `booked` or `cancelled`, naming an unknown Status in `transitions` or `initial`, or two Statuses sharing a stored value is a type error, and throws in `defineSchema`.
+- On Drizzle, the Status `CHECK` constraint and `backstopSql` list your Statuses: adding one, or flipping its `blocking`, needs a migration ([the backstop](#drizzle-on-postgres)).
+
 ## Your writes in the same transaction (`also`)
 
 Every write Action (`book`, `reschedule`, `cancel`, `transition`, `availability.set`, `blocks.create`, `blocks.update`, `blocks.delete`) takes an optional `also`. fasti calls it after its own write, on the same unit of work, with the Adapter's `tx` and the Clock's `now` ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)):
 
-```ts
+```typescript
+// Each Booking spends a credit from a prepaid pack, a table of your own.
 const result = await scheduler.book({
-  resourceId,
-  start,
-  end,
-  also: async ({ tx, booking }) => {
-    await tx.insert(auditLog).values({ bookingId: booking.id });
-    return { ok: true, value: "logged" };
+  ...slot,
+  fields: { customerName: "Ada" },
+  also: async ({ tx }) => {
+    // A guarded update: race-free, and it changes no row when the pack is empty.
+    const [row] = await tx
+      .update(pack)
+      .set({ remaining: sql`${pack.remaining} - 1` })
+      .where(and(eq(pack.id, packId), gt(pack.remaining, 0)))
+      .returning({ remaining: pack.remaining });
+
+    return row === undefined
+      ? { ok: false as const, error: "no credits left" as const }
+      : { ok: true as const, value: row.remaining };
   },
 });
-// result.value is the Booking plus `also: "logged"`.
+// ok: the Booking plus `also`, the credits left.
+// Vetoed: { _tag: "Vetoed", reason: "no credits left" }, and no Booking was stored.
 ```
 
 - `also` may be sync or async, and returns a `Result`. Its `value` comes back on the Action's value as `also` (a `blocks.delete` value is `{ also }`).
 - Returning `{ ok: false, error }` vetoes: everything rolls back, fasti's write included, and the Action fails with `{ _tag: "Vetoed", reason: error }`. A throw also rolls back, and the promise rejects with what was thrown.
 - Write only through `tx`: anything else isn't part of the unit and won't roll back. On the memory Adapter `tx` is `undefined`.
-- `also` may run more than once. The Drizzle Adapter reruns the whole unit, `also` included, when it fails with a deadlock or a serialization failure (`40P01`, `40001`), up to 3 attempts. When they run out, it fails as on the last attempt: an `AdapterError` if fasti's write failed, a rejection if `also` threw. Another reason to write only through `tx`.
+- `also` may run more than once. The Drizzle Adapter reruns the whole unit, `also` included, when it fails with a deadlock or a serialization failure (`40P01`, `40001`), up to 3 attempts. When they run out, it fails as on the last attempt: an `AdapterError` if fasti's write failed, a rejection if `also` threw. So a deadlock hit by a query inside a plain `also` rejects the promise rather than returning `AdapterError`. Another reason to write only through `tx`.
+- `also` runs under the Resource Lock, so a slow `also` delays every other write to that Resource. Don't call an Action from inside it: that's unsupported, and on the same Resource it deadlocks.
 - What each Action passes, besides `tx` and `now`: `book` gets `booking`; `reschedule`, `cancel` and `transition` get `booking` and `previous`; `availability.set` gets `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
+- `also` is a reserved name: a Booking or Block Developer Field can't be called `also`.
 
 ## Not yet
 
-`0.1.0` books and cancels. These are planned (see the [roadmap](./ROADMAP.md)):
+These are planned (see the [roadmap](./ROADMAP.md)):
 
 - Policies beyond availability, `relax` on the Actions, and `notice` (past starts are bookable today).
 - `getBooking` and `listBookings` Actions; read through your own database meanwhile.
-- Retrying transient database errors.
 
 ## The Core
 
@@ -428,7 +476,7 @@ const adapter = drizzleAdapter(db);
 npx drizzle-kit generate --custom --name=fasti-backstop
 ```
 
-Then paste each statement from `backstopSql(schema)` into the generated file, separated by `--> statement-breakpoint`. drizzle-kit doesn't know about this constraint: later generated migrations neither include nor drop it. If you rename the Booking table, its columns or a blocking Status, drop the old constraint and add a new one yourself. The constraint assumes a capacity of one Booking per Resource at a time.
+Then paste each statement from `backstopSql(schema)` into the generated file, separated by `--> statement-breakpoint`. drizzle-kit doesn't know about this constraint: later generated migrations neither include nor drop it. If you rename the Booking table, its columns or a blocking Status, or add, remove or flip a blocking Status, drop the old constraint and add the new statements from `backstopSql(schema)` in a new custom migration. Declared Statuses also change the `CHECK` constraint on `status`, which drizzle-kit generates for you. The constraint assumes a capacity of one Booking per Resource at a time.
 
 ### Writing a custom Adapter
 
