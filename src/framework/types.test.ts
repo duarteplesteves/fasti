@@ -297,14 +297,14 @@ describe("Block exports", () => {
     expectTypeOf<BlockReads<S>>().toHaveProperty("listBlocks");
     expectTypeOf<BlockWrites<S>>().toHaveProperty("insertBlock");
     expectTypeOf<
-      Parameters<BlockActions<S, "effect">["list"]>[0]
+      Parameters<BlockActions<S, Tx, "effect">["list"]>[0]
     >().toEqualTypeOf<ListBlocksParams<S>>();
     expectTypeOf<ListBlocksError>().toExtend<CreateBlockError>();
     expectTypeOf<
-      Parameters<BlockActions<S, "effect">["update"]>[0]
+      Parameters<BlockActions<S, Tx, "effect">["update"]>[0]
     >().toEqualTypeOf<UpdateBlockParams<S>>();
     expectTypeOf<
-      Parameters<BlockActions<S, "effect">["delete"]>[0]
+      Parameters<BlockActions<S, Tx, "effect">["delete"]>[0]
     >().toEqualTypeOf<DeleteBlockParams>();
     expectTypeOf<BlockNotFound>().toExtend<UpdateBlockError>();
     expectTypeOf<BlockNotFound>().toExtend<DeleteBlockError>();
@@ -418,8 +418,36 @@ describe("forms", () => {
         params: FindSlotsParams<S>
       ) => Effect.Effect<readonly Slot<S>[], FindSlotsError>
     >();
+    expectTypeOf<Single<Service["cancel"]>>().toEqualTypeOf<
+      (params: CancelParams) => Effect.Effect<CancelValue<S>, CancelError>
+    >();
+    expectTypeOf<Single<Service["availability"]["set"]>>().toEqualTypeOf<
+      (
+        params: SetAvailabilityParams<S>
+      ) => Effect.Effect<SetAvailabilityValue, SetAvailabilityError>
+    >();
+    expectTypeOf<Single<Service["availability"]["get"]>>().toEqualTypeOf<
+      (
+        params: GetAvailabilityParams<S>
+      ) => Effect.Effect<readonly RuleRecord[], GetAvailabilityError>
+    >();
+    expectTypeOf<Single<Service["blocks"]["create"]>>().toEqualTypeOf<
+      (
+        params: CreateBlockParams<S>
+      ) => Effect.Effect<Block<S>, CreateBlockError>
+    >();
+    expectTypeOf<Single<Service["blocks"]["update"]>>().toEqualTypeOf<
+      (
+        params: UpdateBlockParams<S>
+      ) => Effect.Effect<Block<S>, UpdateBlockError>
+    >();
     expectTypeOf<Single<Service["blocks"]["delete"]>>().toEqualTypeOf<
       (params: DeleteBlockParams) => Effect.Effect<void, DeleteBlockError>
+    >();
+    expectTypeOf<Single<Service["blocks"]["list"]>>().toEqualTypeOf<
+      (
+        params: ListBlocksParams<S>
+      ) => Effect.Effect<readonly Block<S>[], ListBlocksError>
     >();
   });
 

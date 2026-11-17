@@ -83,8 +83,8 @@ export type DeleteBlockError = BlockNotFound | AdapterError;
 /** Every way `blocks.list` can fail. */
 export type ListBlocksError = InvalidParams | AdapterError;
 
-/** The Block Actions in form `F`: on a scheduler only when the schema declares `block`. */
-export interface BlockActions<S extends AnySchema, F extends Form> {
+/** The Block Actions in form `F`: on a scheduler only when the schema declares `block`. `_Tx` as in `SchedulerActions`. */
+export interface BlockActions<S extends AnySchema, _Tx, F extends Form> {
   /** Store a new Block, if no blocking Booking overlaps it. Blocks may overlap each other. */
   readonly create: WriteAction<
     F,

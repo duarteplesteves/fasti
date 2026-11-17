@@ -80,7 +80,7 @@ export type SchedulerActions<S extends AnySchema, _Tx, F extends Form> = {
     >;
   };
 } & (HasBlocks<S> extends true
-  ? { readonly blocks: BlockActions<S, F> }
+  ? { readonly blocks: BlockActions<S, _Tx, F> }
   : unknown);
 
 /** The Actions, Effect form. The Effect form doesn't name `Tx` yet, so it's `unknown` here. */
@@ -92,7 +92,7 @@ export type SchedulerService<S extends AnySchema> = SchedulerActions<
 
 /** Each Action, as written: a single Effect signature, before it's fitted to the overloaded {@link WriteAction}. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- params are typed by SchedulerActions at the call site.
-type Bound = (params: never) => Effect.Effect<unknown, unknown>;
+type ActionImpl = (params: never) => Effect.Effect<unknown, unknown>;
 
 /** Bind the Actions to a schema and an Adapter. */
 export function makeScheduler<S extends AnySchema, Tx>({
@@ -110,7 +110,7 @@ export function makeScheduler<S extends AnySchema, Tx>({
     delete: (params: DeleteBlockParams) => deleteBlock(ctx, params),
     list: (params: ListBlocksParams<S>) => listBlocks(ctx, params),
     update: (params: UpdateBlockParams<S>) => updateBlock(ctx, params),
-  } satisfies Record<string, Bound>;
+  } satisfies Record<string, ActionImpl>;
 
   const base = {
     availability: {
