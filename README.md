@@ -440,7 +440,14 @@ testAdapter({
     /* empty the fasti tables; keep your Resource rows */
   },
   resources: [staffA, staffB], // two Resource ids that exist in your database
-  groups: { backstop: false }, // true only if your database has a constraint like backstopSql
+  groups: {
+    backstop: false, // true only if your database has a constraint like backstopSql
+    // Proves writes through `tx` share fasti's unit of work; null if your `tx` is no transaction.
+    tx: {
+      write: async (tx) => { /* insert one row in a table of your own through tx */ },
+      count: async () => { /* count those rows, outside any transaction */ },
+    },
+  },
 });
 ```
 

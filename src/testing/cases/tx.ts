@@ -22,7 +22,7 @@ function probeOf<S extends AnySchema, Tx>({
 /** A Booking and a probe row written in one unit of work, through `locked` and `locked.tx`. */
 async function writeBoth<S extends AnySchema, Tx>(
   ctx: CaseContext<S, Tx>,
-  then: "resolve" | "reject"
+  ending: "resolve" | "reject"
 ) {
   const { adapter, resources, schema } = ctx;
   const probe = probeOf(ctx);
@@ -40,16 +40,16 @@ async function writeBoth<S extends AnySchema, Tx>(
     expect(await locked.insertBooking(booking)).toStrictEqual({ ok: true });
     await probe.write(locked.tx);
 
-    if (then === "reject") {
+    if (ending === "reject") {
       throw reason;
     }
   });
 
-  await (then === "reject"
+  await (ending === "reject"
     ? expect(unit).rejects.toBe(reason)
     : expect(unit).resolves.toBeUndefined());
 
-  return { before, booking, probe };
+  return { before, booking };
 }
 
 /** `locked.tx` is the unit of work itself (ADR 015): the developer's writes through it commit and roll back with fasti's. */
@@ -57,20 +57,20 @@ export const txCases: readonly ConformanceCase[] = [
   {
     name: "a unit that writes a Booking and a probe row through tx, then rejects, leaves neither",
     async run(ctx) {
-      const { before, booking, probe } = await writeBoth(ctx, "reject");
+      const { before, booking } = await writeBoth(ctx, "reject");
 
       expect(await ctx.adapter.getBooking(booking.id)).toBeNull();
-      expect(await probe.count()).toBe(before);
+      expect(await probeOf(ctx).count()).toBe(before);
     },
     tags: ["tx"],
   },
   {
     name: "a unit that writes a Booking and a probe row through tx, then resolves, keeps both",
     async run(ctx) {
-      const { before, booking, probe } = await writeBoth(ctx, "resolve");
+      const { before, booking } = await writeBoth(ctx, "resolve");
 
       expect(await ctx.adapter.getBooking(booking.id)).toStrictEqual(booking);
-      expect(await probe.count()).toBe(before + 1);
+      expect(await probeOf(ctx).count()).toBe(before + 1);
     },
     tags: ["tx"],
   },
