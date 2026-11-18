@@ -66,7 +66,7 @@ export const tables = {
 
 ```typescript
 const db = drizzle({ client: new Pool({ connectionString: process.env.DATABASE_URL }) });
-const scheduler = createScheduler({ adapter: drizzleAdapter(db), schema });
+const scheduler = createScheduler({ adapter: drizzleAdapter(db), policies: [], schema });
 
 await scheduler.availability.set({
   resourceId: "room-1",
@@ -101,7 +101,7 @@ const result = await scheduler.book({
 if (!result.ok) {
   switch (result.error._tag) {
     case "SlotConflict": // result.error.conflicts: [{ kind, id, start, end }]
-    case "PolicyViolation": // outside availability
+    case "PolicyViolation": // result.error.violations: [{ policy: "availability", detail: {} }]
     case "InvalidParams": // result.error.issues, each with a `path`
     case "AdapterError": // the database failed; result.error.cause
   }
@@ -114,18 +114,19 @@ if (!result.ok) {
 | ------------------ | ---------------------------------------- | --------------------------------------------------------------------- |
 | `book`             | the `Booking`, in its initial Status     | `InvalidParams`, `SlotConflict`, `PolicyViolation`, `AdapterError`    |
 | `reschedule`       | the moved `Booking`, same id and Status  | `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `PolicyViolation`, `AdapterError` |
-| `cancel`           | `{ booking, alreadyCancelled }`          | `BookingNotFound`, `TransitionNotDeclared`, `AdapterError`            |
-| `transition`       | the `Booking`, in its new Status         | `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `AdapterError` |
-| `findSlots`        | `Slot[]`, zoned in `timezone`            | `InvalidParams`, `AdapterError`                                       |
+| `cancel`           | `{ booking, alreadyCancelled }`          | `InvalidParams`, `BookingNotFound`, `TransitionNotDeclared`, `PolicyViolation`, `AdapterError` |
+| `transition`       | the `Booking`, in its new Status         | `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `PolicyViolation`, `AdapterError` |
+| `findSlots`        | `Slot[]`, zoned in `timezone`            | `InvalidParams`, `BookingNotFound`, `AdapterError`                    |
 | `availability.set` | `{ rules }`, replacing the whole set     | `InvalidParams`, `AdapterError`                                       |
 | `availability.get` | the stored rules                         | `AdapterError`                                                        |
 
 - An overlap is checked before availability, so an overlapping Booking outside hours is a `SlotConflict` alone ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)).
+- `PolicyViolation` is in an Action's error type only when some [Policy](#policies) applies to it and isn't relaxed. `availability` always applies to `book` and `reschedule`.
 - Domain errors are plain objects with no `message`, safe to send to a client as JSON. `AdapterError` is an `Error` whose `cause` is your driver's error ([ADR 010](./docs/adr/010-action-results-and-two-forms.md)).
 - `cancel` is idempotent. `book` is not: each call mints a new id, so dedupe retries in your backend.
 - `transition({ id, from, to })` moves a Booking along a declared Transition, compare-and-set on `from`: if the stored Status isn't `from`, it's a `StatusMismatch` carrying the stored one. `to` is narrowed by `from`, and `cancelled` is never a `to` (use `cancel`). It exists when some declared Transition doesn't end in `cancelled`. Moving into a blocking Status from a non-blocking one re-checks overlap; availability is never checked. `cancel` from a Status with no Transition to `cancelled` gives `TransitionNotDeclared`. Both take a partial `fields` patch.
 - `reschedule({ id, start, end, resourceId?, fields? })` moves a blocking Booking in time, or to another Resource when you pass `resourceId`. It ignores the Booking itself in the overlap check and takes the lock on the destination only. A Booking in a non-blocking Status (e.g. `cancelled`) gives `StatusMismatch { id, status }`.
-- `findSlots({ ..., excludeBookingId })` leaves that Booking out of the overlap check, so a UI can offer only the times `reschedule` accepts.
+- `findSlots({ ..., excludeBookingId })` leaves that Booking out of the overlap check and judges each slot with the `reschedule` Policies, so a UI can offer only the times `reschedule` accepts. An id that names no Booking is `BookingNotFound`.
 - Given an [`also`](#your-writes-in-the-same-transaction-also), every write Action can also fail with `Vetoed`.
 
 ## Effect
@@ -139,7 +140,7 @@ import { Effect } from "effect";
 
 const adapter = drizzleAdapter(db);
 
-class AppScheduler extends Scheduler<AppScheduler, typeof schema, TxOf<typeof adapter>>()("app/Scheduler") {}
+class AppScheduler extends Scheduler<AppScheduler, typeof schema, TxOf<typeof adapter>, readonly []>()("app/Scheduler") {}
 
 const program = Effect.gen(function* bookOne() {
   const scheduler = yield* AppScheduler;
@@ -150,11 +151,11 @@ const program = Effect.gen(function* bookOne() {
 });
 
 await Effect.runPromise(
-  program.pipe(Effect.provide(AppScheduler.layer({ adapter, schema })))
+  program.pipe(Effect.provide(AppScheduler.layer({ adapter, policies: [], schema })))
 );
 ```
 
-The third type parameter is your Adapter's transaction handle, the `tx` an `also` gets. In this form `also` returns an Effect: it may require your own services (they join the Action's requirements), and its `now` comes from Effect's `Clock`, so `TestClock` controls it.
+The third type parameter is your Adapter's transaction handle, the `tx` an `also` gets. The fourth, also required, is your [Policies](#policies) tuple: `readonly []` for none, or `typeof policies` for a `const policies = [...] as const` you pass to `layer`. In this form `also` returns an Effect: it may require your own services (they join the Action's requirements), and its `now` comes from Effect's `Clock`, so `TestClock` controls it.
 
 Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it finishes, then commits or rolls back.
 
@@ -294,11 +295,112 @@ const result = await scheduler.book({
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
 - `also` is a reserved name: a Booking or Block Developer Field can't be called `also`.
 
+## Policies
+
+fasti splits its checks in two ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)). **Invariants** always hold and can't be skipped: meaningful params, no overlap, a declared Transition, and a Booking that exists in the expected Status. Everything else is a **Policy**: a named rule the caller can relax on one call. `availability` is always present on `book` and `reschedule`; any other Policy runs only if you register it.
+
+```typescript
+import { createScheduler, definePolicy, notice } from "@fastijs/scheduler";
+
+const lisbonDay = (instant: Temporal.Instant) =>
+  instant.toZonedDateTimeISO("Europe/Lisbon").toPlainDate();
+
+const maxFourPerDay = definePolicy(schema, {
+  name: "maxFourPerDay", // what relax, PolicyViolation and waived call it
+  appliesTo: ["book"], // the Actions and Transition edges that run it
+  // Optional. Once per call, under the Resource Lock on writes: does the I/O.
+  load: ({ from, reads, resourceId, to }) =>
+    reads.listBookings({
+      overlapping: {
+        from: from.toZonedDateTimeISO("Europe/Lisbon").startOfDay().toInstant(),
+        to: to.toZonedDateTimeISO("Europe/Lisbon").startOfDay().add({ days: 1 }).toInstant(),
+      },
+      resourceId,
+    }),
+  // Once per candidate: one on a write, one per Grid slot in findSlots. Synchronous, no I/O.
+  check: (candidate, bookings) => {
+    const count = bookings.filter(
+      (b) => b.status === "booked" && lisbonDay(b.start).equals(lisbonDay(candidate.start))
+    ).length;
+
+    return count >= 4 ? { count } : null; // null passes; anything else is the Violation's detail
+  },
+});
+
+// Two hours' notice; 0 would still refuse past starts.
+const twoHoursNotice = notice(schema, { appliesTo: ["book", "reschedule"], minimum: 120 });
+
+const scheduler = createScheduler({
+  adapter: drizzleAdapter(db),
+  policies: [maxFourPerDay, twoHoursNotice],
+  schema,
+});
+
+const fifth = await scheduler.book({ ...slot, fields });
+// { ok: false, error: { _tag: "PolicyViolation", violations: [{ policy: "maxFourPerDay", detail: { count: 4 } }] } }
+
+const staff = await scheduler.book({ ...slot, fields, relax: ["maxFourPerDay"] });
+// { ok: true, value: { ...booking, waived: [{ policy: "maxFourPerDay", detail: { count: 4 } }] } }
+```
+
+**`load` and `check`.** `load` reads, `check` decides. They are split so `findSlots` can judge hundreds of slots with one query per Policy, not one per slot. `load` gets `{ resourceId, from, to, now, reads }`: the candidate's Resource and range (the stored Booking's on `cancel` and Transition edges; the whole search, `[from, to + duration)`, in `findSlots`). `reads` holds `getBooking`, `listBookings`, `listBlocks` and `getRules`, as Promises. `check` gets the candidate and what `load` returned (`undefined` without `load`); `detail`'s type is inferred from it.
+
+**`appliesTo`.** Action names and Transition edges, at least one. The candidate `check` gets is narrowed to them:
+
+| Target                    | Candidate                                                     |
+| ------------------------- | ------------------------------------------------------------- |
+| `"book"`                  | `{ action, resourceId, start, end, now }`                     |
+| `"reschedule"`            | `{ action, resourceId, start, end, previous, now }`: `resourceId` is the destination, `previous` the stored Booking |
+| `"cancel"`                | `{ action, booking, now }`: the stored Booking                |
+| `{ to }` / `{ from, to }` | `{ action: "transition", booking, from, to, now }`: every declared edge into `to`, or that one edge |
+
+```typescript
+// With the Statuses above: a no-show can only be recorded once the Booking has started.
+const noShowAfterStart = definePolicy(schema, {
+  name: "noShowAfterStart",
+  appliesTo: [{ to: "noShow" }],
+  check: ({ booking, now }) =>
+    Temporal.Instant.compare(now, booking.start) < 0 ? { start: booking.start } : null,
+});
+```
+
+Edges into `cancelled` belong to `"cancel"`. An undeclared edge, `{ to }` with no declared edge into it, an empty `appliesTo` or the name `availability` is a type error, and `definePolicy` throws on it. Two Policies with one name are a type error, and `createScheduler` throws.
+
+**`relax`, `waived` and `PolicyViolation`.**
+
+- The Invariants run first. If one fails, its error comes back alone: an overlapping Booking that also breaks a Policy is a `SlotConflict`.
+- Then every applicable Policy runs, relaxed ones included, with `availability` first. Every unrelaxed one that broke is in `PolicyViolation.violations`, each with `detail` typed by its `policy`. Nothing is written, and `also` doesn't run.
+- `relax: [...names]` is typed per Action and per Transition edge, so it lists only the Policies that apply. An unknown name is `InvalidParams` at `["relax", i]`, before any database call. There is no `"all"`: a Policy you add later is never relaxed by old code.
+- With `relax`, the value carries `waived`: the relaxed Policies that actually broke, `[]` when none did. Without `relax`, there is no `waived` key. Log it to see who booked outside hours. On `cancel`, only `alreadyCancelled: false` carries it: a repeat `cancel` runs no Policy and no `also`.
+- `waived`, like `also`, is a reserved name: a Booking Developer Field can't be called `waived`.
+
+**`notice`.** The prebuilt Policy, written with `definePolicy`: `notice(schema, { minimum, appliesTo, name? })` breaks when the start is before `now + minimum`, with `detail: { earliest }`.
+
+- `minimum` is whole minutes, at least 0; anything else throws. `0` still refuses a start in the past, which fasti otherwise accepts: with `policies: []`, past starts are bookable.
+- On `book` and `reschedule` it compares the candidate's start; on `cancel` and Transition edges, the stored Booking's.
+- `name` defaults to `"notice"`. Rename it to register more than one and relax each on its own:
+
+  ```typescript
+  notice(schema, { name: "bookingNotice", minimum: 120, appliesTo: ["book", "reschedule"] });
+  notice(schema, { name: "cancelNotice", minimum: 24 * 60, appliesTo: ["cancel"] });
+  ```
+
+- To test a Policy on its own, call its `check` directly with a candidate and a fixed `now`.
+
+**`findSlots` agrees with the writes.** It runs the same Policies on each Grid slot: `book`'s, or `reschedule`'s (with `previous`) when you pass `excludeBookingId`. A slot that breaks an unrelaxed Policy is hidden. With `relax`, a slot that breaks only relaxed Policies is listed with them in `waived`, so `relax: ["availability"]` lists the Grid slots outside the rules. A slot it lists, `book` (or `reschedule`, with `excludeBookingId`) with the same `relax` accepts, at the same `now`.
+
+**`now`.** Each unit of work reads the Clock once, at its start, and every Policy and `also` see that `now`. A retry (the Booking changed while fasti was locking it, or a Drizzle deadlock) re-runs the whole unit with a fresh `now`, so `load` and `check` never decide on stale data. That also means time moves between calls: a slot `findSlots` listed at 13:59 can be refused by `notice` at 14:01.
+
+**What `load` can't do.**
+
+- `load` gets fasti's reads, not your Adapter's `tx`, so it can't read your own tables inside the unit of work. A check on your own data ("this customer's tier allows evenings") belongs in [`also`](#your-writes-in-the-same-transaction-also), vetoing the Action. It won't show in `findSlots`.
+- A Policy is race-free only for the Resource whose lock it runs under. A limit across Resources (sessions per pack) can be overfilled by concurrent bookings on different Resources: make it a guarded update in `also`.
+- A read that fails in `load` is an `AdapterError`. Anything else thrown from `load` or `check` is a bug: the unit rolls back and the promise rejects.
+
 ## Not yet
 
 These are planned (see the [roadmap](./ROADMAP.md)):
 
-- Policies beyond availability, `relax` on the Actions, and `notice` (past starts are bookable today).
 - `getBooking` and `listBookings` Actions; read through your own database meanwhile.
 
 ## The Core
