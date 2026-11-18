@@ -61,7 +61,7 @@ From checkpoint 5 (`0.2`), the overlap Invariant is "no overlap with a blocking 
 
 ## Amendment (2026-11-18): Policies as built in checkpoint 7
 
-Checkpoint 7 (`0.4`) ships `definePolicy`, `policies`, `relax`, `waived` and `notice` as decided above, and the staging amendment of 2026-11-15 no longer applies. `availability` is now a built-in Policy on `book` and `reschedule`, run by the same pass as the developer's. Building it settled these details:
+Checkpoint 7 (`0.4`) ships `definePolicy`, `policies`, `relax`, `waived` and `notice` as decided above, and the staging amendment of 2026-11-15 no longer applies. `availability` is now a Policy value always present on `book` and `reschedule`, run by the same pass as the developer's. Building it settled these details:
 
 - **Candidates.** `check` gets one candidate per call, discriminated on `action` and narrowed to the Policy's `appliesTo`:
 
@@ -73,7 +73,7 @@ Checkpoint 7 (`0.4`) ships `definePolicy`, `policies`, `relax`, `waived` and `no
   | `{ to }` / `{ from, to }` | `{ action: "transition", booking, from, to, now }`: the stored Booking, still in `from` |
 
   Edges into `cancelled` belong to `"cancel"`. `{ to }` covers every declared edge into `to`, and needs at least one.
-- **`load`'s context** is `{ resourceId, from, to, now, reads }`. `from` and `to` are the candidate's range on `book` and `reschedule`, the stored Booking's on `cancel` and edges, and `[from, to + duration)` of the search in `findSlots`. `reads` are fasti's reads as Promises (`getBooking`, `listBookings`, `listBlocks`, `getRules`), on the unit of work, locked inside writes. There is no `tx`, so a rule on the developer's own data belongs in `also` with a Veto (ADR 015), and doesn't show in `findSlots`. A failing read is an `AdapterError`; any other throw from `load` or `check` is a defect that rolls the unit back.
+- **`load`'s context** is `{ resourceId, from, to, now, reads }`. `from` and `to` are the candidate's range on `book` and `reschedule`, the stored Booking's on `cancel` and edges, and `[from, to + duration)` of the search in `findSlots`. `reads` are fasti's reads as Promises (`getBooking`, `listBookings`, `listBlocks`, `getRules`), on the unit of work, locked inside writes. There is no `tx`, so a check on the developer's own data belongs in `also` with a Veto (ADR 015), and doesn't show in `findSlots`. A failing read is an `AdapterError`; any other throw from `load` or `check` is a defect that rolls the unit back.
 - **`findSlots` with `excludeBookingId`** judges each slot with the `reschedule` Policies, with `previous` set to that Booking, and `relax` narrows to their names. Without it, the `book` Policies run. An id that names no Booking is `BookingNotFound`, which joins `FindSlotsError`. A non-blocking Booking is still searched for, so `StatusMismatch` stays out of `findSlots`.
 - **`notice`'s units and name.** `minimum` is whole minutes, at least 0; a negative, fractional or non-finite value throws. `name` defaults to `"notice"`, and renaming it registers more than one (`bookingNotice`, `cancelNotice`). The start compared is the candidate's on `book` and `reschedule`, the stored Booking's on `cancel` and edges.
 - **`waived` is reserved.** A Booking Developer Field named `waived` is a type error and throws in `defineSchema`, as `also` does. The value carries `waived` only when the call passed `relax` (`[]` when nothing relaxed broke), and on `cancel` only on the `alreadyCancelled: false` branch: a repeat `cancel` runs no Policy.

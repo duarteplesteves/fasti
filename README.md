@@ -297,7 +297,7 @@ const result = await scheduler.book({
 
 ## Policies
 
-fasti splits its checks in two ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)). **Invariants** always hold and can't be skipped: meaningful params, no overlap, a declared Transition, and a Booking that exists in the expected Status. Everything else is a **Policy**: a named rule the caller can relax on one call. `availability` is built in and applies to `book` and `reschedule`; any other Policy runs only if you register it.
+fasti splits its checks in two ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)). **Invariants** always hold and can't be skipped: meaningful params, no overlap, a declared Transition, and a Booking that exists in the expected Status. Everything else is a **Policy**: a named rule the caller can relax on one call. `availability` is always present on `book` and `reschedule`; any other Policy runs only if you register it.
 
 ```typescript
 import { createScheduler, definePolicy, notice } from "@fastijs/scheduler";
@@ -387,13 +387,13 @@ Edges into `cancelled` belong to `"cancel"`. An undeclared edge, `{ to }` with n
 
 - To test a Policy on its own, call its `check` directly with a candidate and a fixed `now`.
 
-**`findSlots` agrees with the writes.** It runs the same Policies on each Grid slot: `book`'s, or `reschedule`'s (with `previous`) when you pass `excludeBookingId`. A slot that breaks an unrelaxed Policy is hidden. With `relax`, a slot that breaks only relaxed Policies is listed with them in `waived`, so `relax: ["availability"]` lists the Grid slots outside the rules. A slot it lists, `book` with the same `relax` accepts, at the same `now`.
+**`findSlots` agrees with the writes.** It runs the same Policies on each Grid slot: `book`'s, or `reschedule`'s (with `previous`) when you pass `excludeBookingId`. A slot that breaks an unrelaxed Policy is hidden. With `relax`, a slot that breaks only relaxed Policies is listed with them in `waived`, so `relax: ["availability"]` lists the Grid slots outside the rules. A slot it lists, `book` (or `reschedule`, with `excludeBookingId`) with the same `relax` accepts, at the same `now`.
 
 **`now`.** Each unit of work reads the Clock once, at its start, and every Policy and `also` see that `now`. A retry (the Booking changed while fasti was locking it, or a Drizzle deadlock) re-runs the whole unit with a fresh `now`, so `load` and `check` never decide on stale data. That also means time moves between calls: a slot `findSlots` listed at 13:59 can be refused by `notice` at 14:01.
 
 **What `load` can't do.**
 
-- `load` gets fasti's reads, not your Adapter's `tx`, so it can't read your own tables inside the unit of work. A rule on your own data ("this customer's tier allows evenings") belongs in [`also`](#your-writes-in-the-same-transaction-also), vetoing the Action. It won't show in `findSlots`.
+- `load` gets fasti's reads, not your Adapter's `tx`, so it can't read your own tables inside the unit of work. A check on your own data ("this customer's tier allows evenings") belongs in [`also`](#your-writes-in-the-same-transaction-also), vetoing the Action. It won't show in `findSlots`.
 - A Policy is race-free only for the Resource whose lock it runs under. A limit across Resources (sessions per pack) can be overfilled by concurrent bookings on different Resources: make it a guarded update in `also`.
 - A read that fails in `load` is an `AdapterError`. Anything else thrown from `load` or `check` is a bug: the unit rolls back and the promise rejects.
 
