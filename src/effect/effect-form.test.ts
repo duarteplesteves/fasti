@@ -515,6 +515,56 @@ describe("Effect form Policies", () => {
     expect(viaLayer).toStrictEqual(failureOf(plain));
   });
 
+  it("gives the Policies and `also` the same TestClock `now`", async () => {
+    const { adapter } = await seeded();
+    const frozen = Temporal.Instant.from("2031-01-01T00:00:00Z");
+    const seen: Temporal.Instant[] = [];
+
+    const watching = definePolicy(schema, {
+      appliesTo: ["book"],
+      check: () => null,
+      load: ({ now }) => {
+        seen.push(now);
+      },
+      name: "watching",
+    });
+
+    class WatchingScheduler extends Scheduler<
+      WatchingScheduler,
+      typeof schema,
+      Tx,
+      readonly [typeof watching]
+    >()("test/WatchingScheduler") {}
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookAtTestTime() {
+        yield* TestClock.setTime(frozen.epochMilliseconds);
+
+        return yield* (yield* WatchingScheduler).book({
+          also: ({ now }) => Effect.succeed(now),
+          end: at(4),
+          resourceId: room,
+          start: at(3),
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            WatchingScheduler.layer({
+              adapter,
+              policies: [watching],
+              schema,
+            }),
+            TestClock.layer()
+          )
+        )
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected the booking to succeed");
+    expect(seen).toStrictEqual([frozen]);
+    expect(exit.value.also).toStrictEqual(frozen);
+  });
+
   it("requires policies on layer", () => {
     // @ts-expect-error -- policies is required.
     expectTypeOf(PolicyScheduler.layer).toBeCallableWith({

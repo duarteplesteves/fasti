@@ -103,9 +103,7 @@ export type {
   Policy,
   PolicyReads,
   PolicyTarget,
-  UniqueNames,
   Violation,
-  ViolationFor,
   ViolationOf,
 } from "./framework/policy.js";
 
