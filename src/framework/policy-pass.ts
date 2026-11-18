@@ -56,9 +56,7 @@ export function availabilityPolicy<S extends AnySchema>(): Policy<
 }
 
 /** What one call runs Policies for: an Action, or the one edge a `transition` moves along. */
-export type Target =
-  | ActionTarget
-  | { readonly from: string; readonly to: string };
+type Target = ActionTarget | { readonly from: string; readonly to: string };
 
 /** `target` as `relax` issues name it. */
 function label(target: Target): string {

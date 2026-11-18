@@ -418,6 +418,13 @@ function calls() {
       relax: [],
       to: "inProgress",
     }),
+    otherEdge: scheduler.transition({
+      from: "inProgress",
+      id,
+      // @ts-expect-error -- noShowOnly applies to booked → missed only.
+      relax: ["noShowOnly"],
+      to: "missed",
+    }),
   };
 }
 
