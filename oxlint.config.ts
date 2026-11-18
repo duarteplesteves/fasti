@@ -13,7 +13,8 @@ const noVitest = {
 
 const noDrizzle = {
   group: ["drizzle-orm", "drizzle-orm/*"],
-  message: "Only drizzle/pg imports drizzle-orm (ADR 012).",
+  message:
+    "Only the Drizzle Adapters in src/drizzle import drizzle-orm (ADR 012).",
 };
 
 const noPrisma = {
@@ -64,7 +65,7 @@ export default defineConfig({
     // ADR 012 import boundaries. The last matching override wins for each file.
     { files: ["src/**"], rules: restrict([noVitest, noDrizzle, noPrisma]) },
     {
-      files: ["src/{schema,adapter,memory,drizzle,testing}/**"],
+      files: ["src/{schema,adapter,memory,testing}/**"],
       rules: restrict([noVitest, noDrizzle, noPrisma, noEffect]),
     },
     {
@@ -72,7 +73,7 @@ export default defineConfig({
       rules: restrict([noVitest, noDrizzle, noPrisma, noAdaptersOrTesting]),
     },
     {
-      files: ["src/drizzle/pg/**"],
+      files: ["src/drizzle/**"],
       rules: restrict([noVitest, noPrisma, noEffect]),
     },
     {

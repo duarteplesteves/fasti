@@ -1,18 +1,5 @@
-import {
-  DrizzleQueryError,
-  and,
-  asc,
-  eq,
-  getColumns,
-  gt,
-  lt,
-  sql,
-} from "drizzle-orm";
-import type {
-  AnyPgColumn,
-  PgAsyncDatabase,
-  PgTable,
-} from "drizzle-orm/pg-core";
+import { DrizzleQueryError, and, asc, eq, gt, lt, sql } from "drizzle-orm";
+import type { PgAsyncDatabase, PgTable } from "drizzle-orm/pg-core";
 
 import { defineAdapter } from "../../adapter/contract.js";
 import type {
@@ -23,9 +10,11 @@ import type {
   ListBookingsQuery,
   SchemaAdapter,
 } from "../../adapter/contract.js";
+import { LOCK_NAMESPACE, isPgTransient } from "../../adapter/postgres-lock.js";
+import { retryTransient } from "../../adapter/retry.js";
+import { noOverlapConstraint } from "../../schema/backstop-sql.js";
 import type { AnySchema, BlockSchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
-import { noOverlapConstraint } from "./backstop.js";
 import {
   decodeBlock,
   decodeBooking,
@@ -33,8 +22,10 @@ import {
   encodeBooking,
   encodeRow,
   encodeRule,
-} from "./codec.js";
-import type { Row } from "./codec.js";
+} from "../codec.js";
+import type { Row } from "../codec.js";
+import { col, query, recordTable } from "../query.js";
+import type { RecordTable as SharedRecordTable } from "../query.js";
 import { availabilityRuleTable, blockTable, bookingTable } from "./tables.js";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- any database, whatever its driver and relations.
@@ -45,77 +36,8 @@ type TxOf<DB extends AnyPgDatabase> = Parameters<
   Parameters<DB["transaction"]>[0]
 >[0];
 
-/** Run a verb's queries; a driver failure rejects with the driver's own error as `cause`. */
-async function query<T>(verb: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    // Drizzle wraps the driver's error; the cause is the driver's own (its `code`, `constraint`).
-    const cause = error instanceof DrizzleQueryError ? error.cause : error;
-
-    // oxlint-disable-next-line preserve-caught-error -- `cause` is the caught error, unwrapped from Drizzle's.
-    throw new Error(`drizzleAdapter: ${verb} failed`, { cause });
-  }
-}
-
-/** The first key of every fasti advisory lock ("fsti" in ASCII), so other advisory locks in the database don't collide. */
-const LOCK_NAMESPACE = 0x66_73_74_69;
-
-/** Attempts at a unit of work that fails with a transient error, the first included. */
-const MAX_ATTEMPTS = 3;
-
-/** 40001 serialization_failure or 40P01 deadlock_detected, found anywhere on the `cause` chain. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is whatever was thrown.
-function isTransient(error: unknown): boolean {
-  // At most 10 links, so a `cause` that loops back (a developer's thrown value can) ends the walk.
-  for (
-    let depth = 0, e = error;
-    e instanceof Object && depth < 10;
-    e = "cause" in e ? e.cause : null, depth += 1
-  ) {
-    if ("code" in e && (e.code === "40001" || e.code === "40P01")) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/** Run `unit`, rerunning the whole of it on a transient error (ADR 008), up to {@link MAX_ATTEMPTS} times. */
-async function retryTransient<T>(unit: () => Promise<T>): Promise<T> {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- attempts run one after another.
-      return await unit();
-    } catch (error) {
-      if (!isTransient(error) || attempt === MAX_ATTEMPTS) {
-        throw error;
-      }
-    }
-  }
-}
-
-/** A Booking or Block table, with its columns keyed by logical name. */
-interface RecordTable {
-  readonly table: PgTable;
-  readonly columns: Readonly<Record<string, AnyPgColumn>>;
-}
-
-/** A Booking or Block table and its columns, keyed by logical name. */
-function recordTable(table: PgTable): RecordTable {
-  return { columns: getColumns(table), table };
-}
-
-/** A logical column of a record table; every record table has `id`, `resourceId`, `start`, `end`. */
-function col({ columns }: RecordTable, key: string): AnyPgColumn {
-  const c = columns[key];
-
-  if (c === undefined) {
-    throw new Error(`drizzleAdapter: no column "${key}"`);
-  }
-
-  return c;
-}
+/** A Booking or Block table of this dialect. */
+type RecordTable = SharedRecordTable<PgTable>;
 
 /** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
 async function overlapping<S extends AnySchema>(
@@ -436,7 +358,8 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
         // The whole unit reruns on a transient error, `work` and the developer's writes in `tx` included.
         withResourceLock: async (lockedId, work) =>
           await retryTransient(
-            async () => await singleAttempt.withResourceLock(lockedId, work)
+            async () => await singleAttempt.withResourceLock(lockedId, work),
+            isPgTransient
           ),
       };
     }

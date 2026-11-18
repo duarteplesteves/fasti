@@ -1,6 +1,10 @@
-import type { AnySchema, BookingColumn } from "../../schema/define-schema.js";
-import { statusCodec } from "../../schema/status-codec.js";
-import { literal } from "./tables.js";
+import type { AnySchema, BookingColumn } from "./define-schema.js";
+import { statusCodec } from "./status-codec.js";
+
+/** A SQL string literal, for DDL, where values can't be parameters. */
+export function sqlLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
 
 /** A quoted SQL identifier. */
 function identifier(name: string): string {
@@ -29,7 +33,9 @@ export function backstopSql(schema: AnySchema): readonly string[] {
     Record<BookingColumn, string>
   >;
 
-  const blocking = statusCodec(schema).blockingStored.map(literal).join(", ");
+  const blocking = statusCodec(schema)
+    .blockingStored.map(sqlLiteral)
+    .join(", ");
 
   return [
     "create extension if not exists btree_gist",

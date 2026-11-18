@@ -7,6 +7,7 @@ import type {
   LockedAdapter,
   SchemaAdapter,
 } from "../adapter/contract.js";
+import { serialize } from "../adapter/queue.js";
 import type {
   BlockRecord,
   BookingRecord,
@@ -164,7 +165,7 @@ export function createMemoryAdapter({
   };
 
   // One global queue for every locked unit of work: locking more broadly than one Resource is allowed (ADR 008).
-  let queue: Promise<unknown> = Promise.resolve();
+  const queue = serialize();
 
   // shortcut: O(n) copy per unit of work; fine for tests, replace with a write log if anyone benchmarks it.
   async function run<S extends AnySchema, T>(
@@ -194,12 +195,7 @@ export function createMemoryAdapter({
           return await run(work);
         }
 
-        const result = queue.then(async () => await run(work));
-
-        // The next unit waits for this one to settle, whether it resolves or rejects.
-        queue = result.catch(() => null);
-
-        return await result;
+        return await queue(async () => await run(work));
       },
     })
   );

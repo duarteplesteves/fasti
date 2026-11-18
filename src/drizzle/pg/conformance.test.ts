@@ -19,6 +19,7 @@ import {
 
 import { defineAdapter } from "../../adapter/contract.js";
 import { createScheduler } from "../../framework/create-scheduler.js";
+import { noOverlapConstraint } from "../../schema/backstop-sql.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
@@ -35,8 +36,7 @@ import { unwrap } from "../../test-utils/results.js";
 import { bookingId, insert, newBooking } from "../../testing/fixtures.js";
 import { conformanceCases, runCase, testAdapter } from "../../testing/index.js";
 import type { TestAdapterParams, TxProbe } from "../../testing/index.js";
-import { noOverlapConstraint } from "./backstop.js";
-import { encodeBooking } from "./codec.js";
+import { encodeBooking } from "../codec.js";
 import { createDrizzleAdapter } from "./drizzle-adapter.js";
 import {
   availabilityRuleTable,

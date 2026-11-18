@@ -4,6 +4,7 @@ import type {
   defineContract,
 } from "@prisma/orm-postgres/contract-builder";
 
+import { sqlLiteral } from "../schema/backstop-sql.js";
 import type { AnyColumn } from "../schema/column.js";
 import type {
   AnySchema,
@@ -101,11 +102,6 @@ function fieldColumns(
       return [name, def.required ? col : col.optional()];
     })
   );
-}
-
-/** A SQL string literal, for DDL, where values can't be parameters. */
-function sqlLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
 }
 
 /** The Booking model. Status is `text` with a `CHECK` over its stored values, as on Drizzle Postgres. */

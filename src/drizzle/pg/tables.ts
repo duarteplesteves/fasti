@@ -15,6 +15,7 @@ import {
 
 import type { ResourceIdOf } from "../../adapter/records.js";
 import type { Recurrence } from "../../core/types.js";
+import { sqlLiteral } from "../../schema/backstop-sql.js";
 import type { AnyColumn } from "../../schema/column.js";
 import type {
   AnySchema,
@@ -25,13 +26,7 @@ import type {
   Fields,
 } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
-
-/** Resolves to `unknown` when a column of data type `D` can hold every `T`; otherwise to an error-carrying type. */
-type Accepts<D, T> = [T] extends [D]
-  ? unknown
-  : {
-      readonly "references: the column's type must hold the Resource id type": T;
-    };
+import type { Accepts } from "../references.js";
 
 /**
  * Options of {@link bookingTable}.
@@ -108,11 +103,6 @@ function fieldColumns(
   );
 }
 
-/** A SQL string literal, for DDL, where values can't be parameters. */
-export function literal(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
 /**
  * The Booking table of `schema`, with your physical names, for your drizzle-kit schema file.
  * Columns are keyed by logical name. Status is `text` with a `CHECK` over its stored values,
@@ -139,7 +129,7 @@ export function bookingTable<
     ...fieldColumns(schema.booking.fields, names),
   };
 
-  const stored = statusCodec(schema).allStored.map(literal).join(", ");
+  const stored = statusCodec(schema).allStored.map(sqlLiteral).join(", ");
   const table = schema.names.tables.booking;
 
   return pgTable(table, columns, (self) => [
