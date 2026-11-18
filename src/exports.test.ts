@@ -43,6 +43,7 @@ const surface = [
       "createScheduler",
       "definePolicy",
       "defineSchema",
+      "notice",
     ],
     source: "index.js",
   },
