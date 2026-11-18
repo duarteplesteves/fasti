@@ -96,6 +96,7 @@ export { definePolicy } from "./framework/policy.js";
 export type {
   AnyPolicyOf,
   BookCandidate,
+  CancelCandidate,
   Candidate,
   CandidateFor,
   DefinePolicyParams,
@@ -103,6 +104,7 @@ export type {
   Policy,
   PolicyReads,
   PolicyTarget,
+  RescheduleCandidate,
   Violation,
   ViolationOf,
 } from "./framework/policy.js";

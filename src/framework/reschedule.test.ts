@@ -5,13 +5,12 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
 import type { Adapter } from "../adapter/contract.js";
-import type { AvailabilityViolation, BookingId } from "../core/types.js";
+import type { BookingId } from "../core/types.js";
 import { createScheduler } from "../index.js";
 import type {
   AdapterError,
   BookingNotFound,
   InvalidParams,
-  PolicyViolation,
   RescheduleError,
   SlotConflict,
   StatusMismatch,
@@ -483,7 +482,6 @@ describe("reschedule", () => {
       | BookingNotFound
       | StatusMismatch<"booked" | "cancelled">
       | SlotConflict
-      | PolicyViolation<AvailabilityViolation>
       | AdapterError
     >();
   });

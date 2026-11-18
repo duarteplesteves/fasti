@@ -7,6 +7,7 @@ import type {
   AdapterError,
   BookingNotFound,
   CancelError,
+  InvalidParams,
   TransitionNotDeclared,
 } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
@@ -149,8 +150,9 @@ describe("cancel", () => {
     });
   });
 
-  it("fails with exactly BookingNotFound, TransitionNotDeclared or AdapterError", () => {
+  it("fails with exactly InvalidParams, BookingNotFound, TransitionNotDeclared or AdapterError", () => {
     expectTypeOf<CancelError<typeof schema>>().toEqualTypeOf<
+      | InvalidParams
       | BookingNotFound
       | TransitionNotDeclared<"booked" | "cancelled">
       | AdapterError

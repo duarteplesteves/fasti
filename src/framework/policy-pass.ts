@@ -25,12 +25,12 @@ import type { ActionContext } from "./scheduler-service.js";
 export function availabilityPolicy<S extends AnySchema>(): Policy<
   S,
   "availability",
-  "book",
+  "book" | "reschedule",
   Readonly<Record<string, never>>,
   readonly InstantRange[]
 > {
   return {
-    appliesTo: ["book"],
+    appliesTo: ["book", "reschedule"],
     check: (candidate, windows) =>
       fitsInSomeWindow(windows, candidate) ? null : {},
     load: async ({ from, reads, resourceId, to }) => {
@@ -54,15 +54,17 @@ export function availabilityPolicy<S extends AnySchema>(): Policy<
   };
 }
 
-/** The Policies `target` runs: `availability` first, then the developer's, in registration order. */
+/** The Policies `target` runs: `availability` first (on `book` and `reschedule`), then the developer's, in registration order. */
 export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
   target: PolicyTarget
 ): readonly AnyPolicyOf<S>[] {
-  return [
+  const all: readonly AnyPolicyOf<S>[] = [
     availabilityPolicy<S>(),
-    ...ctx.policies.filter((p) => p.appliesTo.includes(target)),
+    ...ctx.policies,
   ];
+
+  return all.filter((p) => p.appliesTo.includes(target));
 }
 
 /** Run a read, rejecting with its `AdapterError` on failure. */
@@ -199,7 +201,11 @@ export function enforcePolicies<S extends AnySchema, P extends AnyPolicyOf<S>>(
   ViolationOf<P>[],
   PolicyViolation<ViolationOf<P>> | AdapterError
 > {
-  const { end, now, resourceId, start } = candidate;
+  const { now } = candidate;
+
+  // `load` gets the candidate's range, or on `cancel` the stored Booking's.
+  const { end, resourceId, start } =
+    candidate.action === "cancel" ? candidate.booking : candidate;
 
   return Effect.flatMap(
     loadPolicies(reads, policies, { from: start, now, resourceId, to: end }),
