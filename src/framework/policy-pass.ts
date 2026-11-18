@@ -110,7 +110,7 @@ interface Loaded<S extends AnySchema> {
 }
 
 /** Run each Policy's `load` once, in order. A failing read is `AdapterError`; any other throw is a defect. */
-function loadPolicies<S extends AnySchema>(
+export function loadPolicies<S extends AnySchema>(
   reads: EffectReads<S>,
   policies: readonly AnyPolicyOf<S>[],
   ctx: Omit<LoadContext<S>, "reads">
@@ -184,7 +184,7 @@ interface Judged {
 }
 
 /** Every loaded Policy's Violation for `candidate`, in order, split by `relax`. A throw in `check` is a defect. */
-function judge<S extends AnySchema>(
+export function judge<S extends AnySchema>(
   loaded: readonly Loaded<S>[],
   candidate: Candidate<S>,
   relax: readonly string[]

@@ -2,14 +2,20 @@ import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/index.js";
 import type { ResourceIdOf } from "../adapter/records.js";
-import { createScheduler } from "../index.js";
-import type { AdapterError, InvalidParams } from "../index.js";
+import { createScheduler, definePolicy } from "../index.js";
+import type {
+  AdapterError,
+  BookingNotFound,
+  InvalidParams,
+  Violation,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
+import { mintBookingId } from "./booking-id.js";
 import type { FindSlotsError, Slot } from "./find-slots.js";
 
 const schema = uuidIdSchema;
@@ -211,9 +217,250 @@ describe("findSlots", () => {
     expect(result.error.cause).toMatchObject({ _tag: "InvalidParams" });
   });
 
-  it("has exactly InvalidParams and AdapterError as errors", () => {
+  it("has exactly InvalidParams, BookingNotFound and AdapterError as errors", () => {
     expectTypeOf<FindSlotsError>().toEqualTypeOf<
-      InvalidParams | AdapterError
+      InvalidParams | BookingNotFound | AdapterError
     >();
+  });
+});
+
+describe("findSlots with Policies", () => {
+  /** Breaks at a slot starting 12:00 Lisbon. */
+  const noLunch = definePolicy(schema, {
+    appliesTo: ["book"],
+    check: ({ start }) =>
+      start.toZonedDateTimeISO("Europe/Lisbon").hour === 12
+        ? { lunch: true }
+        : null,
+    name: "noLunch",
+  });
+
+  /** Monday 3 June 2030, hourly starts 08:00–16:00 Lisbon. */
+  const day = {
+    duration: 60,
+    from: Temporal.Instant.from("2030-06-03T07:00:00Z"),
+    interval: 60,
+    resourceId: room,
+    timezone: "Europe/Lisbon",
+    to: Temporal.Instant.from("2030-06-03T16:00:00Z"),
+  };
+
+  /** Each slot's local start hour and its waived Policy names. */
+  function hours(
+    slots: readonly Slot<typeof schema, Violation<string, unknown>>[]
+  ) {
+    return slots.map((s) => [s.start.hour, s.waived.map((w) => w.policy)]);
+  }
+
+  it("hides slots that break an unrelaxed Policy, and tags relaxed ones in waived", async () => {
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [noLunch],
+      schema,
+    });
+
+    const strict = unwrap(await scheduler.findSlots(day));
+
+    expect(hours(strict)).toStrictEqual([
+      [9, []],
+      [10, []],
+      [11, []],
+      [13, []],
+      [14, []],
+      [15, []],
+      [16, []],
+    ]);
+
+    const relaxed = unwrap(
+      await scheduler.findSlots({ ...day, relax: ["noLunch"] })
+    );
+
+    expect(relaxed.find((s) => s.start.hour === 12)?.waived).toStrictEqual([
+      { detail: { lunch: true }, policy: "noLunch" },
+    ]);
+    expect(relaxed).toHaveLength(8);
+  });
+
+  it('exposes Grid slots outside the rules with relax: ["availability"]', async () => {
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [noLunch],
+      schema,
+    });
+
+    const slots = unwrap(
+      await scheduler.findSlots({ ...day, relax: ["availability"] })
+    );
+
+    expect(hours(slots)).toStrictEqual([
+      [8, ["availability"]],
+      [9, []],
+      [10, []],
+      [11, []],
+      [13, []],
+      [14, []],
+      [15, []],
+      [16, []],
+    ]);
+  });
+
+  it("runs load once per call, over [from, to + duration)", async () => {
+    const loads: unknown[] = [];
+
+    const counted = definePolicy(schema, {
+      appliesTo: ["book"],
+      check: () => null,
+      load: ({ from: f, resourceId, to }) => {
+        loads.push({ from: f, resourceId, to });
+      },
+      name: "counted",
+    });
+
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [counted],
+      schema,
+    });
+
+    const slots = unwrap(await scheduler.findSlots(day));
+
+    expect(slots.length).toBeGreaterThan(1);
+    expect(loads).toStrictEqual([
+      {
+        from: day.from,
+        resourceId: room,
+        to: Temporal.Instant.from("2030-06-03T17:00:00Z"),
+      },
+    ]);
+  });
+
+  it("with excludeBookingId, runs the reschedule Policies with that Booking as previous", async () => {
+    const seen: unknown[] = [];
+
+    /** Refuses moving a Booking to a later slot. */
+    const noLater = definePolicy(schema, {
+      appliesTo: ["reschedule"],
+      check: (candidate) => {
+        seen.push(candidate.previous.id);
+
+        return Temporal.Instant.compare(
+          candidate.start,
+          candidate.previous.start
+        ) > 0
+          ? { later: true }
+          : null;
+      },
+      name: "noLater",
+    });
+
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [noLunch, noLater],
+      schema,
+    });
+
+    // 11:00 Lisbon.
+    const booking = unwrap(
+      await scheduler.book({
+        end: Temporal.Instant.from("2030-06-03T11:00:00Z"),
+        resourceId: room,
+        start: Temporal.Instant.from("2030-06-03T10:00:00Z"),
+      })
+    );
+
+    const slots = unwrap(
+      await scheduler.findSlots({ ...day, excludeBookingId: booking.id })
+    );
+
+    // noLunch applies to book only, so 12:00 is not hidden; its own slot is free to it.
+    expect(hours(slots)).toStrictEqual([
+      [9, []],
+      [10, []],
+      [11, []],
+    ]);
+    expect(new Set(seen)).toStrictEqual(new Set([booking.id]));
+
+    const relaxed = unwrap(
+      await scheduler.findSlots({
+        ...day,
+        excludeBookingId: booking.id,
+        relax: ["noLater"],
+      })
+    );
+
+    expect(relaxed.at(-1)?.waived).toStrictEqual([
+      { detail: { later: true }, policy: "noLater" },
+    ]);
+  });
+
+  it("lists slots for a non-blocking excludeBookingId instead of failing StatusMismatch", async () => {
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [],
+      schema,
+    });
+
+    const booking = unwrap(
+      await scheduler.book({
+        end: Temporal.Instant.from("2030-06-03T09:00:00Z"),
+        resourceId: room,
+        start: Temporal.Instant.from("2030-06-03T08:00:00Z"),
+      })
+    );
+
+    unwrap(await scheduler.cancel({ id: booking.id }));
+
+    const slots = unwrap(
+      await scheduler.findSlots({ ...day, excludeBookingId: booking.id })
+    );
+
+    expect(slots).toHaveLength(8);
+  });
+
+  it("refuses an excludeBookingId that names no Booking with BookingNotFound", async () => {
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [],
+      schema,
+    });
+
+    const id = mintBookingId();
+
+    await expect(
+      scheduler.findSlots({ ...day, excludeBookingId: id })
+    ).resolves.toStrictEqual({
+      error: { _tag: "BookingNotFound", id },
+      ok: false,
+    });
+  });
+
+  it("refuses a relax name that doesn't apply with InvalidParams, before any Adapter call", async () => {
+    const adapter = defineAdapter<undefined, "blocks">(() => ({
+      getBlock: refuse,
+      getBooking: refuse,
+      getRules: refuse,
+      listBlocks: refuse,
+      listBookings: refuse,
+      withResourceLock: refuse,
+    }));
+
+    const scheduler = createScheduler({
+      adapter,
+      policies: [noLunch],
+      schema,
+    });
+
+    const result = await scheduler.findSlots({
+      ...day,
+      excludeBookingId: mintBookingId(),
+      // @ts-expect-error -- noLunch applies to book, not reschedule.
+      relax: ["noLunch"],
+    });
+
+    assert(!result.ok, "expected an error");
+    assert(result.error._tag === "InvalidParams", "expected InvalidParams");
+    expect(result.error.issues.map((i) => i.path)).toStrictEqual([
+      ["relax", 0],
+    ]);
   });
 });

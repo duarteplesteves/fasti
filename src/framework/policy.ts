@@ -210,7 +210,7 @@ type Builtin<A> = A extends "book" | "reschedule"
 export type ViolationFor<P, A> = Builtin<A> | ViolationOf<Applies<P, A>>;
 
 /** The names a `relax` value `X` may list; `never` without `relax`. */
-type RelaxedNames<X> = X extends readonly (infer N)[] ? N : never;
+export type RelaxedNames<X> = X extends readonly (infer N)[] ? N : never;
 
 /** The names a `relax` value `X` surely lists: a literal tuple's; none when it may be `undefined`, or a widened array that may be `[]`. */
 type SurelyRelaxed<X> = undefined extends X

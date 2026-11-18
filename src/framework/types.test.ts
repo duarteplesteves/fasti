@@ -68,7 +68,7 @@ import type {
   SlotConflict,
   Vetoed,
 } from "./errors.js";
-import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
+import type { FindSlotsError, Slot } from "./find-slots.js";
 import type { RescheduleError } from "./reschedule.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
@@ -89,6 +89,16 @@ type SomeRequired = BookParams<typeof textIdSchema>;
 const instant = Temporal.Instant.from("2030-06-03T09:00:00Z");
 
 const base = { end: instant, resourceId: "staff-a", start: instant } as const;
+
+/** A `findSlots` search on `staff-a`, without `excludeBookingId` or `relax`. */
+const search = {
+  duration: 60,
+  from: instant,
+  interval: 30,
+  resourceId: "staff-a",
+  timezone: "UTC",
+  to: instant,
+} as const;
 
 const required = {
   count: 1,
@@ -424,10 +434,14 @@ describe("forms", () => {
         >
       >
     >();
-    expectTypeOf<Single<Plain["findSlots"]>>().toEqualTypeOf<
-      (
-        params: FindSlotsParams<S>
-      ) => Promise<Result<readonly Slot<S>[], FindSlotsError>>
+
+    /** Never called: a search without `relax`, as before Policies. */
+    async function findSlotsCall(plain: Plain) {
+      return await plain.findSlots(search);
+    }
+
+    expectTypeOf<ReturnType<typeof findSlotsCall>>().toEqualTypeOf<
+      Promise<Result<readonly Slot<S>[], FindSlotsError>>
     >();
     expectTypeOf<Single<Plain["availability"]["set"]>>().toEqualTypeOf<
       (
@@ -488,10 +502,14 @@ describe("forms", () => {
         BookError | PolicyViolation<AvailabilityViolation>
       >
     >();
-    expectTypeOf<Single<Service["findSlots"]>>().toEqualTypeOf<
-      (
-        params: FindSlotsParams<S>
-      ) => Effect.Effect<readonly Slot<S>[], FindSlotsError>
+
+    /** Never called: a search without `relax`. */
+    function findSlotsCall(service: Service) {
+      return service.findSlots(search);
+    }
+
+    expectTypeOf<ReturnType<typeof findSlotsCall>>().toEqualTypeOf<
+      Effect.Effect<readonly Slot<S>[], FindSlotsError>
     >();
     expectTypeOf<Single<Service["cancel"]>>().toEqualTypeOf<
       (params: CancelParams<S>) => Effect.Effect<CancelValue<S>, CancelError<S>>
@@ -751,6 +769,54 @@ describe("Policy types", () => {
       CancelError<S> | PolicyViolation<Late>
     >();
     expectTypeOf<Err<Calls["cancelRelaxed"]>>().toEqualTypeOf<CancelError<S>>();
+  });
+
+  /** Never called: `findSlots` with and without `excludeBookingId` and `relax`. */
+  function searchCalls() {
+    const scheduler = createScheduler({
+      adapter: memoryAdapter(),
+      policies: [closed, late],
+      schema: defaultSchema,
+    });
+
+    const excludeBookingId = mintBookingId();
+
+    return {
+      book: scheduler.findSlots(search),
+      bookRelaxed: scheduler.findSlots({ ...search, relax: ["closed"] }),
+      // @ts-expect-error -- `late` applies to reschedule, not book.
+      bookWrong: scheduler.findSlots({ ...search, relax: ["late"] }),
+      move: scheduler.findSlots({ ...search, excludeBookingId }),
+      moveRelaxed: scheduler.findSlots({
+        ...search,
+        excludeBookingId,
+        relax: ["availability", "late"],
+      }),
+      moveWrong: scheduler.findSlots({
+        ...search,
+        excludeBookingId,
+        // @ts-expect-error -- `closed` applies to book, not reschedule.
+        relax: ["closed"],
+      }),
+    };
+  }
+
+  type Searches = ReturnType<typeof searchCalls>;
+
+  it("narrows findSlots' relax by excludeBookingId, and types waived as Slot<S, W>", () => {
+    expectTypeOf<Ok<Searches["book"]>>().toEqualTypeOf<readonly Slot<S>[]>();
+    expectTypeOf<Ok<Searches["move"]>>().toEqualTypeOf<readonly Slot<S>[]>();
+    expectTypeOf<Ok<Searches["bookRelaxed"]>>().toEqualTypeOf<
+      readonly Slot<S, Closed>[]
+    >();
+    expectTypeOf<Ok<Searches["moveRelaxed"]>>().toEqualTypeOf<
+      readonly Slot<S, AvailabilityViolation | Late>[]
+    >();
+    expectTypeOf<Slot<S, Late>["waived"]>().toEqualTypeOf<readonly Late[]>();
+    expectTypeOf<Slot<S>["waived"]>().toEqualTypeOf<readonly never[]>();
+    expectTypeOf<
+      Err<Searches["moveRelaxed"]>
+    >().toEqualTypeOf<FindSlotsError>();
   });
 
   it("adds waived to cancel's alreadyCancelled: false branch only", () => {

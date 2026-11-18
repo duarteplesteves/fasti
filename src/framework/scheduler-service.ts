@@ -34,7 +34,7 @@ import type { CreateSchedulerParams } from "./create-scheduler.js";
 import { liftAdapter } from "./effect-adapter.js";
 import type { EffectAdapter } from "./effect-adapter.js";
 import { findSlots } from "./find-slots.js";
-import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
+import type { FindSlotsAction, FindSlotsParams } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
 import type { AnyPolicyOf, ViolationFor } from "./policy.js";
 import { reschedule } from "./reschedule.js";
@@ -89,11 +89,11 @@ export type SchedulerActions<
     ViolationFor<P[number], "cancel">
   >;
   /** Free slots on a Resource in a range, zoned in the caller's timezone. */
-  readonly findSlots: ReadAction<
+  readonly findSlots: FindSlotsAction<
     F,
-    FindSlotsParams<S>,
-    readonly Slot<S>[],
-    FindSlotsError
+    S,
+    ViolationFor<P[number], "book">,
+    ViolationFor<P[number], "reschedule">
   >;
   /** A Resource's Availability Rules. */
   readonly availability: {
