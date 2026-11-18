@@ -9,7 +9,7 @@ import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import type { EffectReads } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
-import type { Conflict } from "./errors.js";
+import type { Conflict, SlotConflict } from "./errors.js";
 
 /** What occupies a Resource over a range, as the Core sees it, plus each occupant's kind for mapping hits back. */
 interface Occupants {
@@ -124,5 +124,29 @@ export function conflictsAt<S extends AnySchema>(
         ? Effect.succeed(toConflicts(r.value, kindById))
         : Effect.fail(new AdapterError(r.error));
     }
+  );
+}
+
+/** Params of `checkOverlap`: a Booking's candidate `[start, end)` on a Resource. */
+export interface CheckOverlapParams<S extends AnySchema> {
+  readonly resourceId: ResourceIdOf<S>;
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
+  /** Leave this Booking out, e.g. the one being moved; `null` for none. */
+  readonly excludeBookingId: BookingId | null;
+}
+
+/** The overlap Invariant for a Booking at `[start, end)`: fails `SlotConflict` if it would overlap a blocking Booking or a Block, ignoring `excludeBookingId` (ADR 014). */
+export function checkOverlap<S extends AnySchema>(
+  reads: Pick<EffectReads<S>, "listBookings" | "listBlocks">,
+  codec: StatusCodec<StatusOf<S>>,
+  range: CheckOverlapParams<S>
+): Effect.Effect<void, SlotConflict | AdapterError> {
+  return Effect.flatMap(
+    conflictsAt(reads, codec, { ...range, kind: "booking" }),
+    (conflicts) =>
+      conflicts.length > 0
+        ? Effect.fail<SlotConflict>({ _tag: "SlotConflict", conflicts })
+        : Effect.void
   );
 }

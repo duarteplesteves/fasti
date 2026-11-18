@@ -35,20 +35,24 @@ export type WriteEffect<V, E, R> = Effect.Effect<
 export function writeUnit<S extends AnySchema, Tx, V, C, E, R>(
   ctx: ActionContext<S, Tx>,
   resourceId: ResourceIdOf<S>,
-  work: (locked: EffectLocked<S, Tx>) => Effect.Effect<Outcome<V, C>, E>,
+  work: (
+    locked: EffectLocked<S, Tx>,
+    now: Temporal.Instant
+  ) => Effect.Effect<Outcome<V, C>, E>,
   also: EffectAlso<C, Tx, R> | undefined
 ): WriteEffect<V, E, R> {
   return ctx.adapter.withResourceLock(resourceId, (locked) =>
     Effect.gen(function* writeUnitRun() {
-      const outcome = yield* work(locked);
+      // Read once, first: the work and `also` see the same `now`.
+      const now = Temporal.Instant.fromEpochMilliseconds(
+        yield* Clock.currentTimeMillis
+      );
+
+      const outcome = yield* work(locked, now);
 
       if (outcome._tag === "NoOp" || also === undefined) {
         return outcome.value;
       }
-
-      const now = Temporal.Instant.fromEpochMilliseconds(
-        yield* Clock.currentTimeMillis
-      );
 
       // A failure fails the unit, so the Adapter rolls fasti's write back.
       const value = yield* Effect.mapError(

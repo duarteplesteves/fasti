@@ -21,8 +21,8 @@ import type {
 } from "./errors.js";
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
-import { conflictsAt } from "./occupancy.js";
-import { checkPlacement } from "./placement.js";
+import { checkOverlap, conflictsAt } from "./occupancy.js";
+import { checkAvailability } from "./placement.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
   AlsoContext,
@@ -108,7 +108,8 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
           start,
         };
 
-        yield* checkPlacement(locked, ctx, { ...placement, blocking: true });
+        yield* checkOverlap(locked, ctx.codec, placement);
+        yield* checkAvailability(locked, placement);
 
         // SAFETY: base columns of the right types, and a patch of declared fields only.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.

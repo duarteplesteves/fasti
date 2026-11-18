@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from "node:timers/promises";
+
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
@@ -99,6 +101,52 @@ describe("also on book", () => {
     expect(also).toBe("audited");
     expect(booking.status).toBe("booked");
     expectContext(seen, { booking });
+  });
+
+  it("gets the `now` read at the start of the unit, before the write", async () => {
+    const raw = memoryAdapter();
+
+    unwrap(
+      await createScheduler({ adapter: raw, schema }).availability.set({
+        resourceId: room,
+        rules: [weekdays],
+      })
+    );
+
+    let beforeInsert = 0;
+
+    const slowInsert = defineAdapter<undefined, "blocks">((s) => {
+      const inner = raw(s);
+
+      return {
+        ...inner,
+        withResourceLock: async (id, work) =>
+          await inner.withResourceLock(
+            id,
+            async (locked) =>
+              await work({
+                ...locked,
+                insertBooking: async (booking) => {
+                  beforeInsert = Date.now();
+                  await sleep(20);
+
+                  return await locked.insertBooking(booking);
+                },
+              })
+          ),
+      };
+    });
+
+    const result = await createScheduler({ adapter: slowInsert, schema }).book({
+      also: ({ now }) => ({ ok: true, value: now }),
+      end,
+      resourceId: room,
+      start,
+    });
+
+    expect(unwrap(result).also.epochMilliseconds).toBeLessThanOrEqual(
+      beforeInsert
+    );
   });
 
   it("rolls the Booking back on a veto and returns Vetoed with the reason", async () => {
