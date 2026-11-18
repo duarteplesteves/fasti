@@ -60,7 +60,12 @@ import { mintBlockId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
 import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { EffectLocked } from "./effect-adapter.js";
-import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
+import type {
+  AdapterError,
+  PolicyViolation,
+  SlotConflict,
+  Vetoed,
+} from "./errors.js";
 import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
 import type { RescheduleError, RescheduleParams } from "./reschedule.js";
 
@@ -90,6 +95,13 @@ const required = {
   ref: "",
   remindAt: instant,
 } as const;
+
+/** Never called: `ReturnType` of `book` itself would instantiate `relax` at its constraint, so the types read a call. */
+async function bookTextId(
+  scheduler: Scheduler<typeof textIdSchema, undefined, readonly []>
+) {
+  return await scheduler.book({ ...base, fields: required });
+}
 
 describe("book types", () => {
   it("has no `fields` when the schema declares no Developer Fields", () => {
@@ -154,9 +166,8 @@ describe("book types", () => {
     expectTypeOf<BookError>().toEqualTypeOf<
       InvalidParams | SlotConflict | AdapterError
     >();
-    expectTypeOf<
-      ReturnType<Scheduler<typeof textIdSchema, undefined, readonly []>["book"]>
-    >().toEqualTypeOf<
+
+    expectTypeOf<ReturnType<typeof bookTextId>>().toEqualTypeOf<
       Promise<
         Result<
           Booking<typeof textIdSchema>,
@@ -382,10 +393,13 @@ describe("forms", () => {
 
     type Plain = Scheduler<S, Tx, readonly []>;
 
-    expectTypeOf<Single<Plain["book"]>>().toEqualTypeOf<
-      (
-        params: BookParams<S>
-      ) => Promise<
+    /** Never called: a call without `relax`, as before Policies. */
+    async function bookCall(plain: Plain) {
+      return await plain.book(base);
+    }
+
+    expectTypeOf<ReturnType<typeof bookCall>>().toEqualTypeOf<
+      Promise<
         Result<Booking<S>, BookError | PolicyViolation<AvailabilityViolation>>
       >
     >();
@@ -452,10 +466,13 @@ describe("forms", () => {
 
     type Service = SchedulerService<S, Tx, readonly []>;
 
-    expectTypeOf<Single<Service["book"]>>().toEqualTypeOf<
-      (
-        params: BookParams<S>
-      ) => Effect.Effect<
+    /** Never called: a call without `relax`. */
+    function bookCall(service: Service) {
+      return service.book(base);
+    }
+
+    expectTypeOf<ReturnType<typeof bookCall>>().toEqualTypeOf<
+      Effect.Effect<
         Booking<S>,
         BookError | PolicyViolation<AvailabilityViolation>
       >
@@ -535,10 +552,20 @@ describe("Policy types", () => {
     });
   }
 
+  /** Never called: `book` without `relax`. */
+  async function bookUnrelaxed() {
+    return await withClosed().book(base);
+  }
+
+  /** Never called: `book` relaxing `relax`. */
+  async function bookRelaxed<
+    const X extends readonly ("availability" | "closed")[],
+  >(relax: X) {
+    return await withClosed().book({ ...base, relax });
+  }
+
   it("infers each Policy's detail into book's PolicyViolation, next to availability", () => {
-    type BookResult = Awaited<
-      ReturnType<ReturnType<typeof withClosed>["book"]>
-    >;
+    type BookResult = Awaited<ReturnType<typeof bookUnrelaxed>>;
 
     expectTypeOf<
       Extract<
@@ -549,6 +576,104 @@ describe("Policy types", () => {
       PolicyViolation<
         AvailabilityViolation | Violation<"closed", { reason: "closed" }>
       >
+    >();
+  });
+
+  type Closed = Violation<"closed", { reason: "closed" }>;
+
+  type Ok<R> =
+    Awaited<R> extends infer A
+      ? A extends { readonly ok: true; readonly value: infer V }
+        ? V
+        : never
+      : never;
+
+  type Err<R> =
+    Awaited<R> extends infer A
+      ? A extends { readonly ok: false; readonly error: infer E }
+        ? E
+        : never
+      : never;
+
+  it("adds waived only with relax, typed by the relaxed Policies", () => {
+    expectTypeOf<Ok<ReturnType<typeof bookUnrelaxed>>>().toEqualTypeOf<
+      Booking<typeof defaultSchema>
+    >();
+    expectTypeOf<
+      Ok<ReturnType<typeof bookRelaxed<readonly ["closed"]>>>["waived"]
+    >().toEqualTypeOf<readonly Closed[]>();
+    expectTypeOf<
+      Ok<ReturnType<typeof bookRelaxed<readonly []>>>["waived"]
+    >().toEqualTypeOf<readonly never[]>();
+  });
+
+  it("drops relaxed Policies from PolicyViolation, and PolicyViolation when all are relaxed", () => {
+    expectTypeOf<
+      Err<ReturnType<typeof bookRelaxed<readonly ["closed"]>>>
+    >().toEqualTypeOf<BookError | PolicyViolation<AvailabilityViolation>>();
+    expectTypeOf<
+      Err<ReturnType<typeof bookRelaxed<readonly ["availability", "closed"]>>>
+    >().toEqualTypeOf<BookError>();
+  });
+
+  /** Never called: `relax` whose entries or presence aren't known statically. */
+  function looseRelax(
+    names: readonly ("availability" | "closed")[],
+    maybe: readonly ["closed"] | undefined
+  ) {
+    const scheduler = withClosed();
+
+    return {
+      maybe: scheduler.book({ ...base, relax: maybe }),
+      names: scheduler.book({ ...base, relax: names }),
+    };
+  }
+
+  it("keeps PolicyViolation for a widened relax, and waived optional for a maybe-undefined one", () => {
+    type Loose = ReturnType<typeof looseRelax>;
+
+    expectTypeOf<Err<Loose["names"]>>().toEqualTypeOf<
+      BookError | PolicyViolation<AvailabilityViolation | Closed>
+    >();
+    expectTypeOf<Err<Loose["maybe"]>>().toEqualTypeOf<
+      BookError | PolicyViolation<AvailabilityViolation | Closed>
+    >();
+    expectTypeOf<Ok<Loose["maybe"]>>().toEqualTypeOf<
+      Booking<typeof defaultSchema> & { readonly waived?: readonly Closed[] }
+    >();
+  });
+
+  /** Never called: `relax` next to `also`, and where it isn't taken. */
+  function relaxCalls() {
+    const scheduler = withClosed();
+
+    return {
+      also: scheduler.book({
+        ...base,
+        also: (): Result<number, "no"> => ({ ok: true, value: 1 }),
+        relax: ["availability"],
+      }),
+      // @ts-expect-error -- relax takes only names that apply to book.
+      unknown: scheduler.book({ ...base, relax: ["nope"] }),
+      unpoliced: scheduler.availability.set({
+        // @ts-expect-error -- no Policy applies to availability.set, so it takes no relax.
+        relax: [],
+        resourceId: "staff-a",
+        rules: [],
+      }),
+    };
+  }
+
+  it("types relax with also, and leaves it off Actions no Policy applies to", () => {
+    type Also = ReturnType<typeof relaxCalls>["also"];
+
+    expectTypeOf<Ok<Also>>().toEqualTypeOf<
+      Booking<typeof defaultSchema> & {
+        readonly waived: readonly AvailabilityViolation[];
+      } & { readonly also: number }
+    >();
+    expectTypeOf<Err<Also>>().toEqualTypeOf<
+      BookError | PolicyViolation<Closed> | Vetoed<"no">
     >();
   });
 

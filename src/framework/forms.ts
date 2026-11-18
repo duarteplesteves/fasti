@@ -2,6 +2,7 @@ import type { Effect } from "effect";
 
 import type { Result } from "../core/result.js";
 import type { Vetoed } from "./errors.js";
+import type { PolicyErrorOf, Violation, WithWaived } from "./policy.js";
 
 /** The two forms of every Action (ADR 010): Effect, or a Promise of a {@link Result}. */
 export type Form = "effect" | "plain";
@@ -31,10 +32,56 @@ export type ReadAction<F extends Form, P, V, E> = (
   params: P
 ) => Run<F, V, E, never>;
 
-/** An Action that writes. The overload with `also` comes first: TypeScript resolves overloads in order. */
-export interface WriteAction<F extends Form, P, Ctx, V, E> {
+/** An Action that writes, without Policies. The overload with `also` comes first: TypeScript resolves overloads in order. */
+interface UnpolicedWriteAction<F extends Form, P, Ctx, V, E> {
   <A, AE, R = never>(
     params: P & { readonly also: AlsoFn<F, Ctx, A, AE, R> }
   ): Run<F, WithAlso<V, A>, E | Vetoed<AE>, R>;
   (params: P): Run<F, V, E, never>;
 }
+
+/** An Action that writes, checked by Policies whose Violations are `W`: generic over `relax`, so one signature per `also` overload. */
+interface PolicedWriteAction<
+  F extends Form,
+  P,
+  Ctx,
+  V,
+  E,
+  W extends Violation<string, unknown>,
+> {
+  <
+    A,
+    AE,
+    R = never,
+    const X extends readonly W["policy"][] | undefined = undefined,
+  >(
+    params: P & {
+      /** Skip these Policies: they still run, and come back as `waived` when broken. */
+      readonly relax?: X;
+      readonly also: AlsoFn<F, Ctx, A, AE, R>;
+    }
+  ): Run<
+    F,
+    WithAlso<WithWaived<V, W, X>, A>,
+    E | PolicyErrorOf<W, X> | Vetoed<AE>,
+    R
+  >;
+  <const X extends readonly W["policy"][] | undefined = undefined>(
+    params: P & {
+      /** Skip these Policies: they still run, and come back as `waived` when broken. */
+      readonly relax?: X;
+    }
+  ): Run<F, WithWaived<V, W, X>, E | PolicyErrorOf<W, X>, never>;
+}
+
+/** An Action that writes; `W` is the Violations of the Policies that apply to it, `never` when none do (then it takes no `relax`). */
+export type WriteAction<
+  F extends Form,
+  P,
+  Ctx,
+  V,
+  E,
+  W extends Violation<string, unknown> = never,
+> = [W] extends [never]
+  ? UnpolicedWriteAction<F, P, Ctx, V, E>
+  : PolicedWriteAction<F, P, Ctx, V, E, W>;

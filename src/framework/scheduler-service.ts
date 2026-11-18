@@ -33,7 +33,6 @@ import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { CreateSchedulerParams } from "./create-scheduler.js";
 import { liftAdapter } from "./effect-adapter.js";
 import type { EffectAdapter } from "./effect-adapter.js";
-import type { PolicyViolation } from "./errors.js";
 import { findSlots } from "./find-slots.js";
 import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
@@ -68,7 +67,8 @@ export type SchedulerActions<
     BookParams<S>,
     BookAlso<S, Tx>,
     Booking<S>,
-    BookError | PolicyViolation<ViolationFor<P[number], "book">>
+    BookError,
+    ViolationFor<P[number], "book">
   >;
   /** Move a Booking in time or to another Resource, keeping its id and Status. */
   readonly reschedule: WriteAction<

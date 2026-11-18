@@ -3,6 +3,7 @@ import { Cause, Effect, Exit } from "effect";
 import { availableWindows, fitsInSomeWindow } from "../core/availability.js";
 import { checkRules } from "../core/checks.js";
 import { checked } from "../core/result.js";
+import type { Issue } from "../core/result.js";
 import type { InstantRange } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectReads } from "./effect-adapter.js";
@@ -131,26 +132,73 @@ function loadPolicies<S extends AnySchema>(
   );
 }
 
-/** Every loaded Policy's Violation for `candidate`, in order. A throw in `check` is a defect. */
+/** Each `relax` entry that names no Policy in `policies`, as an issue at its index; `[]` when all apply. Runs before any Adapter call. */
+export function checkRelax<S extends AnySchema>(
+  policies: readonly AnyPolicyOf<S>[],
+  target: PolicyTarget,
+  relax: readonly string[] | undefined
+): Issue[] {
+  if (relax === undefined) {
+    return [];
+  }
+
+  // Plain-JS callers can get past the types.
+  if (!Array.isArray(relax)) {
+    return [
+      { message: "relax must be an array of Policy names", path: ["relax"] },
+    ];
+  }
+
+  const names = new Set(policies.map((p) => p.name));
+
+  return relax.flatMap((name: string, i: number) =>
+    names.has(name)
+      ? []
+      : [
+          {
+            message: `relax: ${name} is not a Policy that applies to ${target}`,
+            path: ["relax", i],
+          },
+        ]
+  );
+}
+
+/** The broken Policies, split by `relax`. */
+interface Judged {
+  readonly violations: Violation<string, unknown>[];
+  readonly waived: Violation<string, unknown>[];
+}
+
+/** Every loaded Policy's Violation for `candidate`, in order, split by `relax`. A throw in `check` is a defect. */
 function judge<S extends AnySchema>(
   loaded: readonly Loaded<S>[],
-  candidate: Candidate<S>
-): Violation<string, unknown>[] {
-  return loaded.flatMap(({ data, policy }) => {
+  candidate: Candidate<S>,
+  relax: readonly string[]
+): Judged {
+  const broken = loaded.flatMap(({ data, policy }) => {
     // SAFETY: `applicable` picked this Policy for `candidate.action`, so it takes this candidate; `data` came from its own `load`.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the registry erases each Policy's candidate and Data types.
     const detail = policy.check(candidate as never, data as never);
 
     return detail === null ? [] : [{ detail, policy: policy.name }];
   });
+
+  return {
+    violations: broken.filter((v) => !relax.includes(v.policy)),
+    waived: broken.filter((v) => relax.includes(v.policy)),
+  };
 }
 
-/** Load and check every Policy in `policies` for `candidate`, under the lock, after the Invariants: fails `PolicyViolation` with every broken one (ADR 014). */
+/** Load and check every Policy in `policies` for `candidate`, under the lock, after the Invariants (ADR 014). Every one runs, relaxed ones too: fails `PolicyViolation` with the unrelaxed broken ones, else succeeds with the relaxed broken ones (`waived`). */
 export function enforcePolicies<S extends AnySchema, P extends AnyPolicyOf<S>>(
   reads: EffectReads<S>,
   policies: readonly P[],
-  candidate: Candidate<S>
-): Effect.Effect<void, PolicyViolation<ViolationOf<P>> | AdapterError> {
+  candidate: Candidate<S>,
+  relax: readonly string[]
+): Effect.Effect<
+  ViolationOf<P>[],
+  PolicyViolation<ViolationOf<P>> | AdapterError
+> {
   const { end, now, resourceId, start } = candidate;
 
   return Effect.flatMap(
@@ -158,10 +206,15 @@ export function enforcePolicies<S extends AnySchema, P extends AnyPolicyOf<S>>(
     (loaded) => {
       // SAFETY: each Violation carries the name and `check` result of one of `policies`.
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- judge works over the erased registry.
-      const [first, ...rest] = judge(loaded, candidate) as ViolationOf<P>[];
+      const { violations, waived } = judge(loaded, candidate, relax) as {
+        readonly violations: ViolationOf<P>[];
+        readonly waived: ViolationOf<P>[];
+      };
+
+      const [first, ...rest] = violations;
 
       return first === undefined
-        ? Effect.void
+        ? Effect.succeed(waived)
         : Effect.fail<PolicyViolation<ViolationOf<P>>>({
             _tag: "PolicyViolation",
             violations: [first, ...rest],
