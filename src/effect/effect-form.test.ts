@@ -17,6 +17,7 @@ import type {
   SlotConflict,
   StatusMismatch,
   TransitionError,
+  Violation,
 } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
@@ -513,6 +514,34 @@ describe("Effect form Policies", () => {
       })
     );
     expect(viaLayer).toStrictEqual(failureOf(plain));
+  });
+
+  it("takes relax and returns waived through the layer, as the plain form does", async () => {
+    const { adapter } = await seeded();
+
+    const params = {
+      end: at(4),
+      relax: ["closed"],
+      resourceId: room,
+      start: at(3),
+    } as const;
+
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(
+        Effect.gen(function* bookRelaxed() {
+          return yield* (yield* PolicyScheduler).book(params);
+        }),
+        PolicyScheduler.layer({ adapter, policies, schema })
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected the booking to succeed");
+    expectTypeOf(exit.value.waived).toEqualTypeOf<
+      readonly Violation<"closed", { reason: string }>[]
+    >();
+    expect(exit.value.waived).toStrictEqual([
+      { detail: { reason: "closed" }, policy: "closed" },
+    ]);
   });
 
   it("gives the Policies and `also` the same TestClock `now`", async () => {

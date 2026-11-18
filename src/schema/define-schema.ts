@@ -110,9 +110,9 @@ export interface DefineSchemaParams<
   /** The Resource id type; defaults to `column.text()`. */
   readonly resource?: { readonly idType: R };
   readonly booking?: {
-    /** Developer Fields on the Booking; a name that collides with a Booking column, or `also` (reserved), is a type error. */
+    /** Developer Fields on the Booking; a name that collides with a Booking column, or `also` or `waived` (reserved), is a type error. */
     readonly fields?: F &
-      Partial<Readonly<Record<BookingColumn | "also", never>>>;
+      Partial<Readonly<Record<BookingColumn | "also" | "waived", never>>>;
     /** Statuses beyond `booked` and `cancelled`, each with `blocking`; redeclaring a base Status is a type error. */
     readonly statuses?: D & Partial<Readonly<Record<BaseStatus, never>>>;
     /** The Transitions each Status may make (ADR 009); `booked → cancelled` is always added. */
@@ -294,11 +294,17 @@ function assertStatus(
   }
 }
 
-/** Throw on a Developer Field named `also`, which write Actions reserve. */
-function assertNotAlso(kind: string, fields: Fields): void {
-  if (Object.hasOwn(fields, "also")) {
+/** Throw on a Developer Field named after a key write Actions reserve on their value. */
+function assertNotReserved(
+  kind: string,
+  fields: Fields,
+  reserved: readonly string[]
+): void {
+  const name = reserved.find((r) => Object.hasOwn(fields, r));
+
+  if (name !== undefined) {
     throw new Error(
-      `defineSchema: a ${kind} Developer Field can't be named "also"; it is reserved.`
+      `defineSchema: a ${kind} Developer Field can't be named "${name}"; it is reserved.`
     );
   }
 }
@@ -409,7 +415,7 @@ function resolveLifecycle(
  * @typeParam I - The initial Statuses; `["booked"]` when `initial` is absent.
  * @typeParam N - The stored Status values.
  * @throws When a base Status is redeclared, `transitions` or `initial` names an unknown Status, `initial` is empty,
- * a Developer Field is named `also`, two Statuses share a stored value (I6), or two columns of one table, or two tables, share a physical name.
+ * a Developer Field is named `also` (or a Booking one `waived`), two Statuses share a stored value (I6), or two columns of one table, or two tables, share a physical name.
  */
 export function defineSchema<
   R extends ResourceIdColumn = Column<"text", string>,
@@ -444,8 +450,8 @@ export function defineSchema<
   const fields = (params.booking?.fields ?? {}) as F;
   const blockFields = params.block?.fields ?? {};
 
-  assertNotAlso("Booking", fields);
-  assertNotAlso("Block", blockFields);
+  assertNotReserved("Booking", fields, ["also", "waived"]);
+  assertNotReserved("Block", blockFields, ["also"]);
 
   // SAFETY: resolveLifecycle has an entry for every St, adds booked → cancelled, and checks that transitions and initial name only St.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the Status names are only known at runtime.

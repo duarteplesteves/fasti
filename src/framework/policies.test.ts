@@ -50,6 +50,22 @@ async function stored(adapter: ReturnType<typeof memoryAdapter>) {
   });
 }
 
+/** A verb that must never be called. */
+// oxlint-disable-next-line require-await -- a verb must return a promise.
+async function refuse(): Promise<never> {
+  throw new Error("no Adapter call expected");
+}
+
+/** Every verb and the lock refuse: proves a call reached no Adapter. */
+const noCalls = defineAdapter<undefined, "blocks">(() => ({
+  getBlock: refuse,
+  getBooking: refuse,
+  getRules: refuse,
+  listBlocks: refuse,
+  listBookings: refuse,
+  withResourceLock: refuse,
+}));
+
 /** A Policy that always breaks, with a fixed detail. */
 const closed = definePolicy(schema, {
   appliesTo: ["book"],
@@ -241,6 +257,121 @@ describe("Policies on book", () => {
       await expect(stored(adapter)).resolves.toStrictEqual([]);
     }
   );
+});
+
+describe("relax on book", () => {
+  it("succeeds with the relaxed Policy's Violation as waived, and stores the Booking", async () => {
+    const adapter = await seeded();
+    const scheduler = createScheduler({ adapter, policies: [closed], schema });
+
+    const booking = unwrap(
+      await scheduler.book({ end, relax: ["closed"], resourceId: room, start })
+    );
+
+    expect(booking.waived).toStrictEqual([
+      { detail: { reason: "closed" }, policy: "closed" },
+    ]);
+    await expect(stored(adapter)).resolves.toHaveLength(1);
+  });
+
+  it("still refuses with only the unrelaxed Violations", async () => {
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [closed],
+      schema,
+    });
+
+    // Saturday 8 June 2030, outside the weekday rules.
+    const result = await scheduler.book({
+      end: end.add({ hours: 120 }),
+      relax: ["closed"],
+      resourceId: room,
+      start: start.add({ hours: 120 }),
+    });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "PolicyViolation",
+        violations: [{ detail: {}, policy: "availability" }],
+      },
+      ok: false,
+    });
+  });
+
+  it("gives waived: [] when nothing relaxed broke, and no waived key without relax", async () => {
+    const adapter = await seeded();
+    const scheduler = createScheduler({ adapter, policies: [], schema });
+
+    const relaxed = unwrap(
+      await scheduler.book({
+        end,
+        relax: ["availability"],
+        resourceId: room,
+        start,
+      })
+    );
+
+    const plain = unwrap(
+      await scheduler.book({
+        end: end.add({ hours: 1 }),
+        resourceId: room,
+        start: start.add({ hours: 1 }),
+      })
+    );
+
+    expect(relaxed.waived).toStrictEqual([]);
+    expect(plain).not.toHaveProperty("waived");
+  });
+
+  it("books outside hours when availability is relaxed", async () => {
+    const scheduler = createScheduler({
+      adapter: await seeded(),
+      policies: [],
+      schema,
+    });
+
+    const booking = unwrap(
+      await scheduler.book({
+        end: end.add({ hours: 120 }),
+        relax: ["availability"],
+        resourceId: room,
+        start: start.add({ hours: 120 }),
+      })
+    );
+
+    expect(booking.waived).toStrictEqual([
+      { detail: {}, policy: "availability" },
+    ]);
+  });
+
+  it("refuses an unknown name as InvalidParams at its index, before any Adapter call", async () => {
+    const scheduler = createScheduler({
+      adapter: noCalls,
+      policies: [closed],
+      schema,
+    });
+
+    const result = await scheduler.book({
+      end,
+      // @ts-expect-error -- relax takes only names that apply to book.
+      relax: ["nope", "closed"],
+      resourceId: room,
+      start,
+    });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "InvalidParams",
+        issues: [
+          {
+            message: "relax: nope is not a Policy that applies to book",
+            path: ["relax", 0],
+          },
+        ],
+      },
+      ok: false,
+    });
+  });
 });
 
 describe("Policy definition", () => {

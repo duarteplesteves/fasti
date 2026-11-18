@@ -10,7 +10,7 @@ import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
-import { applicable, enforcePolicies } from "./policy-pass.js";
+import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
 import type { AlsoParam, WriteEffect } from "./write-unit.js";
@@ -101,6 +101,19 @@ export function book<S extends AnySchema, Tx, R = never>(
     });
   }
 
+  const policies = applicable(ctx, "book");
+  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- WriteAction types `relax` for callers; the implementation takes it as data.
+  const { relax } = params as { readonly relax?: readonly string[] };
+  const [relaxIssue, ...relaxIssues] = checkRelax(policies, "book", relax);
+
+  if (relaxIssue !== undefined) {
+    return Effect.fail<InvalidParams>({
+      _tag: "InvalidParams",
+      issues: [relaxIssue, ...relaxIssues],
+    });
+  }
+
   return writeUnit(
     ctx,
     resourceId,
@@ -111,13 +124,12 @@ export function book<S extends AnySchema, Tx, R = never>(
           yield* checkOverlap(locked, ctx.codec, range);
         }
 
-        yield* enforcePolicies(locked, applicable(ctx, "book"), {
-          action: "book",
-          end,
-          now,
-          resourceId,
-          start,
-        });
+        const waived = yield* enforcePolicies(
+          locked,
+          policies,
+          { action: "book", end, now, resourceId, start },
+          relax ?? []
+        );
 
         // SAFETY: the base columns are set, and every schema field is set: required ones by BookParams' type, optional ones to their value or `null`.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
@@ -146,7 +158,8 @@ export function book<S extends AnySchema, Tx, R = never>(
         return {
           _tag: "Done",
           context: { booking: record },
-          value: record,
+          // `waived` exactly when `relax` was passed.
+          value: relax === undefined ? record : { ...record, waived },
         } as const;
       }),
     params.also

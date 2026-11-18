@@ -10,6 +10,7 @@ import type {
 import type { AvailabilityViolation, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { Booking } from "./booking.js";
+import type { PolicyViolation } from "./errors.js";
 
 /** What a Policy can apply to: the Actions that run it. */
 export type PolicyTarget = "book";
@@ -102,6 +103,44 @@ type Applies<P, A extends PolicyTarget> = P extends {
 export type ViolationFor<P, A extends PolicyTarget> =
   | AvailabilityViolation
   | ViolationOf<Applies<P, A>>;
+
+/** The names a `relax` value `X` may list; `never` without `relax`. */
+type RelaxedNames<X> = X extends readonly (infer N)[] ? N : never;
+
+/** The names a `relax` value `X` surely lists: a literal tuple's; none when it may be `undefined`, or a widened array that may be `[]`. */
+type SurelyRelaxed<X> = undefined extends X
+  ? never
+  : X extends readonly unknown[]
+    ? number extends X["length"]
+      ? never
+      : X[number]
+    : never;
+
+/** The value with `waived` added exactly when `relax` was passed (optional when it may be `undefined`): the relaxed Policies' Violations. */
+export type WithWaived<V, W extends Violation<string, unknown>, X> = [
+  X,
+] extends [undefined]
+  ? V
+  : undefined extends X
+    ? V & {
+        readonly waived?: readonly Extract<
+          W,
+          { readonly policy: RelaxedNames<X> }
+        >[];
+      }
+    : V & {
+        readonly waived: readonly Extract<
+          W,
+          { readonly policy: RelaxedNames<X> }
+        >[];
+      };
+
+/** `PolicyViolation` of the applicable Policies `W` that `X` doesn't surely relax; `never` when it relaxes them all. */
+export type PolicyErrorOf<W extends Violation<string, unknown>, X> = [
+  Exclude<W, { readonly policy: SurelyRelaxed<X> }>,
+] extends [never]
+  ? never
+  : PolicyViolation<Exclude<W, { readonly policy: SurelyRelaxed<X> }>>;
 
 /** Duplicate names in a Policy tuple are a type error. */
 export type UniqueNames<

@@ -170,6 +170,17 @@ describe(defineSchema, () => {
     ).toThrow(/Block Developer Field can't be named "also"/u);
   });
 
+  it("throws on a Booking Developer Field named `waived`", () => {
+    expect(() =>
+      defineSchema({
+        booking: {
+          // @ts-expect-error `waived` is reserved
+          fields: { waived: { required: false, type: column.text() } },
+        },
+      })
+    ).toThrow(/Booking Developer Field can't be named "waived"/u);
+  });
+
   it("throws when two columns or tables share a physical name", () => {
     expect(() =>
       defineSchema({

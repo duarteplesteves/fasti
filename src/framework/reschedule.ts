@@ -110,13 +110,18 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
 
         yield* checkOverlap(locked, ctx.codec, placement);
         // shortcut: only the built-in availability runs here, on a book-shaped candidate; #125 gives reschedule its own candidate and Policies.
-        yield* enforcePolicies(locked, [availabilityPolicy<S>()], {
-          action: "book",
-          end,
-          now,
-          resourceId: placement.resourceId,
-          start,
-        });
+        yield* enforcePolicies(
+          locked,
+          [availabilityPolicy<S>()],
+          {
+            action: "book",
+            end,
+            now,
+            resourceId: placement.resourceId,
+            start,
+          },
+          []
+        );
 
         // SAFETY: base columns of the right types, and a patch of declared fields only.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
