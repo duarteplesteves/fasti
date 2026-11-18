@@ -1,4 +1,4 @@
-export { backstopSql } from "./backstop.js";
+export { backstopSql } from "../../schema/backstop-sql.js";
 
 export { drizzleAdapter } from "./drizzle-adapter.js";
 

@@ -15,6 +15,7 @@ import {
 
 import type { ResourceIdOf } from "../../adapter/records.js";
 import type { Recurrence } from "../../core/types.js";
+import { sqlLiteral } from "../../schema/backstop-sql.js";
 import type { AnyColumn } from "../../schema/column.js";
 import type {
   AnySchema,
@@ -108,11 +109,6 @@ function fieldColumns(
   );
 }
 
-/** A SQL string literal, for DDL, where values can't be parameters. */
-export function literal(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
 /**
  * The Booking table of `schema`, with your physical names, for your drizzle-kit schema file.
  * Columns are keyed by logical name. Status is `text` with a `CHECK` over its stored values,
@@ -139,7 +135,7 @@ export function bookingTable<
     ...fieldColumns(schema.booking.fields, names),
   };
 
-  const stored = statusCodec(schema).allStored.map(literal).join(", ");
+  const stored = statusCodec(schema).allStored.map(sqlLiteral).join(", ");
   const table = schema.names.tables.booking;
 
   return pgTable(table, columns, (self) => [

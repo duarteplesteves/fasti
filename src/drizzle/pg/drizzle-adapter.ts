@@ -23,9 +23,9 @@ import type {
   ListBookingsQuery,
   SchemaAdapter,
 } from "../../adapter/contract.js";
+import { noOverlapConstraint } from "../../schema/backstop-sql.js";
 import type { AnySchema, BlockSchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
-import { noOverlapConstraint } from "./backstop.js";
 import {
   decodeBlock,
   decodeBooking,
