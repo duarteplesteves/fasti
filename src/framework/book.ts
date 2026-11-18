@@ -10,7 +10,7 @@ import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
-import { checkAvailability } from "./placement.js";
+import { applicable, enforcePolicies } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
 import type { AlsoParam, WriteEffect } from "./write-unit.js";
@@ -51,18 +51,14 @@ export interface BookAlso<S extends AnySchema, Tx> {
   readonly now: Temporal.Instant;
 }
 
-/** Every way `book` can fail. */
-export type BookError =
-  | InvalidParams
-  | SlotConflict
-  | PolicyViolation
-  | AdapterError;
+/** Every way `book` can fail, apart from `PolicyViolation`, which the scheduler types from its Policies. */
+export type BookError = InvalidParams | SlotConflict | AdapterError;
 
-/** Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and inside availability (ADR 014: overlap first). */
+/** Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and keeps every Policy that applies to `book` (ADR 014: Invariants first). */
 export function book<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: BookParams<S> & AlsoParam<{ readonly booking: Booking<S> }, Tx, R>
-): WriteEffect<Booking<S>, BookError, R> {
+): WriteEffect<Booking<S>, BookError | PolicyViolation, R> {
   const { resourceId } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
@@ -108,14 +104,20 @@ export function book<S extends AnySchema, Tx, R = never>(
   return writeUnit(
     ctx,
     resourceId,
-    (locked) =>
+    (locked, now) =>
       Effect.gen(function* bookUnit() {
         // A non-blocking Booking can't conflict.
         if (ctx.codec.isBlocking(status)) {
           yield* checkOverlap(locked, ctx.codec, range);
         }
 
-        yield* checkAvailability(locked, range);
+        yield* enforcePolicies(locked, applicable(ctx, "book"), {
+          action: "book",
+          end,
+          now,
+          resourceId,
+          start,
+        });
 
         // SAFETY: the base columns are set, and every schema field is set: required ones by BookParams' type, optional ones to their value or `null`.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.

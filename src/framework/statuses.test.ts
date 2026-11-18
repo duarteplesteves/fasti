@@ -35,7 +35,11 @@ function at(hours: number): Temporal.Instant {
 
 /** A scheduler over a fresh memory Adapter, with `weekdays` set for `room`. */
 async function seeded() {
-  const scheduler = createScheduler({ adapter: memoryAdapter(), schema });
+  const scheduler = createScheduler({
+    policies: [],
+    adapter: memoryAdapter(),
+    schema,
+  });
 
   unwrap(
     await scheduler.availability.set({ resourceId: "room", rules: [weekdays] })

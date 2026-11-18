@@ -4,7 +4,7 @@ import { array, nat, tuple } from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
-import { createScheduler } from "../index.js";
+import { createScheduler, definePolicy } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   arbAvailabilityRule,
@@ -91,7 +91,11 @@ describe("race safety", () => {
       };
     });
 
-    const result = await createScheduler({ adapter, schema }).book({
+    const result = await createScheduler({
+      policies: [],
+      adapter,
+      schema,
+    }).book({
       end,
       resourceId: room,
       start,
@@ -109,7 +113,11 @@ describe("race safety", () => {
   it.each([1, 2, 3])(
     "lets exactly 1 of 20 parallel bookings of one slot through (run %i)",
     async () => {
-      const scheduler = createScheduler({ adapter: await seeded(), schema });
+      const scheduler = createScheduler({
+        policies: [],
+        adapter: await seeded(),
+        schema,
+      });
 
       const results = await Promise.all(
         Array.from(
@@ -122,6 +130,54 @@ describe("race safety", () => {
 
       expect(tags.filter((t) => t === "ok")).toHaveLength(1);
       expect(tags.filter((t) => t === "SlotConflict")).toHaveLength(19);
+    }
+  );
+
+  it.each([1, 2, 3])(
+    "lets exactly 3 of 20 parallel bookings on one day through a max-3-per-day Policy (run %i)",
+    async () => {
+      const day = {
+        from: start.subtract({ hours: 1 }),
+        to: start.add({ hours: 8 }),
+      };
+
+      const maxThreePerDay = definePolicy(schema, {
+        appliesTo: ["book"],
+        check: (_candidate, count: number) => (count >= 3 ? { count } : null),
+        load: async ({ reads, resourceId }) => {
+          const today = await reads.listBookings({
+            overlapping: day,
+            resourceId,
+          });
+
+          return today.length;
+        },
+        name: "maxThreePerDay",
+      });
+
+      const scheduler = createScheduler({
+        adapter: await seeded(),
+        policies: [maxThreePerDay],
+        schema,
+      });
+
+      // 20 disjoint 15-minute slots from 10:00 Lisbon, so only the Policy can refuse.
+      const results = await Promise.all(
+        Array.from(
+          { length: 20 },
+          async (_, i) =>
+            await scheduler.book({
+              end: start.add({ minutes: 15 * i + 15 }),
+              resourceId: room,
+              start: start.add({ minutes: 15 * i }),
+            })
+        )
+      );
+
+      const tags = results.map((r) => (r.ok ? "ok" : r.error._tag));
+
+      expect(tags.filter((t) => t === "ok")).toHaveLength(3);
+      expect(tags.filter((t) => t === "PolicyViolation")).toHaveLength(17);
     }
   );
 
@@ -205,7 +261,7 @@ describe("race safety", () => {
         );
       });
 
-      const scheduler = createScheduler({ adapter, schema });
+      const scheduler = createScheduler({ policies: [], adapter, schema });
 
       const slots = unwrap(
         await scheduler.findSlots({

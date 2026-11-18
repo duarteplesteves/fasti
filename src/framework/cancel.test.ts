@@ -69,7 +69,7 @@ async function bookedScheduler(adapter: Adapter<undefined, "blocks">) {
     await locked.replaceRules({ resourceId: room, rules: [weekdays] });
   });
 
-  const scheduler = createScheduler({ adapter, schema });
+  const scheduler = createScheduler({ policies: [], adapter, schema });
   const booked = await scheduler.book({ end, resourceId: room, start });
 
   assert(booked.ok, "expected the seed booking to succeed");
@@ -119,7 +119,12 @@ describe("cancel", () => {
   });
 
   it("gives BookingNotFound for an unknown id", async () => {
-    const scheduler = createScheduler({ adapter: memoryAdapter(), schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: memoryAdapter(),
+      schema,
+    });
+
     const id = mintBookingId();
 
     await expect(scheduler.cancel({ id })).resolves.toStrictEqual({

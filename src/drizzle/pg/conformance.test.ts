@@ -246,6 +246,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
 
   it("a Block whose Resource id breaks the foreign key gives AdapterError with the driver's cause", async () => {
     const scheduler = createScheduler({
+      policies: [],
       adapter: drizzleAdapter(database.db),
       schema: uuidIdSchema,
     });
@@ -279,6 +280,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
       );
 
       const scheduler = createScheduler({
+        policies: [],
         adapter: drizzleAdapter(database.db),
         schema: uuidIdSchema,
       });
@@ -312,6 +314,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
 
     it("an `also` that deadlocks with a concurrent unit through tx succeeds on retry, and both Actions commit", async () => {
       const scheduler = createScheduler({
+        policies: [],
         adapter: drizzleAdapter(database.db),
         schema: uuidIdSchema,
       });
@@ -396,6 +399,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
 
     it("through the Framework, 40001 from `also` rejects after 3 attempts", async () => {
       const scheduler = createScheduler({
+        policies: [],
         adapter: drizzleAdapter(database.db),
         schema: uuidIdSchema,
       });
@@ -431,6 +435,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
         const transaction = vi.spyOn(database.db, "transaction");
 
         const scheduler = createScheduler({
+          policies: [],
           adapter: drizzleAdapter(database.db),
           schema: uuidIdSchema,
         });
@@ -477,7 +482,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
       );
 
       const inner = drizzleAdapter(database.db);
-      const plain = createScheduler({ adapter: inner, schema });
+      const plain = createScheduler({ policies: [], adapter: inner, schema });
 
       await plain.availability.set({
         resourceId: room,
@@ -530,7 +535,11 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
         };
       });
 
-      const result = await createScheduler({ adapter, schema }).reschedule({
+      const result = await createScheduler({
+        policies: [],
+        adapter,
+        schema,
+      }).reschedule({
         end: at(15),
         id: moving.value.id,
         start: at(14),

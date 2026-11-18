@@ -91,6 +91,22 @@ export type {
   Slot,
 } from "./framework/find-slots.js";
 
+export { definePolicy } from "./framework/policy.js";
+
+export type {
+  AnyPolicyOf,
+  BookCandidate,
+  Candidate,
+  CandidateFor,
+  DefinePolicyParams,
+  LoadContext,
+  Policy,
+  PolicyReads,
+  PolicyTarget,
+  Violation,
+  ViolationOf,
+} from "./framework/policy.js";
+
 export { AdapterError } from "./framework/errors.js";
 
 export type {

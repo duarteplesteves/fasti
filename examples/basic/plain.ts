@@ -16,7 +16,11 @@ function valueOf<A, E>(result: Result<A, E>): A {
   return result.value;
 }
 
-const scheduler = createScheduler({ adapter: drizzleAdapter(db), schema });
+const scheduler = createScheduler({
+  policies: [],
+  adapter: drizzleAdapter(db),
+  schema,
+});
 
 // A fresh Resource, so the script can run again.
 const resourceId = crypto.randomUUID();

@@ -6,7 +6,12 @@ import { assert, describe, expect, expectTypeOf, it } from "vitest";
 import type { Adapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import { mintBookingId } from "../framework/booking-id.js";
-import { column, createScheduler, defineSchema } from "../index.js";
+import {
+  column,
+  createScheduler,
+  definePolicy,
+  defineSchema,
+} from "../index.js";
 import type {
   BlockNotFound,
   SlotConflict,
@@ -26,11 +31,14 @@ const [room] = uuidIdResources;
 
 type Tx = TxOf<ReturnType<typeof memoryAdapter>>;
 
-class AppScheduler extends Scheduler<AppScheduler, typeof schema, Tx>()(
-  "test/AppScheduler"
-) {}
+class AppScheduler extends Scheduler<
+  AppScheduler,
+  typeof schema,
+  Tx,
+  readonly []
+>()("test/AppScheduler") {}
 
-type Service = SchedulerService<typeof schema, Tx>;
+type Service = SchedulerService<typeof schema, Tx, readonly []>;
 
 /** A developer service an `also` can require. */
 interface AuditLog {
@@ -64,7 +72,7 @@ async function viaEffect<A, E>(
       Effect.gen(function* withService() {
         return yield* use(yield* AppScheduler);
       }),
-      AppScheduler.layer({ adapter, schema })
+      AppScheduler.layer({ policies: [], adapter, schema })
     )
   );
 }
@@ -79,7 +87,7 @@ function failureOf<E>(result: Result<unknown, E>): Exit.Exit<never, E> {
 /** A scheduler over a fresh Adapter with weekday availability and a 10:00–11:00 Booking. */
 async function seeded() {
   const adapter = memoryAdapter();
-  const plain = createScheduler({ adapter, schema });
+  const plain = createScheduler({ policies: [], adapter, schema });
 
   await plain.availability.set({ resourceId: room, rules: [weekdays] });
 
@@ -265,7 +273,11 @@ describe("Effect form", () => {
   it("dies on a defect from a contract-violating Adapter", async () => {
     const inner = memoryAdapter();
 
-    await createScheduler({ adapter: inner, schema }).availability.set({
+    await createScheduler({
+      policies: [],
+      adapter: inner,
+      schema,
+    }).availability.set({
       resourceId: room,
       rules: [weekdays],
     });
@@ -292,7 +304,7 @@ describe("Effect form", () => {
     expectTypeOf<Tx>().toEqualTypeOf<undefined>();
     expectTypeOf<TxOf<Adapter<DbTx, "blocks">>>().toEqualTypeOf<DbTx>();
 
-    function bookWithTx(s: SchedulerService<typeof schema, DbTx>) {
+    function bookWithTx(s: SchedulerService<typeof schema, DbTx, readonly []>) {
       return s.book({
         also: ({ tx }) => {
           expectTypeOf(tx).toEqualTypeOf<DbTx>();
@@ -332,7 +344,7 @@ describe("Effect form", () => {
     >();
 
     const withoutAudit = program.pipe(
-      Effect.provide(AppScheduler.layer({ adapter, schema }))
+      Effect.provide(AppScheduler.layer({ policies: [], adapter, schema }))
     );
 
     // @ts-expect-error -- Audit isn't provided.
@@ -342,7 +354,7 @@ describe("Effect form", () => {
       program.pipe(
         Effect.provide(
           Layer.mergeAll(
-            AppScheduler.layer({ adapter, schema }),
+            AppScheduler.layer({ policies: [], adapter, schema }),
             Layer.succeed(Audit, {
               record: (note) => Effect.succeed(`audited: ${note}`),
             })
@@ -373,7 +385,7 @@ describe("Effect form", () => {
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
-            AppScheduler.layer({ adapter, schema }),
+            AppScheduler.layer({ policies: [], adapter, schema }),
             TestClock.layer()
           )
         )
@@ -398,13 +410,19 @@ const lifecycleSchema = defineSchema({
 class LifecycleScheduler extends Scheduler<
   LifecycleScheduler,
   typeof lifecycleSchema,
-  Tx
+  Tx,
+  readonly []
 >()("test/LifecycleScheduler") {}
 
 describe("Effect form transition", () => {
   it("runs through the layer, with StatusMismatch in the error channel", async () => {
     const adapter = memoryAdapter();
-    const plain = createScheduler({ adapter, schema: lifecycleSchema });
+
+    const plain = createScheduler({
+      policies: [],
+      adapter,
+      schema: lifecycleSchema,
+    });
 
     await plain.availability.set({ resourceId: room, rules: [weekdays] });
 
@@ -434,7 +452,11 @@ describe("Effect form transition", () => {
 
           return { moved, stale };
         }),
-        LifecycleScheduler.layer({ adapter, schema: lifecycleSchema })
+        LifecycleScheduler.layer({
+          policies: [],
+          adapter,
+          schema: lifecycleSchema,
+        })
       )
     );
 
@@ -448,5 +470,106 @@ describe("Effect form transition", () => {
     expectTypeOf(exit.value.stale).toEqualTypeOf<
       TransitionError<typeof lifecycleSchema>
     >();
+  });
+});
+
+const closed = definePolicy(schema, {
+  appliesTo: ["book"],
+  check: () => ({ reason: "closed" }),
+  name: "closed",
+});
+
+const policies = [closed] as const;
+
+class PolicyScheduler extends Scheduler<
+  PolicyScheduler,
+  typeof schema,
+  Tx,
+  typeof policies
+>()("test/PolicyScheduler") {}
+
+describe("Effect form Policies", () => {
+  it("returns PolicyViolation through the layer, as the plain form does", async () => {
+    const { adapter } = await seeded();
+    const params = { end: at(4), resourceId: room, start: at(3) };
+
+    const viaLayer = await Effect.runPromiseExit(
+      Effect.provide(
+        Effect.gen(function* bookThroughLayer() {
+          return yield* (yield* PolicyScheduler).book(params);
+        }),
+        PolicyScheduler.layer({ adapter, policies, schema })
+      )
+    );
+
+    const plain = await createScheduler({ adapter, policies, schema }).book(
+      params
+    );
+
+    expect(viaLayer).toStrictEqual(
+      Exit.fail({
+        _tag: "PolicyViolation",
+        violations: [{ detail: { reason: "closed" }, policy: "closed" }],
+      })
+    );
+    expect(viaLayer).toStrictEqual(failureOf(plain));
+  });
+
+  it("gives the Policies and `also` the same TestClock `now`", async () => {
+    const { adapter } = await seeded();
+    const frozen = Temporal.Instant.from("2031-01-01T00:00:00Z");
+    const seen: Temporal.Instant[] = [];
+
+    const watching = definePolicy(schema, {
+      appliesTo: ["book"],
+      check: () => null,
+      load: ({ now }) => {
+        seen.push(now);
+      },
+      name: "watching",
+    });
+
+    class WatchingScheduler extends Scheduler<
+      WatchingScheduler,
+      typeof schema,
+      Tx,
+      readonly [typeof watching]
+    >()("test/WatchingScheduler") {}
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookAtTestTime() {
+        yield* TestClock.setTime(frozen.epochMilliseconds);
+
+        return yield* (yield* WatchingScheduler).book({
+          also: ({ now }) => Effect.succeed(now),
+          end: at(4),
+          resourceId: room,
+          start: at(3),
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            WatchingScheduler.layer({
+              adapter,
+              policies: [watching],
+              schema,
+            }),
+            TestClock.layer()
+          )
+        )
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected the booking to succeed");
+    expect(seen).toStrictEqual([frozen]);
+    expect(exit.value.also).toStrictEqual(frozen);
+  });
+
+  it("requires policies on layer", () => {
+    // @ts-expect-error -- policies is required.
+    expectTypeOf(PolicyScheduler.layer).toBeCallableWith({
+      adapter: memoryAdapter(),
+      schema,
+    });
   });
 });

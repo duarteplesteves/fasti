@@ -15,7 +15,8 @@ import type {
 } from "../adapter/index.js";
 import type { RuleRecord } from "../adapter/records.js";
 import type { InvalidParams, Result } from "../core/result.js";
-import type { BookingId } from "../core/types.js";
+import type { AvailabilityViolation, BookingId } from "../core/types.js";
+import { Scheduler as EffectScheduler } from "../effect/index.js";
 import type { SchedulerService } from "../effect/index.js";
 import type {
   BlockId,
@@ -23,6 +24,7 @@ import type {
   BlockActions,
   BlockColumn,
   BlockNotFound,
+  BookCandidate,
   CreateBlockError,
   CreateBlockParams,
   CreateSchedulerParams,
@@ -34,8 +36,9 @@ import type {
   Scheduler,
   UpdateBlockError,
   UpdateBlockParams,
+  Violation,
 } from "../index.js";
-import { createScheduler } from "../index.js";
+import { createScheduler, definePolicy } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { column } from "../schema/column.js";
 import { defineSchema } from "../schema/define-schema.js";
@@ -149,12 +152,17 @@ describe("book types", () => {
 
   it("fails with exactly BookError and returns a BookingId", () => {
     expectTypeOf<BookError>().toEqualTypeOf<
-      InvalidParams | SlotConflict | PolicyViolation | AdapterError
+      InvalidParams | SlotConflict | AdapterError
     >();
     expectTypeOf<
-      ReturnType<Scheduler<typeof textIdSchema, undefined>["book"]>
+      ReturnType<Scheduler<typeof textIdSchema, undefined, readonly []>["book"]>
     >().toEqualTypeOf<
-      Promise<Result<Booking<typeof textIdSchema>, BookError>>
+      Promise<
+        Result<
+          Booking<typeof textIdSchema>,
+          BookError | PolicyViolation<AvailabilityViolation>
+        >
+      >
     >();
     expectTypeOf<
       Booking<typeof uuidIdSchema>["id"]
@@ -177,29 +185,49 @@ declare const plainAdapter: Adapter<{ readonly txBrand: true }>;
 
 /** What createScheduler infers as Tx; type-only. */
 declare function txOf<S extends AnySchema, Tx>(
-  params: CreateSchedulerParams<S, Tx>
+  params: CreateSchedulerParams<S, Tx, readonly []>
 ): Tx;
 
 /** Never called: only the types are checked. */
 function schedulerCalls() {
   return [
-    // @ts-expect-error -- a Blocks schema needs an Adapter that declares "blocks".
-    createScheduler({ adapter: plainAdapter, schema: blockSchema }),
-    createScheduler({ adapter: plainAdapter, schema: defaultSchema }),
-    createScheduler({ adapter: memoryAdapter(), schema: blockSchema }),
-    createScheduler({ adapter: memoryAdapter(), schema: defaultSchema }),
+    createScheduler({
+      // @ts-expect-error -- a Blocks schema needs an Adapter that declares "blocks".
+      adapter: plainAdapter,
+      policies: [],
+      schema: blockSchema,
+    }),
+    createScheduler({
+      policies: [],
+      adapter: plainAdapter,
+      schema: defaultSchema,
+    }),
+    createScheduler({
+      policies: [],
+      adapter: memoryAdapter(),
+      schema: blockSchema,
+    }),
+    createScheduler({
+      policies: [],
+      adapter: memoryAdapter(),
+      schema: defaultSchema,
+    }),
   ];
 }
 
 /** Never called: only the inferred Tx is checked. */
 function txViaMemory() {
-  // oxlint-disable-next-line typescript/no-confusing-void-expression -- the `undefined` Tx is what's checked.
-  return { tx: txOf({ adapter: memoryAdapter(), schema: blockSchema }) };
+  return {
+    // oxlint-disable-next-line typescript/no-confusing-void-expression -- the `undefined` Tx is what's checked.
+    tx: txOf({ adapter: memoryAdapter(), policies: [], schema: blockSchema }),
+  };
 }
 
 /** Never called: only the inferred Tx is checked. */
 function txViaPlain() {
-  return { tx: txOf({ adapter: plainAdapter, schema: defaultSchema }) };
+  return {
+    tx: txOf({ adapter: plainAdapter, policies: [], schema: defaultSchema }),
+  };
 }
 
 describe("Blocks types", () => {
@@ -216,13 +244,19 @@ describe("Blocks types", () => {
 
   it("has `blocks` only when the schema declares `block`", () => {
     expectTypeOf<
-      Scheduler<typeof defaultSchema, undefined>
+      Scheduler<typeof defaultSchema, undefined, readonly []>
     >().not.toHaveProperty("blocks");
-    expectTypeOf<Scheduler<typeof blockSchema, undefined>>().toHaveProperty(
-      "blocks"
-    );
     expectTypeOf<
-      ReturnType<Scheduler<typeof blockSchema, undefined>["blocks"]["create"]>
+      Scheduler<typeof blockSchema, undefined, readonly []>
+    >().toHaveProperty("blocks");
+    expectTypeOf<
+      ReturnType<
+        Scheduler<
+          typeof blockSchema,
+          undefined,
+          readonly []
+        >["blocks"]["create"]
+      >
     >().toEqualTypeOf<
       Promise<Result<Block<typeof blockSchema>, CreateBlockError>>
     >();
@@ -329,8 +363,16 @@ interface Tx {
 /** Never called: only the inferred Scheduler types are checked. */
 function schedulersByAdapter() {
   return {
-    memory: createScheduler({ adapter: memoryAdapter(), schema: blockSchema }),
-    plain: createScheduler({ adapter: plainAdapter, schema: defaultSchema }),
+    memory: createScheduler({
+      policies: [],
+      adapter: memoryAdapter(),
+      schema: blockSchema,
+    }),
+    plain: createScheduler({
+      policies: [],
+      adapter: plainAdapter,
+      schema: defaultSchema,
+    }),
   };
 }
 
@@ -338,10 +380,14 @@ describe("forms", () => {
   it("keeps the old plain surface for every Action, without Blocks", () => {
     type S = typeof defaultSchema;
 
-    type Plain = Scheduler<S, Tx>;
+    type Plain = Scheduler<S, Tx, readonly []>;
 
     expectTypeOf<Single<Plain["book"]>>().toEqualTypeOf<
-      (params: BookParams<S>) => Promise<Result<Booking<S>, BookError>>
+      (
+        params: BookParams<S>
+      ) => Promise<
+        Result<Booking<S>, BookError | PolicyViolation<AvailabilityViolation>>
+      >
     >();
     expectTypeOf<Single<Plain["cancel"]>>().toEqualTypeOf<
       (
@@ -376,7 +422,7 @@ describe("forms", () => {
   it("keeps the old plain surface for every Block Action, with Blocks", () => {
     type S = typeof blockSchema;
 
-    type Blocks = Scheduler<S, Tx>["blocks"];
+    type Blocks = Scheduler<S, Tx, readonly []>["blocks"];
 
     expectTypeOf<Single<Blocks["create"]>>().toEqualTypeOf<
       (
@@ -396,7 +442,7 @@ describe("forms", () => {
         params: ListBlocksParams<S>
       ) => Promise<Result<readonly Block<S>[], ListBlocksError>>
     >();
-    expectTypeOf<keyof Scheduler<S, Tx>>().toEqualTypeOf<
+    expectTypeOf<keyof Scheduler<S, Tx, readonly []>>().toEqualTypeOf<
       "book" | "reschedule" | "cancel" | "findSlots" | "availability" | "blocks"
     >();
   });
@@ -404,10 +450,15 @@ describe("forms", () => {
   it("keeps the Effect form's surface", () => {
     type S = typeof blockSchema;
 
-    type Service = SchedulerService<S, Tx>;
+    type Service = SchedulerService<S, Tx, readonly []>;
 
     expectTypeOf<Single<Service["book"]>>().toEqualTypeOf<
-      (params: BookParams<S>) => Effect.Effect<Booking<S>, BookError>
+      (
+        params: BookParams<S>
+      ) => Effect.Effect<
+        Booking<S>,
+        BookError | PolicyViolation<AvailabilityViolation>
+      >
     >();
     expectTypeOf<Single<Service["findSlots"]>>().toEqualTypeOf<
       (
@@ -449,8 +500,8 @@ describe("forms", () => {
 
   it("infers Tx from the Adapter in createScheduler", () => {
     expectTypeOf(schedulersByAdapter).returns.toEqualTypeOf<{
-      memory: Scheduler<typeof blockSchema, undefined>;
-      plain: Scheduler<typeof defaultSchema, Tx>;
+      memory: Scheduler<typeof blockSchema, undefined, readonly []>;
+      plain: Scheduler<typeof defaultSchema, Tx, readonly []>;
     }>();
   });
 
@@ -458,5 +509,85 @@ describe("forms", () => {
     expectTypeOf<
       EffectLocked<typeof defaultSchema, Tx>["tx"]
     >().toEqualTypeOf<Tx>();
+  });
+});
+
+describe("Policy types", () => {
+  /** A Policy over `defaultSchema` whose `detail` is inferred from `check`. */
+  const closed = definePolicy(defaultSchema, {
+    appliesTo: ["book"],
+    check: (candidate) => {
+      expectTypeOf(candidate).toEqualTypeOf<
+        BookCandidate<typeof defaultSchema>
+      >();
+
+      return { reason: "closed" as const };
+    },
+    name: "closed",
+  });
+
+  /** Never called: only the types are checked. */
+  function withClosed() {
+    return createScheduler({
+      adapter: memoryAdapter(),
+      policies: [closed],
+      schema: defaultSchema,
+    });
+  }
+
+  it("infers each Policy's detail into book's PolicyViolation, next to availability", () => {
+    type BookResult = Awaited<
+      ReturnType<ReturnType<typeof withClosed>["book"]>
+    >;
+
+    expectTypeOf<
+      Extract<
+        Extract<BookResult, { readonly ok: false }>["error"],
+        { readonly _tag: "PolicyViolation" }
+      >
+    >().toEqualTypeOf<
+      PolicyViolation<
+        AvailabilityViolation | Violation<"closed", { reason: "closed" }>
+      >
+    >();
+  });
+
+  /** Never called: only the types are checked. */
+  function refusedCalls() {
+    return [
+      // @ts-expect-error -- policies is required.
+      createScheduler({ adapter: memoryAdapter(), schema: defaultSchema }),
+      createScheduler({
+        adapter: memoryAdapter(),
+        // @ts-expect-error -- `closed` is over defaultSchema, with text ids.
+        policies: [closed],
+        schema: brandedSchema,
+      }),
+    ];
+  }
+
+  it("requires policies, and refuses a Policy from another schema", () => {
+    expectTypeOf(refusedCalls).toBeFunction();
+  });
+
+  it("gives the Effect-form Scheduler a required fourth type parameter", () => {
+    // @ts-expect-error -- the Policies tuple has no default.
+    EffectScheduler<unknown, typeof defaultSchema, undefined>();
+    expectTypeOf(
+      EffectScheduler<
+        unknown,
+        typeof defaultSchema,
+        undefined,
+        readonly [typeof closed]
+      >()("test/WithClosed").layer
+    )
+      .parameter(0)
+      .toEqualTypeOf<
+        CreateSchedulerParams<
+          typeof defaultSchema,
+          undefined,
+          readonly [typeof closed]
+        >
+      >();
   });
 });
