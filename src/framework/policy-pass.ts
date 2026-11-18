@@ -59,11 +59,12 @@ export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
   target: PolicyTarget
 ): readonly AnyPolicyOf<S>[] {
-  const developer = ctx.policies.filter((p) => p.appliesTo.includes(target));
+  const all: readonly AnyPolicyOf<S>[] = [
+    availabilityPolicy<S>(),
+    ...ctx.policies,
+  ];
 
-  return target === "cancel"
-    ? developer
-    : [availabilityPolicy<S>(), ...developer];
+  return all.filter((p) => p.appliesTo.includes(target));
 }
 
 /** Run a read, rejecting with its `AdapterError` on failure. */

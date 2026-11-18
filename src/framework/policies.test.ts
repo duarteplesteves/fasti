@@ -463,6 +463,38 @@ describe("Policies on reschedule", () => {
     expect(moved.start).toStrictEqual(start.add({ hours: 120 }));
   });
 
+  it("reports an overlap that also breaks a Policy as SlotConflict alone", async () => {
+    const { policy, seen } = closedFor("reschedule");
+    const { adapter, booking } = await withBooking();
+
+    const later = {
+      end: end.add({ hours: 1 }),
+      start: start.add({ hours: 1 }),
+    };
+
+    const other = unwrap(
+      await createScheduler({ adapter, policies: [], schema }).book({
+        ...later,
+        resourceId: room,
+      })
+    );
+
+    const result = await createScheduler({
+      adapter,
+      policies: [policy],
+      schema,
+    }).reschedule({ ...later, id: booking.id });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "SlotConflict",
+        conflicts: [{ ...later, id: other.id, kind: "booking" }],
+      },
+      ok: false,
+    });
+    expect(seen).toStrictEqual([]);
+  });
+
   it("gives StatusMismatch for a non-blocking Booking, even when a Policy would also break", async () => {
     const { policy, seen } = closedFor("reschedule");
     const { adapter, booking } = await withBooking();
