@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { createScheduler } from "@fastijs/scheduler";
+import { createScheduler, definePolicy, notice } from "@fastijs/scheduler";
 import type { Result } from "@fastijs/scheduler";
 import { drizzleAdapter } from "@fastijs/scheduler/drizzle/pg";
 import { and, eq, gt, sql } from "drizzle-orm";
@@ -16,9 +16,46 @@ function valueOf<A, E>(result: Result<A, E>): A {
   return result.value;
 }
 
+/** The Lisbon calendar date of `instant`. */
+function lisbonDay(instant: Temporal.Instant): Temporal.PlainDate {
+  return instant.toZonedDateTimeISO("Europe/Lisbon").toPlainDate();
+}
+
+/** A Policy of your own: at most three blocking Bookings per Lisbon day on a Resource. */
+const maxThreePerDay = definePolicy(schema, {
+  appliesTo: ["book"],
+  // Once per call, under the Resource Lock: the Bookings on the days the call covers.
+  load: ({ from, reads, resourceId, to }) =>
+    reads.listBookings({
+      overlapping: {
+        from: from.toZonedDateTimeISO("Europe/Lisbon").startOfDay().toInstant(),
+        to: to
+          .toZonedDateTimeISO("Europe/Lisbon")
+          .startOfDay()
+          .add({ days: 1 })
+          .toInstant(),
+      },
+      resourceId,
+    }),
+  // Once per candidate: one on `book`, one per Grid slot in `findSlots`.
+  check: (candidate, bookings) => {
+    const count = bookings.filter(
+      (b) =>
+        b.status === "booked" &&
+        lisbonDay(b.start).equals(lisbonDay(candidate.start))
+    ).length;
+
+    return count >= 3 ? { count } : null;
+  },
+  name: "maxThreePerDay",
+});
+
+/** The prebuilt `notice`, here at zero minutes: no start in the past. */
+const noPastStarts = notice(schema, { appliesTo: ["book"], minimum: 0 });
+
 const scheduler = createScheduler({
-  policies: [],
   adapter: drizzleAdapter(db),
+  policies: [maxThreePerDay, noPastStarts],
   schema,
 });
 
@@ -85,6 +122,33 @@ const evening = await scheduler.book({
 assert.ok(!evening.ok);
 
 assert.equal(evening.error._tag, "PolicyViolation");
+
+// `notice` refuses a start in the past; relaxing it records a walk-in after the fact.
+const walkIn = {
+  end: Temporal.Instant.from("2026-06-01T09:30:00+01:00"),
+  fields: { customerName: "Ada" },
+  resourceId,
+  start: Temporal.Instant.from("2026-06-01T09:00:00+01:00"),
+};
+
+const late = await scheduler.book(walkIn);
+
+assert.ok(!late.ok);
+assert.equal(late.error._tag, "PolicyViolation");
+assert.deepEqual(
+  late.error.violations.map((v) => v.policy),
+  ["notice"]
+);
+
+const recorded = valueOf(
+  await scheduler.book({ ...walkIn, relax: ["notice"] })
+);
+
+// `waived`: the relaxed Policies that broke, to log who booked in the past.
+assert.deepEqual(
+  recorded.waived.map((v) => v.policy),
+  ["notice"]
+);
 
 const cancelled = valueOf(await scheduler.cancel({ id: booking.id }));
 
@@ -202,6 +266,47 @@ valueOf(
     start: at("11:00"),
   })
 );
+
+// That's three on 3 June (09:00, 10:00, 11:00): a fourth breaks maxThreePerDay,
+const fourth = await scheduler.book({
+  end: at("15:30"),
+  fields: { customerName: "Grace" },
+  resourceId,
+  start: at("15:00"),
+});
+
+assert.ok(!fourth.ok);
+assert.deepEqual(fourth.error, {
+  _tag: "PolicyViolation",
+  violations: [{ detail: { count: 3 }, policy: "maxThreePerDay" }],
+});
+
+// and findSlots agrees: it lists no slot that day, unless the call relaxes it.
+const full = valueOf(
+  await scheduler.findSlots({
+    ...day,
+    duration: 30,
+    interval: 30,
+    resourceId,
+    timezone: "Europe/Lisbon",
+  })
+);
+
+assert.equal(full.length, 0);
+
+const relaxed = valueOf(
+  await scheduler.findSlots({
+    ...day,
+    duration: 30,
+    interval: 30,
+    relax: ["maxThreePerDay"],
+    resourceId,
+    timezone: "Europe/Lisbon",
+  })
+);
+
+assert.ok(relaxed.length > 0);
+assert.ok(relaxed.every((s) => s.waived[0]?.policy === "maxThreePerDay"));
 
 await pool.end();
 
