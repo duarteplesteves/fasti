@@ -28,18 +28,17 @@ export function postgresUrl(): string | undefined {
   return url;
 }
 
-/** A fresh database for one test file. */
-export interface TestDatabase {
-  readonly db: NodePgDatabase;
+/** An empty database for one test file, with a pool on it. */
+export interface FreshDatabase {
+  /** The database's own URL. */
+  readonly url: string;
+  readonly pool: Pool;
   /** Close the pool and drop the database. */
   readonly drop: () => Promise<void>;
 }
 
-/** Create `fasti_<random>` on the server at `url` and push `tables` into it through drizzle-kit. */
-export async function testDatabase(
-  url: string,
-  tables: Parameters<typeof pushSchema>[0]
-): Promise<TestDatabase> {
+/** Create an empty `fasti_<random>` database on the server at `url`. */
+export async function freshDatabase(url: string): Promise<FreshDatabase> {
   const name = `fasti_${randomBytes(6).toString("hex")}`;
   const admin = new Client({ connectionString: url });
 
@@ -51,7 +50,6 @@ export async function testDatabase(
 
   // 25 > the 20 concurrent units of work the concurrency cases run.
   const pool = new Pool({ connectionString: dbUrl.toString(), max: 25 });
-  const db = drizzle({ client: pool });
 
   async function drop(): Promise<void> {
     // pool.end() resolves before its clients' sockets close; each emits `remove` once closed.
@@ -74,6 +72,24 @@ export async function testDatabase(
     await admin.query(`drop database ${name} with (force)`);
     await admin.end();
   }
+
+  return { drop, pool, url: dbUrl.toString() };
+}
+
+/** A fresh database for one test file. */
+export interface TestDatabase {
+  readonly db: NodePgDatabase;
+  /** Close the pool and drop the database. */
+  readonly drop: () => Promise<void>;
+}
+
+/** Create `fasti_<random>` on the server at `url` and push `tables` into it through drizzle-kit. */
+export async function testDatabase(
+  url: string,
+  tables: Parameters<typeof pushSchema>[0]
+): Promise<TestDatabase> {
+  const { drop, pool } = await freshDatabase(url);
+  const db = drizzle({ client: pool });
 
   try {
     const push = await pushSchema(tables, db);
