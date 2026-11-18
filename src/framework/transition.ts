@@ -9,12 +9,23 @@ import type { Booking, ChangeAlso, FieldsPatch } from "./booking.js";
 import type {
   AdapterError,
   BookingNotFound,
+  PolicyViolation,
   SlotConflict,
   StatusMismatch,
+  Vetoed,
 } from "./errors.js";
+import type { AlsoFn, Form, Run, WithAlso } from "./forms.js";
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
+import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
+import type {
+  Edge,
+  PolicyErrorOf,
+  TransitionCandidate,
+  ViolationFor,
+  WithWaived,
+} from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
   AlsoContext,
@@ -30,7 +41,67 @@ export type TransitionParams<S extends AnySchema> = {
 } & TransitionEdge<S> &
   FieldsPatch<S["booking"]["fields"]>;
 
-/** Every way `transition` can fail. */
+/** The Violations the Policies in union `P` report on the declared edges `Fr → To`. */
+type EdgeViolation<S extends AnySchema, P, Fr, To> = ViolationFor<
+  P,
+  Extract<Edge<S>, { readonly from: Fr; readonly to: To }>
+>;
+
+/** What `relax` may be on an edge whose Policies report `W`: only `undefined` when none apply. */
+type RelaxOf<W extends { readonly policy: string }> = [W] extends [never]
+  ? undefined
+  : readonly W["policy"][] | undefined;
+
+/** `relax` on `transition`. */
+interface RelaxParam<X> {
+  /** Skip these Policies: they still run, and come back as `waived` when broken. */
+  readonly relax?: X;
+}
+
+/** `transition`'s params for the edge `Fr → To`. */
+type EdgeParams<S extends AnySchema, Fr, To> = {
+  readonly id: BookingId;
+  readonly from: Fr;
+  readonly to: To;
+} & FieldsPatch<S["booking"]["fields"]>;
+
+/** `transition` in form `F`, with Policies `P` (a union): generic over the edge, so `relax`, `waived` and `PolicyViolation` narrow to the Policies on it. */
+export interface TransitionAction<F extends Form, S extends AnySchema, Tx, P> {
+  <
+    const Fr extends TransitionEdge<S>["from"],
+    const To extends Extract<TransitionEdge<S>, { readonly from: Fr }>["to"],
+    A,
+    AE,
+    R = never,
+    const X extends RelaxOf<EdgeViolation<S, P, Fr, To>> = undefined,
+  >(
+    params: EdgeParams<S, Fr, To> &
+      RelaxParam<X> & {
+        readonly also: AlsoFn<F, ChangeAlso<S, Tx>, A, AE, R>;
+      }
+  ): Run<
+    F,
+    WithAlso<WithWaived<Booking<S>, EdgeViolation<S, P, Fr, To>, X>, A>,
+    | TransitionError<S>
+    | PolicyErrorOf<EdgeViolation<S, P, Fr, To>, X>
+    | Vetoed<AE>,
+    R
+  >;
+  <
+    const Fr extends TransitionEdge<S>["from"],
+    const To extends Extract<TransitionEdge<S>, { readonly from: Fr }>["to"],
+    const X extends RelaxOf<EdgeViolation<S, P, Fr, To>> = undefined,
+  >(
+    params: EdgeParams<S, Fr, To> & RelaxParam<X>
+  ): Run<
+    F,
+    WithWaived<Booking<S>, EdgeViolation<S, P, Fr, To>, X>,
+    TransitionError<S> | PolicyErrorOf<EdgeViolation<S, P, Fr, To>, X>,
+    never
+  >;
+}
+
+/** Every way `transition` can fail, apart from `PolicyViolation`, which the scheduler types from its Policies on the edge. */
 export type TransitionError<S extends AnySchema> =
   | InvalidParams
   | BookingNotFound
@@ -40,12 +111,12 @@ export type TransitionError<S extends AnySchema> =
 
 /**
  * Move a Booking from `from` to `to` along a declared Transition, compare-and-set on `from` (ADR 009).
- * Into a blocking Status from a non-blocking one, it re-checks overlap; it never checks availability.
+ * Into a blocking Status from a non-blocking one, it re-checks overlap; then the Policies on the edge run (never availability).
  */
 export function transition<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: TransitionParams<S> & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
-): WriteEffect<Booking<S>, TransitionError<S>, R> {
+): WriteEffect<Booking<S>, TransitionError<S> | PolicyViolation, R> {
   const { id } = params;
 
   // SAFETY: TransitionEdge<S> has `from` and `to` Statuses; a plain-JS caller may pass anything, which canMove refuses next.
@@ -68,6 +139,24 @@ export function transition<S extends AnySchema, Tx, R = never>(
     });
   }
 
+  const policies = applicable(ctx, { from, to });
+  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TransitionAction types `relax` for callers; the implementation takes it as data.
+  const { relax } = params as { readonly relax?: readonly string[] };
+
+  const [relaxIssue, ...relaxIssues] = checkRelax(
+    policies,
+    { from, to },
+    relax
+  );
+
+  if (relaxIssue !== undefined) {
+    return Effect.fail<InvalidParams>({
+      _tag: "InvalidParams",
+      issues: [relaxIssue, ...relaxIssues],
+    });
+  }
+
   // SAFETY: the patch holds declared field names only, plus a declared Status.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.
   const changes = {
@@ -80,10 +169,14 @@ export function transition<S extends AnySchema, Tx, R = never>(
     destination: null,
     notFound: { _tag: "BookingNotFound", id } satisfies BookingNotFound,
     read: (reads) => reads.getBooking(id),
-    work: (locked, stored) =>
+    work: (locked, stored, now) =>
       Effect.gen(function* transitionUnit(): Effect.fn.Return<
         Outcome<Booking<S>, AlsoContext<ChangeAlso<S, Tx>>>,
-        StatusMismatch<StatusOf<S>> | SlotConflict | AdapterError | Retry
+        | StatusMismatch<StatusOf<S>>
+        | SlotConflict
+        | PolicyViolation
+        | AdapterError
+        | Retry
       > {
         if (stored.status !== from) {
           return yield* Effect.fail<StatusMismatch<StatusOf<S>>>({
@@ -106,6 +199,21 @@ export function transition<S extends AnySchema, Tx, R = never>(
           yield* checkOverlap(locked, ctx.codec, range);
         }
 
+        const waived = yield* enforcePolicies(
+          locked,
+          policies,
+          // SAFETY: `from → to` is a declared edge, checked above; TransitionCandidate<S> can't be built inside a generic.
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+          {
+            action: "transition",
+            booking: stored,
+            from,
+            now,
+            to,
+          } as TransitionCandidate<S>,
+          relax ?? []
+        );
+
         const updated = yield* locked.updateBooking({
           changes,
           expected: stored,
@@ -126,7 +234,8 @@ export function transition<S extends AnySchema, Tx, R = never>(
         return {
           _tag: "Done",
           context: { booking, previous: stored },
-          value: booking,
+          // `waived` exactly when `relax` was passed.
+          value: relax === undefined ? booking : { ...booking, waived },
         };
       }),
   });

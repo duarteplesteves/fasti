@@ -8,12 +8,31 @@ import type {
   RuleRecord,
 } from "../adapter/records.js";
 import type { AvailabilityViolation, BookingId } from "../core/types.js";
-import type { AnySchema } from "../schema/define-schema.js";
+import type { AnySchema, TransitionEdge } from "../schema/define-schema.js";
+import { statusCodec } from "../schema/status-codec.js";
 import type { Booking } from "./booking.js";
 import type { PolicyViolation } from "./errors.js";
 
-/** What a Policy can apply to: the Actions that run it. */
-export type PolicyTarget = "book" | "reschedule" | "cancel";
+/** The Actions a Policy can apply to by name. */
+const actionTargets = ["book", "reschedule", "cancel"] as const;
+
+/** An Action a Policy can apply to by name. */
+export type ActionTarget = (typeof actionTargets)[number];
+
+/** Whether `target` names an Action rather than a Transition edge. */
+export function isActionTarget(
+  target: ActionTarget | { readonly to: string }
+): target is ActionTarget {
+  return actionTargets.some((a) => a === target);
+}
+
+/** A Transition edge a Policy can apply to: `{ to }` is every declared edge into `to`, `{ from, to }` one edge. Edges into `cancelled` belong to `cancel`. */
+export type EdgeTarget<S extends AnySchema> =
+  | { readonly to: TransitionEdge<S>["to"]; readonly from?: never }
+  | TransitionEdge<S>;
+
+/** What a Policy can apply to: the Actions that run it, and Transition edges. */
+export type PolicyTarget<S extends AnySchema> = ActionTarget | EdgeTarget<S>;
 
 /** What `book` asks a Policy about. */
 export interface BookCandidate<S extends AnySchema> {
@@ -46,17 +65,57 @@ export interface CancelCandidate<S extends AnySchema> {
   readonly now: Temporal.Instant;
 }
 
+/** What `transition` asks a Policy about, per edge `E`: the stored Booking, still in `from`. */
+export type TransitionCandidate<
+  S extends AnySchema,
+  E extends TransitionEdge<S> = Edge<S>,
+> = E extends unknown
+  ? {
+      readonly action: "transition";
+      readonly booking: Booking<S>;
+      readonly from: E["from"];
+      readonly to: E["to"];
+      /** The Clock's time, read once on the unit: `also` sees the same. */
+      readonly now: Temporal.Instant;
+    }
+  : never;
+
 /** One candidate per call, discriminated on `action`. */
 export type Candidate<S extends AnySchema> =
   | BookCandidate<S>
   | RescheduleCandidate<S>
-  | CancelCandidate<S>;
+  | CancelCandidate<S>
+  | TransitionCandidate<S>;
 
-/** The candidates a Policy with targets `T` sees. */
-export type CandidateFor<S extends AnySchema, T extends PolicyTarget> = Extract<
-  Candidate<S>,
-  { readonly action: T }
->;
+/** Each declared edge (never into `cancelled`) on its own: one `{ from, to }` per pair. */
+export type Edge<S extends AnySchema> =
+  TransitionEdge<S> extends infer E
+    ? E extends { readonly from: infer From; readonly to: infer To }
+      ? To extends unknown
+        ? { readonly from: From; readonly to: To }
+        : never
+      : never
+    : never;
+
+/** The declared edges an edge target `T` names. */
+type EdgesOf<S extends AnySchema, T> = T extends {
+  readonly to: infer To;
+}
+  ? Extract<
+      Edge<S>,
+      T extends { readonly from: infer From }
+        ? { readonly from: From; readonly to: To }
+        : { readonly to: To }
+    >
+  : never;
+
+/** The candidates a Policy with targets `T` sees: narrowed to its Actions and edges. */
+export type CandidateFor<
+  S extends AnySchema,
+  T extends PolicyTarget<S>,
+> = T extends ActionTarget
+  ? Extract<Candidate<S>, { readonly action: T }>
+  : TransitionCandidate<S, EdgesOf<S, T>>;
 
 /** fasti's reads, as Promises: a database failure rejects with `AdapterError`. No `tx`: they run on fasti's unit. */
 export interface PolicyReads<S extends AnySchema> {
@@ -80,7 +139,7 @@ export interface LoadContext<S extends AnySchema> {
 export interface Policy<
   S extends AnySchema,
   N extends string,
-  T extends PolicyTarget,
+  T extends PolicyTarget<S>,
   D,
   Data,
 > {
@@ -93,7 +152,7 @@ export interface Policy<
 /** Any Policy over schema `S`, as the registry holds it. */
 export interface AnyPolicyOf<S extends AnySchema> {
   readonly name: string;
-  readonly appliesTo: readonly PolicyTarget[];
+  readonly appliesTo: readonly PolicyTarget<S>[];
   // oxlint-disable-next-line anti-slop/no-unknown-returns -- each Policy's own `Data`, opaque to the registry.
   readonly load: ((ctx: LoadContext<S>) => unknown) | null;
   // oxlint-disable-next-line anti-slop/no-unknown-returns -- each Policy's own `D`, opaque to the registry.
@@ -114,19 +173,41 @@ export type ViolationOf<P> = P extends {
   ? Violation<N, Exclude<R, null>>
   : never;
 
-/** The Policies in union `P` that apply to `A`. */
-type Applies<P, A extends PolicyTarget> = P extends {
+/** Whether a target in union `T` names `A`: an Action by name, an edge by `{ to }` or by `{ from, to }`. */
+type Matches<T, A> = A extends string
+  ? A extends T
+    ? true
+    : false
+  : A extends { readonly from: infer From; readonly to: infer To }
+    ? true extends (
+        T extends { readonly to: To }
+          ? T extends { readonly from: infer F }
+            ? From extends F
+              ? true
+              : false
+            : true
+          : false
+      )
+      ? true
+      : false
+    : false;
+
+/** The Policies in union `P` that apply to `A`: an Action, or a union of declared edges (any of them). */
+type Applies<P, A> = P extends {
   readonly appliesTo: readonly (infer T)[];
 }
-  ? A extends T
+  ? true extends (A extends unknown ? Matches<T, A> : never)
     ? P
     : never
   : never;
 
-/** Every Violation an Action `A` can report: the built-in `availability`'s (on `book` and `reschedule`) and each applicable Policy's in union `P`. */
-export type ViolationFor<P, A extends PolicyTarget> =
-  | (A extends "cancel" ? never : AvailabilityViolation)
-  | ViolationOf<Applies<P, A>>;
+/** The built-in `availability`, where it applies. */
+type Builtin<A> = A extends "book" | "reschedule"
+  ? AvailabilityViolation
+  : never;
+
+/** Every Violation `A` (an Action, or declared edges) can report: the built-in `availability`'s where it applies, and each applicable Policy's in union `P`. */
+export type ViolationFor<P, A> = Builtin<A> | ViolationOf<Applies<P, A>>;
 
 /** The names a `relax` value `X` may list; `never` without `relax`. */
 type RelaxedNames<X> = X extends readonly (infer N)[] ? N : never;
@@ -194,13 +275,13 @@ export type UniqueNames<
 export interface DefinePolicyParams<
   S extends AnySchema,
   N extends string,
-  T extends PolicyTarget,
+  T extends PolicyTarget<S>,
   D,
   Data,
 > {
   /** Unique per scheduler; `availability` is fasti's own. */
   readonly name: N & (N extends "availability" ? never : unknown);
-  /** The Actions that run it; at least one. */
+  /** The Actions and declared Transition edges that run it; at least one. */
   readonly appliesTo: readonly [T, ...T[]];
   /** Optional. Runs once per Action call, under the Resource Lock: does the I/O. */
   readonly load?: (ctx: LoadContext<S>) => Data | Promise<Data>;
@@ -210,7 +291,7 @@ export interface DefinePolicyParams<
 
 /**
  * Define a Policy over `schema`: a rule a booking must keep, reported as `PolicyViolation` when broken.
- * Throws on an empty `appliesTo` or the name `availability`.
+ * Throws on an empty `appliesTo`, the name `availability`, an undeclared edge, or `{ to }` with no declared edge into it.
  *
  * @example
  * ```ts
@@ -225,11 +306,11 @@ export interface DefinePolicyParams<
 export function definePolicy<
   S extends AnySchema,
   const N extends string,
-  const T extends PolicyTarget,
+  const T extends PolicyTarget<S>,
   D,
   Data = undefined,
 >(
-  _schema: S,
+  schema: S,
   params: DefinePolicyParams<S, N, T, D, Data>
 ): Policy<S, N, T, D, Data> {
   const { appliesTo, check, load, name } = params;
@@ -241,6 +322,30 @@ export function definePolicy<
 
   if (name === "availability") {
     throw new Error("fasti: the Policy name availability is fasti's own");
+  }
+
+  const { canMove } = statusCodec(schema);
+  const froms = Object.keys(schema.transitions);
+
+  for (const target of appliesTo) {
+    if (isActionTarget(target)) {
+      continue;
+    }
+
+    const { from, to } = target;
+
+    // Edges into `cancelled` belong to `cancel`.
+    const declared =
+      to !== "cancelled" &&
+      (from === undefined
+        ? froms.some((f) => canMove(f, to))
+        : canMove(from, to));
+
+    if (!declared) {
+      throw new Error(
+        `fasti: Policy ${name} applies to ${from ?? "*"} → ${to}, which isn't a declared Transition (use cancel for cancelled)`
+      );
+    }
   }
 
   return { appliesTo, check, load: load ?? null, name };

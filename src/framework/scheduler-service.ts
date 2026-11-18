@@ -40,7 +40,7 @@ import type { AnyPolicyOf, ViolationFor } from "./policy.js";
 import { reschedule } from "./reschedule.js";
 import type { RescheduleError, RescheduleParams } from "./reschedule.js";
 import { transition } from "./transition.js";
-import type { TransitionError, TransitionParams } from "./transition.js";
+import type { TransitionAction, TransitionParams } from "./transition.js";
 
 /** What every Action runs with. */
 export interface ActionContext<S extends AnySchema, Tx> {
@@ -120,13 +120,7 @@ export type SchedulerActions<
     ? unknown
     : {
         /** Move a Booking along a declared Transition, compare-and-set on `from`. */
-        readonly transition: WriteAction<
-          F,
-          TransitionParams<S>,
-          ChangeAlso<S, Tx>,
-          Booking<S>,
-          TransitionError<S>
-        >;
+        readonly transition: TransitionAction<F, S, Tx, P[number]>;
       });
 
 /** The Actions, Effect form, over an Adapter whose transaction handle is `Tx`, with Policies `P`. */

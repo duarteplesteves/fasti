@@ -9,13 +9,14 @@ import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectReads } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
 import type { PolicyViolation } from "./errors.js";
+import { isActionTarget } from "./policy.js";
 import type {
+  ActionTarget,
   AnyPolicyOf,
   Candidate,
   LoadContext,
   Policy,
   PolicyReads,
-  PolicyTarget,
   Violation,
   ViolationOf,
 } from "./policy.js";
@@ -54,17 +55,30 @@ export function availabilityPolicy<S extends AnySchema>(): Policy<
   };
 }
 
-/** The Policies `target` runs: `availability` first (on `book` and `reschedule`), then the developer's, in registration order. */
+/** What one call runs Policies for: an Action, or the one edge a `transition` moves along. */
+export type Target =
+  | ActionTarget
+  | { readonly from: string; readonly to: string };
+
+/** `target` as `relax` issues name it. */
+function label(target: Target): string {
+  return isActionTarget(target) ? target : `${target.from} → ${target.to}`;
+}
+
+/** The Policies `target` runs: `availability` first where it applies, then the developer's, in registration order. */
 export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  target: PolicyTarget
+  target: Target
 ): readonly AnyPolicyOf<S>[] {
-  const all: readonly AnyPolicyOf<S>[] = [
-    availabilityPolicy<S>(),
-    ...ctx.policies,
-  ];
-
-  return all.filter((p) => p.appliesTo.includes(target));
+  return [availabilityPolicy<S>(), ...ctx.policies].filter((policy) =>
+    policy.appliesTo.some(
+      (t: ActionTarget | { readonly from?: string; readonly to: string }) =>
+        isActionTarget(t) || isActionTarget(target)
+          ? t === target
+          : t.to === target.to &&
+            (t.from === undefined || t.from === target.from)
+    )
+  );
 }
 
 /** Run a read, rejecting with its `AdapterError` on failure. */
@@ -137,7 +151,7 @@ function loadPolicies<S extends AnySchema>(
 /** Each `relax` entry that names no Policy in `policies`, as an issue at its index; `[]` when all apply. Runs before any Adapter call. */
 export function checkRelax<S extends AnySchema>(
   policies: readonly AnyPolicyOf<S>[],
-  target: PolicyTarget,
+  target: Target,
   relax: readonly string[] | undefined
 ): Issue[] {
   if (relax === undefined) {
@@ -158,7 +172,7 @@ export function checkRelax<S extends AnySchema>(
       ? []
       : [
           {
-            message: `relax: ${name} is not a Policy that applies to ${target}`,
+            message: `relax: ${name} is not a Policy that applies to ${label(target)}`,
             path: ["relax", i],
           },
         ]
@@ -203,9 +217,11 @@ export function enforcePolicies<S extends AnySchema, P extends AnyPolicyOf<S>>(
 > {
   const { now } = candidate;
 
-  // `load` gets the candidate's range, or on `cancel` the stored Booking's.
+  // `load` gets the candidate's range, or on `cancel` and a Transition the stored Booking's.
   const { end, resourceId, start } =
-    candidate.action === "cancel" ? candidate.booking : candidate;
+    candidate.action === "cancel" || candidate.action === "transition"
+      ? candidate.booking
+      : candidate;
 
   return Effect.flatMap(
     loadPolicies(reads, policies, { from: start, now, resourceId, to: end }),

@@ -94,17 +94,20 @@ export type {
 export { definePolicy } from "./framework/policy.js";
 
 export type {
+  ActionTarget,
   AnyPolicyOf,
   BookCandidate,
   CancelCandidate,
   Candidate,
   CandidateFor,
   DefinePolicyParams,
+  EdgeTarget,
   LoadContext,
   Policy,
   PolicyReads,
   PolicyTarget,
   RescheduleCandidate,
+  TransitionCandidate,
   Violation,
   ViolationOf,
 } from "./framework/policy.js";
