@@ -93,6 +93,10 @@ export type {
 
 export { definePolicy } from "./framework/policy.js";
 
+export { notice } from "./framework/notice.js";
+
+export type { NoticeDetail, NoticeParams } from "./framework/notice.js";
+
 export type {
   ActionTarget,
   AnyPolicyOf,

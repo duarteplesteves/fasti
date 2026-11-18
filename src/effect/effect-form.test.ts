@@ -11,6 +11,7 @@ import {
   createScheduler,
   definePolicy,
   defineSchema,
+  notice,
 } from "../index.js";
 import type {
   BlockNotFound,
@@ -592,6 +593,48 @@ describe("Effect form Policies", () => {
     assert(Exit.isSuccess(exit), "expected the booking to succeed");
     expect(seen).toStrictEqual([frozen]);
     expect(exit.value.also).toStrictEqual(frozen);
+  });
+
+  it("book passes notice, then breaks it after TestClock.adjust", async () => {
+    const { adapter } = await seeded();
+    const hourNotice = notice(schema, { appliesTo: ["book"], minimum: 60 });
+
+    class NoticeScheduler extends Scheduler<
+      NoticeScheduler,
+      typeof schema,
+      Tx,
+      readonly [typeof hourNotice]
+    >()("test/NoticeScheduler") {}
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookAcrossTime() {
+        const scheduler = yield* NoticeScheduler;
+
+        yield* TestClock.setTime(at(0).epochMilliseconds);
+        yield* scheduler.book({ end: at(4), resourceId: room, start: at(3) });
+        yield* TestClock.adjust("4 hours");
+
+        return yield* scheduler.book({
+          end: at(5),
+          resourceId: room,
+          start: at(4),
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NoticeScheduler.layer({ adapter, policies: [hourNotice], schema }),
+            TestClock.layer()
+          )
+        )
+      )
+    );
+
+    expect(exit).toStrictEqual(
+      Exit.fail({
+        _tag: "PolicyViolation",
+        violations: [{ detail: { earliest: at(5) }, policy: "notice" }],
+      })
+    );
   });
 
   it("requires policies on layer", () => {
