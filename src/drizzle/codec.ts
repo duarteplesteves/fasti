@@ -4,9 +4,9 @@ import type {
   BookingChanges,
   BookingRecord,
   RuleRecord,
-} from "../../adapter/records.js";
-import type { AnySchema } from "../../schema/define-schema.js";
-import type { StatusCodec } from "../../schema/status-codec.js";
+} from "../adapter/records.js";
+import type { AnySchema } from "../schema/define-schema.js";
+import type { StatusCodec } from "../schema/status-codec.js";
 
 /** A value a record holds. */
 type RecordValue = string | number | boolean | Temporal.Instant | null;

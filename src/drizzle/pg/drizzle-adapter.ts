@@ -1,18 +1,5 @@
-import {
-  DrizzleQueryError,
-  and,
-  asc,
-  eq,
-  getColumns,
-  gt,
-  lt,
-  sql,
-} from "drizzle-orm";
-import type {
-  AnyPgColumn,
-  PgAsyncDatabase,
-  PgTable,
-} from "drizzle-orm/pg-core";
+import { DrizzleQueryError, and, asc, eq, gt, lt, sql } from "drizzle-orm";
+import type { PgAsyncDatabase, PgTable } from "drizzle-orm/pg-core";
 
 import { defineAdapter } from "../../adapter/contract.js";
 import type {
@@ -33,8 +20,10 @@ import {
   encodeBooking,
   encodeRow,
   encodeRule,
-} from "./codec.js";
-import type { Row } from "./codec.js";
+} from "../codec.js";
+import type { Row } from "../codec.js";
+import { col, query, recordTable } from "../query.js";
+import type { RecordTable as SharedRecordTable } from "../query.js";
 import { availabilityRuleTable, blockTable, bookingTable } from "./tables.js";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- any database, whatever its driver and relations.
@@ -44,19 +33,6 @@ type AnyPgDatabase = PgAsyncDatabase<any, any>;
 type TxOf<DB extends AnyPgDatabase> = Parameters<
   Parameters<DB["transaction"]>[0]
 >[0];
-
-/** Run a verb's queries; a driver failure rejects with the driver's own error as `cause`. */
-async function query<T>(verb: string, run: () => Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    // Drizzle wraps the driver's error; the cause is the driver's own (its `code`, `constraint`).
-    const cause = error instanceof DrizzleQueryError ? error.cause : error;
-
-    // oxlint-disable-next-line preserve-caught-error -- `cause` is the caught error, unwrapped from Drizzle's.
-    throw new Error(`drizzleAdapter: ${verb} failed`, { cause });
-  }
-}
 
 /** The first key of every fasti advisory lock ("fsti" in ASCII), so other advisory locks in the database don't collide. */
 const LOCK_NAMESPACE = 0x66_73_74_69;
@@ -95,27 +71,8 @@ async function retryTransient<T>(unit: () => Promise<T>): Promise<T> {
   }
 }
 
-/** A Booking or Block table, with its columns keyed by logical name. */
-interface RecordTable {
-  readonly table: PgTable;
-  readonly columns: Readonly<Record<string, AnyPgColumn>>;
-}
-
-/** A Booking or Block table and its columns, keyed by logical name. */
-function recordTable(table: PgTable): RecordTable {
-  return { columns: getColumns(table), table };
-}
-
-/** A logical column of a record table; every record table has `id`, `resourceId`, `start`, `end`. */
-function col({ columns }: RecordTable, key: string): AnyPgColumn {
-  const c = columns[key];
-
-  if (c === undefined) {
-    throw new Error(`drizzleAdapter: no column "${key}"`);
-  }
-
-  return c;
-}
+/** A Booking or Block table of this dialect. */
+type RecordTable = SharedRecordTable<PgTable>;
 
 /** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
 async function overlapping<S extends AnySchema>(

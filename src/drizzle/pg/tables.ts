@@ -26,13 +26,7 @@ import type {
   Fields,
 } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
-
-/** Resolves to `unknown` when a column of data type `D` can hold every `T`; otherwise to an error-carrying type. */
-type Accepts<D, T> = [T] extends [D]
-  ? unknown
-  : {
-      readonly "references: the column's type must hold the Resource id type": T;
-    };
+import type { Accepts } from "../references.js";
 
 /**
  * Options of {@link bookingTable}.

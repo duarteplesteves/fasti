@@ -36,7 +36,7 @@ import { unwrap } from "../../test-utils/results.js";
 import { bookingId, insert, newBooking } from "../../testing/fixtures.js";
 import { conformanceCases, runCase, testAdapter } from "../../testing/index.js";
 import type { TestAdapterParams, TxProbe } from "../../testing/index.js";
-import { encodeBooking } from "./codec.js";
+import { encodeBooking } from "../codec.js";
 import { createDrizzleAdapter } from "./drizzle-adapter.js";
 import {
   availabilityRuleTable,
