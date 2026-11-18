@@ -8,7 +8,7 @@ import type {
 import { checkInstantRange } from "../core/checks.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
-import type { AvailabilityViolation, BookingId } from "../core/types.js";
+import type { BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { fieldPatch, floorMs } from "./booking.js";
 import type { Booking, ChangeAlso, FieldsPatch } from "./booking.js";
@@ -22,7 +22,7 @@ import type {
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
-import { availabilityPolicy, enforcePolicies } from "./policy-pass.js";
+import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
   AlsoContext,
@@ -43,20 +43,19 @@ export type RescheduleParams<S extends AnySchema> = {
   readonly resourceId?: ResourceIdOf<S>;
 } & FieldsPatch<S["booking"]["fields"]>;
 
-/** Every way `reschedule` can fail. */
+/** Every way `reschedule` can fail, apart from `PolicyViolation`, which the scheduler types from its Policies. */
 export type RescheduleError<S extends AnySchema> =
   | InvalidParams
   | BookingNotFound
   | StatusMismatch<StatusOf<S>>
   | SlotConflict
-  | PolicyViolation<AvailabilityViolation>
   | AdapterError;
 
-/** Move a blocking Booking in time or to another Resource, keeping its id and Status (ADR 009): overlap first, ignoring itself, then availability. */
+/** Move a blocking Booking in time or to another Resource, keeping its id and Status (ADR 009): the Invariants first (overlap ignoring itself), then every Policy that applies to `reschedule` (ADR 014). */
 export function reschedule<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: RescheduleParams<S> & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
-): WriteEffect<Booking<S>, RescheduleError<S>, R> {
+): WriteEffect<Booking<S>, RescheduleError<S> | PolicyViolation, R> {
   const { id } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
@@ -77,6 +76,24 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
     params
   );
 
+  const policies = applicable(ctx, "reschedule");
+  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- WriteAction types `relax` for callers; the implementation takes it as data.
+  const { relax } = params as { readonly relax?: readonly string[] };
+
+  const [relaxIssue, ...relaxIssues] = checkRelax(
+    policies,
+    "reschedule",
+    relax
+  );
+
+  if (relaxIssue !== undefined) {
+    return Effect.fail<InvalidParams>({
+      _tag: "InvalidParams",
+      issues: [relaxIssue, ...relaxIssues],
+    });
+  }
+
   const notFound: BookingNotFound = { _tag: "BookingNotFound", id };
 
   return lockedById(ctx, {
@@ -89,7 +106,7 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
         Outcome<Booking<S>, AlsoContext<ChangeAlso<S, Tx>>>,
         | StatusMismatch<StatusOf<S>>
         | SlotConflict
-        | PolicyViolation<AvailabilityViolation>
+        | PolicyViolation
         | AdapterError
         | Retry
       > {
@@ -109,18 +126,19 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
         };
 
         yield* checkOverlap(locked, ctx.codec, placement);
-        // shortcut: only the built-in availability runs here, on a book-shaped candidate; #125 gives reschedule its own candidate and Policies.
-        yield* enforcePolicies(
+
+        const waived = yield* enforcePolicies(
           locked,
-          [availabilityPolicy<S>()],
+          policies,
           {
-            action: "book",
+            action: "reschedule",
             end,
             now,
+            previous: stored,
             resourceId: placement.resourceId,
             start,
           },
-          []
+          relax ?? []
         );
 
         // SAFETY: base columns of the right types, and a patch of declared fields only.
@@ -155,7 +173,8 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
         return {
           _tag: "Done",
           context: { booking, previous: stored },
-          value: booking,
+          // `waived` exactly when `relax` was passed.
+          value: relax === undefined ? booking : { ...booking, waived },
         };
       }),
   });

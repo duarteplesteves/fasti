@@ -1,7 +1,12 @@
 import { assert, describe, expect, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
-import { AdapterError, createScheduler, definePolicy } from "../index.js";
+import {
+  AdapterError,
+  createScheduler,
+  definePolicy,
+  defineSchema,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   uuidIdResources,
@@ -365,6 +370,296 @@ describe("relax on book", () => {
         issues: [
           {
             message: "relax: nope is not a Policy that applies to book",
+            path: ["relax", 0],
+          },
+        ],
+      },
+      ok: false,
+    });
+  });
+});
+
+/** A Policy on `reschedule` and `cancel` that always breaks, recording each candidate it sees. */
+function closedFor<const T extends "reschedule" | "cancel">(appliesTo: T) {
+  const seen: unknown[] = [];
+
+  const policy = definePolicy(schema, {
+    appliesTo: [appliesTo],
+    check: (candidate) => {
+      seen.push(candidate);
+
+      return { reason: "closed" };
+    },
+    name: "closed",
+  });
+
+  return { policy, seen };
+}
+
+/** A seeded Adapter with one Booking in the test slot. */
+async function withBooking() {
+  const adapter = await seeded();
+
+  const booking = unwrap(
+    await createScheduler({ adapter, policies: [], schema }).book({
+      end,
+      resourceId: room,
+      start,
+    })
+  );
+
+  return { adapter, booking };
+}
+
+describe("Policies on reschedule", () => {
+  it("gives a Policy the destination Resource and previous, and refuses with its Violation", async () => {
+    const { policy, seen } = closedFor("reschedule");
+    const { adapter, booking } = await withBooking();
+    const scheduler = createScheduler({ adapter, policies: [policy], schema });
+
+    const later = {
+      end: end.add({ hours: 1 }),
+      start: start.add({ hours: 1 }),
+    };
+
+    const result = await scheduler.reschedule({ ...later, id: booking.id });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "PolicyViolation",
+        violations: [{ detail: { reason: "closed" }, policy: "closed" }],
+      },
+      ok: false,
+    });
+    expect(seen).toMatchObject([
+      {
+        action: "reschedule",
+        end: later.end,
+        previous: booking,
+        resourceId: room,
+        start: later.start,
+      },
+    ]);
+    await expect(stored(adapter)).resolves.toStrictEqual([booking]);
+  });
+
+  it("moves outside hours with availability relaxed, and reports it waived", async () => {
+    const { adapter, booking } = await withBooking();
+    const scheduler = createScheduler({ adapter, policies: [], schema });
+
+    // Saturday 8 June 2030, outside the weekday rules.
+    const moved = unwrap(
+      await scheduler.reschedule({
+        end: end.add({ hours: 120 }),
+        id: booking.id,
+        relax: ["availability"],
+        start: start.add({ hours: 120 }),
+      })
+    );
+
+    expect(moved.waived).toStrictEqual([
+      { detail: {}, policy: "availability" },
+    ]);
+    expect(moved.start).toStrictEqual(start.add({ hours: 120 }));
+  });
+
+  it("gives StatusMismatch for a non-blocking Booking, even when a Policy would also break", async () => {
+    const { policy, seen } = closedFor("reschedule");
+    const { adapter, booking } = await withBooking();
+    const scheduler = createScheduler({ adapter, policies: [policy], schema });
+
+    unwrap(await scheduler.cancel({ id: booking.id }));
+
+    const result = await scheduler.reschedule({ end, id: booking.id, start });
+
+    expect(result).toStrictEqual({
+      error: { _tag: "StatusMismatch", id: booking.id, status: "cancelled" },
+      ok: false,
+    });
+    expect(seen).toStrictEqual([]);
+  });
+
+  it("refuses a relax name that doesn't apply to reschedule as InvalidParams, before any Adapter call", async () => {
+    const result = await createScheduler({
+      adapter: noCalls,
+      policies: [closed],
+      schema,
+    }).reschedule({
+      end,
+      id: mintBookingId(),
+      // @ts-expect-error -- `closed` applies to book only.
+      relax: ["closed"],
+      start,
+    });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "InvalidParams",
+        issues: [
+          {
+            message: "relax: closed is not a Policy that applies to reschedule",
+            path: ["relax", 0],
+          },
+        ],
+      },
+      ok: false,
+    });
+  });
+});
+
+describe("Policies on cancel", () => {
+  it("gives a Policy the stored Booking and its range in load, and refuses", async () => {
+    const loads: unknown[] = [];
+    const seen: unknown[] = [];
+
+    const recorded = definePolicy(schema, {
+      appliesTo: ["cancel"],
+      check: (candidate) => {
+        seen.push(candidate);
+
+        return { reason: "closed" };
+      },
+      load: ({ from, resourceId, to }) => {
+        loads.push({ from, resourceId, to });
+      },
+      name: "recorded",
+    });
+
+    const { adapter, booking } = await withBooking();
+
+    const scheduler = createScheduler({
+      adapter,
+      policies: [recorded],
+      schema,
+    });
+
+    const result = await scheduler.cancel({ id: booking.id });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "PolicyViolation",
+        violations: [{ detail: { reason: "closed" }, policy: "recorded" }],
+      },
+      ok: false,
+    });
+    expect(loads).toStrictEqual([{ from: start, resourceId: room, to: end }]);
+    expect(seen).toMatchObject([{ action: "cancel", booking }]);
+    await expect(stored(adapter)).resolves.toStrictEqual([booking]);
+  });
+
+  it("cancels with the Policy relaxed, and reports it waived", async () => {
+    const { policy } = closedFor("cancel");
+    const { adapter, booking } = await withBooking();
+    const scheduler = createScheduler({ adapter, policies: [policy], schema });
+
+    const value = unwrap(
+      await scheduler.cancel({ id: booking.id, relax: ["closed"] })
+    );
+
+    expect(value).toStrictEqual({
+      alreadyCancelled: false,
+      booking: { ...booking, status: "cancelled" },
+      waived: [{ detail: { reason: "closed" }, policy: "closed" }],
+    });
+  });
+
+  it("runs no Policy and no also on a repeat cancel", async () => {
+    const { policy, seen } = closedFor("cancel");
+    const { adapter, booking } = await withBooking();
+    const scheduler = createScheduler({ adapter, policies: [policy], schema });
+    let alsoRuns = 0;
+
+    unwrap(await scheduler.cancel({ id: booking.id, relax: ["closed"] }));
+    seen.length = 0;
+
+    const repeat = unwrap(
+      await scheduler.cancel({
+        also: () => {
+          alsoRuns += 1;
+
+          return { ok: true, value: null };
+        },
+        id: booking.id,
+        relax: ["closed"],
+      })
+    );
+
+    expect(repeat).toStrictEqual({
+      alreadyCancelled: true,
+      booking: { ...booking, status: "cancelled" },
+    });
+    expect(seen).toStrictEqual([]);
+    expect(alsoRuns).toBe(0);
+  });
+
+  it("gives TransitionNotDeclared before any Policy", async () => {
+    const started = defineSchema({
+      booking: {
+        initial: ["inProgress"],
+        statuses: { inProgress: { blocking: true } },
+        transitions: { booked: ["inProgress"] },
+      },
+    });
+
+    let checks = 0;
+
+    const counted = definePolicy(started, {
+      appliesTo: ["cancel"],
+      check: () => {
+        checks += 1;
+
+        return { reason: "closed" };
+      },
+      name: "counted",
+    });
+
+    const scheduler = createScheduler({
+      adapter: memoryAdapter(),
+      policies: [counted],
+      schema: started,
+    });
+
+    const booking = unwrap(
+      await scheduler.book({
+        end,
+        relax: ["availability"],
+        resourceId: "room",
+        start,
+      })
+    );
+
+    const result = await scheduler.cancel({ id: booking.id });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "TransitionNotDeclared",
+        from: "inProgress",
+        id: booking.id,
+        to: "cancelled",
+      },
+      ok: false,
+    });
+    expect(checks).toBe(0);
+  });
+
+  it("refuses a relax name that doesn't apply to cancel as InvalidParams, before any Adapter call", async () => {
+    const result = await createScheduler({
+      adapter: noCalls,
+      policies: [closed],
+      schema,
+    }).cancel({
+      id: mintBookingId(),
+      // @ts-expect-error -- no Policy applies to cancel, so it takes no relax.
+      relax: ["availability"],
+    });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "InvalidParams",
+        issues: [
+          {
+            message:
+              "relax: availability is not a Policy that applies to cancel",
             path: ["relax", 0],
           },
         ],

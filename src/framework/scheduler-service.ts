@@ -76,7 +76,8 @@ export type SchedulerActions<
     RescheduleParams<S>,
     ChangeAlso<S, Tx>,
     Booking<S>,
-    RescheduleError<S>
+    RescheduleError<S>,
+    ViolationFor<P[number], "reschedule">
   >;
   /** Cancel a Booking, freeing its slot. Idempotent. */
   readonly cancel: WriteAction<
@@ -84,7 +85,8 @@ export type SchedulerActions<
     CancelParams<S>,
     ChangeAlso<S, Tx>,
     CancelValue<S>,
-    CancelError<S>
+    CancelError<S>,
+    ViolationFor<P[number], "cancel">
   >;
   /** Free slots on a Resource in a range, zoned in the caller's timezone. */
   readonly findSlots: ReadAction<

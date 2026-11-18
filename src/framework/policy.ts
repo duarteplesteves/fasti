@@ -13,7 +13,7 @@ import type { Booking } from "./booking.js";
 import type { PolicyViolation } from "./errors.js";
 
 /** What a Policy can apply to: the Actions that run it. */
-export type PolicyTarget = "book";
+export type PolicyTarget = "book" | "reschedule" | "cancel";
 
 /** What `book` asks a Policy about. */
 export interface BookCandidate<S extends AnySchema> {
@@ -25,8 +25,32 @@ export interface BookCandidate<S extends AnySchema> {
   readonly now: Temporal.Instant;
 }
 
+/** What `reschedule` asks a Policy about: the destination Resource and range, and the stored Booking. */
+export interface RescheduleCandidate<S extends AnySchema> {
+  readonly action: "reschedule";
+  /** The Resource the Booking moves to: the stored one when the call names none. */
+  readonly resourceId: ResourceIdOf<S>;
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
+  /** The Booking as stored, before the move. */
+  readonly previous: Booking<S>;
+  /** The Clock's time, read once on the unit: `also` sees the same. */
+  readonly now: Temporal.Instant;
+}
+
+/** What `cancel` asks a Policy about: the stored Booking, before it is cancelled. */
+export interface CancelCandidate<S extends AnySchema> {
+  readonly action: "cancel";
+  readonly booking: Booking<S>;
+  /** The Clock's time, read once on the unit: `also` sees the same. */
+  readonly now: Temporal.Instant;
+}
+
 /** One candidate per call, discriminated on `action`. */
-export type Candidate<S extends AnySchema> = BookCandidate<S>;
+export type Candidate<S extends AnySchema> =
+  | BookCandidate<S>
+  | RescheduleCandidate<S>
+  | CancelCandidate<S>;
 
 /** The candidates a Policy with targets `T` sees. */
 export type CandidateFor<S extends AnySchema, T extends PolicyTarget> = Extract<
@@ -43,7 +67,7 @@ export interface PolicyReads<S extends AnySchema> {
   readonly getRules: (resourceId: ResourceIdOf<S>) => Promise<RuleRecord[]>;
 }
 
-/** What `load` gets: the candidate's Resource and range, the unit's `now`, and fasti's reads. */
+/** What `load` gets: the candidate's Resource and range (on `cancel`, the stored Booking's), the unit's `now`, and fasti's reads. */
 export interface LoadContext<S extends AnySchema> {
   readonly resourceId: ResourceIdOf<S>;
   readonly from: Temporal.Instant;
@@ -99,9 +123,9 @@ type Applies<P, A extends PolicyTarget> = P extends {
     : never
   : never;
 
-/** Every Violation an Action `A` can report: the built-in `availability`'s and each applicable Policy's in union `P`. */
+/** Every Violation an Action `A` can report: the built-in `availability`'s (on `book` and `reschedule`) and each applicable Policy's in union `P`. */
 export type ViolationFor<P, A extends PolicyTarget> =
-  | AvailabilityViolation
+  | (A extends "cancel" ? never : AvailabilityViolation)
   | ViolationOf<Applies<P, A>>;
 
 /** The names a `relax` value `X` may list; `never` without `relax`. */
@@ -116,24 +140,35 @@ type SurelyRelaxed<X> = undefined extends X
       : X[number]
     : never;
 
+/** `V` with `Waived` added; a repeat cancel ran no Policy, so it never carries it. */
+type AddWaived<V, Waived> = V extends { readonly alreadyCancelled: true }
+  ? V
+  : V & Waived;
+
 /** The value with `waived` added exactly when `relax` was passed (optional when it may be `undefined`): the relaxed Policies' Violations. */
 export type WithWaived<V, W extends Violation<string, unknown>, X> = [
   X,
 ] extends [undefined]
   ? V
   : undefined extends X
-    ? V & {
-        readonly waived?: readonly Extract<
-          W,
-          { readonly policy: RelaxedNames<X> }
-        >[];
-      }
-    : V & {
-        readonly waived: readonly Extract<
-          W,
-          { readonly policy: RelaxedNames<X> }
-        >[];
-      };
+    ? AddWaived<
+        V,
+        {
+          readonly waived?: readonly Extract<
+            W,
+            { readonly policy: RelaxedNames<X> }
+          >[];
+        }
+      >
+    : AddWaived<
+        V,
+        {
+          readonly waived: readonly Extract<
+            W,
+            { readonly policy: RelaxedNames<X> }
+          >[];
+        }
+      >;
 
 /** `PolicyViolation` of the applicable Policies `W` that `X` doesn't surely relax; `never` when it relaxes them all. */
 export type PolicyErrorOf<W extends Violation<string, unknown>, X> = [

@@ -25,6 +25,7 @@ import type {
   BlockColumn,
   BlockNotFound,
   BookCandidate,
+  CancelCandidate,
   CreateBlockError,
   CreateBlockParams,
   CreateSchedulerParams,
@@ -33,6 +34,7 @@ import type {
   HasBlocks,
   ListBlocksError,
   ListBlocksParams,
+  RescheduleCandidate,
   Scheduler,
   UpdateBlockError,
   UpdateBlockParams,
@@ -56,7 +58,7 @@ import type {
   SetAvailabilityValue,
 } from "./availability.js";
 import type { BookError, BookParams } from "./book.js";
-import { mintBlockId } from "./booking-id.js";
+import { mintBlockId, mintBookingId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
 import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { EffectLocked } from "./effect-adapter.js";
@@ -67,7 +69,7 @@ import type {
   Vetoed,
 } from "./errors.js";
 import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
-import type { RescheduleError, RescheduleParams } from "./reschedule.js";
+import type { RescheduleError } from "./reschedule.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
 
@@ -408,10 +410,19 @@ describe("forms", () => {
         params: CancelParams<S>
       ) => Promise<Result<CancelValue<S>, CancelError<S>>>
     >();
-    expectTypeOf<Single<Plain["reschedule"]>>().toEqualTypeOf<
-      (
-        params: RescheduleParams<S>
-      ) => Promise<Result<Booking<S>, RescheduleError<S>>>
+
+    /** Never called: a reschedule without `relax`, as before Policies. */
+    async function rescheduleCall(plain: Plain) {
+      return await plain.reschedule({ ...base, id: mintBookingId() });
+    }
+
+    expectTypeOf<ReturnType<typeof rescheduleCall>>().toEqualTypeOf<
+      Promise<
+        Result<
+          Booking<S>,
+          RescheduleError<S> | PolicyViolation<AvailabilityViolation>
+        >
+      >
     >();
     expectTypeOf<Single<Plain["findSlots"]>>().toEqualTypeOf<
       (
@@ -675,6 +686,81 @@ describe("Policy types", () => {
     expectTypeOf<Err<Also>>().toEqualTypeOf<
       BookError | PolicyViolation<Closed> | Vetoed<"no">
     >();
+  });
+
+  type S = typeof defaultSchema;
+
+  /** A Policy on both `reschedule` and `cancel`: its candidate is either. */
+  const late = definePolicy(defaultSchema, {
+    appliesTo: ["reschedule", "cancel"],
+    check: (candidate) => {
+      expectTypeOf(candidate).toEqualTypeOf<
+        RescheduleCandidate<S> | CancelCandidate<S>
+      >();
+
+      if (candidate.action === "reschedule") {
+        expectTypeOf(candidate.previous).toEqualTypeOf<Booking<S>>();
+      }
+
+      return { late: true as const };
+    },
+    name: "late",
+  });
+
+  type Late = Violation<"late", { late: true }>;
+
+  /** Never called: `reschedule` and `cancel` with and without `relax`. */
+  function changeCalls() {
+    const scheduler = createScheduler({
+      adapter: memoryAdapter(),
+      policies: [closed, late],
+      schema: defaultSchema,
+    });
+
+    const id = mintBookingId();
+
+    return {
+      cancel: scheduler.cancel({ id }),
+      cancelRelaxed: scheduler.cancel({ id, relax: ["late"] }),
+      // @ts-expect-error -- availability doesn't apply to cancel.
+      cancelWrong: scheduler.cancel({ id, relax: ["availability"] }),
+      reschedule: scheduler.reschedule({ ...base, id }),
+      rescheduleRelaxed: scheduler.reschedule({
+        ...base,
+        id,
+        relax: ["availability"],
+      }),
+      // @ts-expect-error -- `closed` applies to book only.
+      rescheduleWrong: scheduler.reschedule({ ...base, id, relax: ["closed"] }),
+    };
+  }
+
+  type Calls = ReturnType<typeof changeCalls>;
+
+  it("narrows relax and PolicyViolation per Action", () => {
+    expectTypeOf<Err<Calls["reschedule"]>>().toEqualTypeOf<
+      RescheduleError<S> | PolicyViolation<AvailabilityViolation | Late>
+    >();
+    expectTypeOf<Err<Calls["rescheduleRelaxed"]>>().toEqualTypeOf<
+      RescheduleError<S> | PolicyViolation<Late>
+    >();
+    expectTypeOf<Ok<Calls["rescheduleRelaxed"]>>().toEqualTypeOf<
+      Booking<S> & { readonly waived: readonly AvailabilityViolation[] }
+    >();
+    expectTypeOf<Err<Calls["cancel"]>>().toEqualTypeOf<
+      CancelError<S> | PolicyViolation<Late>
+    >();
+    expectTypeOf<Err<Calls["cancelRelaxed"]>>().toEqualTypeOf<CancelError<S>>();
+  });
+
+  it("adds waived to cancel's alreadyCancelled: false branch only", () => {
+    expectTypeOf<Ok<Calls["cancelRelaxed"]>>().toEqualTypeOf<
+      | { readonly booking: Booking<S>; readonly alreadyCancelled: true }
+      | ({ readonly booking: Booking<S>; readonly alreadyCancelled: false } & {
+          readonly waived: readonly Late[];
+        })
+    >();
+    expectTypeOf<Ok<Calls["cancel"]>>().toEqualTypeOf<CancelValue<S>>();
   });
 
   /** Never called: only the types are checked. */
