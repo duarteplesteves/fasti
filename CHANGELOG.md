@@ -1,5 +1,24 @@
 # @fastijs/scheduler
 
+## 0.4.0
+
+### Minor Changes
+
+- 45193bd: `findSlots` honours Policies, and agrees with the writes by construction: it runs the same Policy pass on each Grid slot. A slot that breaks an unrelaxed Policy is hidden. With `relax`, a slot that breaks only relaxed Policies is listed, with those Violations in `waived` (`Slot<S, W>`); `relax: ["availability"]` lists Grid slots outside the rules. Each Policy's `load` runs once per search, over `[from, to + duration)`. Without `excludeBookingId` the `book` Policies run on a `book` candidate. With it, the `reschedule` Policies run, with `previous` set to that Booking, and `relax` narrows to their names. An unknown `relax` name is `InvalidParams` at `["relax", i]`, before any Adapter call.
+  
+  Breaking: `FindSlotsError` adds `BookingNotFound` (an `excludeBookingId` that names no Booking). `Slot` takes a second type parameter `W` (default `never`).
+- 59e3c8f: Add the prebuilt `notice` Policy, written with `definePolicy`: `notice(schema, { minimum, appliesTo, name? })` breaks when the start is before `now + minimum` (whole minutes, at least 0; `name` defaults to `"notice"`). On `book` and `reschedule` it compares the candidate's start, on `cancel` and Transition edges the stored Booking's, and reports `detail: { earliest }`. `minimum: 0` refuses past starts; a negative, fractional or non-finite `minimum` throws. Rename it to register more than one, e.g. `bookingNotice` and `cancelNotice`, each relaxed on its own.
+- 66035f5: Policies on Transition edges. `appliesTo` takes edges: `{ to }` is every declared edge into `to`, `{ from, to }` one edge; edges into `cancelled` belong to `cancel`. `definePolicy` throws on an undeclared edge, or on `{ to }` with no declared edge into it (both are type errors too). `transition` runs the Policies on its edge after `StatusMismatch` and the overlap check, with candidate `{ action: "transition", booking, from, to, now }`; `load` gets the stored Booking's range. `relax` and `waived` work as on `book`, typed per edge.
+- dcb55b4: Run Policies on `reschedule` and `cancel`. A Policy with `"reschedule"` in `appliesTo` gets `{ action: "reschedule", resourceId, start, end, previous, now }`, where `resourceId` is the destination and `previous` the stored Booking; `availability` runs there too. A Policy with `"cancel"` gets `{ action: "cancel", booking, now }`, and its `load` gets the stored Booking's range. The Invariants come first (`StatusMismatch`, `SlotConflict`, `TransitionNotDeclared`). Both take `relax` and report `waived` as `book` does; on `cancel`, `waived` is on the `alreadyCancelled: false` branch only. A repeat `cancel` runs no Policy and no `also`. `RescheduleCandidate` and `CancelCandidate` are exported.
+  
+  Breaking: `RescheduleError` drops `PolicyViolation` (the scheduler types it from its Policies), and `CancelError` adds `InvalidParams` (an unknown `relax` name).
+- a9ad04f: Add Policies: define one with `definePolicy(schema, { name, appliesTo: ["book"], load?, check })` and register it through `createScheduler({ schema, adapter, policies })`. `book` runs every applicable Policy under the Resource Lock, after the Invariants, with the built-in `availability` first, and reports every broken one in a single `PolicyViolation<V>` whose `detail` is typed per Policy. `load` gets `{ resourceId, from, to, now, reads }` and runs once per call; `also` sees the same `now`.
+  
+  Breaking: `policies` is now required (pass `policies: []` for none), the plain `Scheduler` type and `SchedulerService` take the Policies tuple as a third type parameter, and the Effect-form `Scheduler<Self, S, Tx, P>` takes it as a required fourth. `BookError` no longer lists `PolicyViolation`; the scheduler types it from its Policies.
+- 301aef3: Add `relax` to `book`: `book({ ..., relax: ["name"] })` skips the named Policies, `availability` included. Every applicable Policy still runs; the unrelaxed broken ones make up `PolicyViolation`, and the relaxed broken ones come back as `waived` on the Booking. `waived` is present exactly when `relax` was passed (`[]` when nothing relaxed broke). An unknown name is `InvalidParams` at `["relax", i]`, before any Adapter call. The types narrow `relax` to the names that apply, and drop `PolicyViolation` from the error when every applicable Policy is relaxed.
+  
+  Breaking: a Booking Developer Field can't be named `waived` (a type error and a `defineSchema` throw).
+
 ## 0.3.0
 
 ### Minor Changes
