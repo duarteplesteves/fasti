@@ -38,26 +38,32 @@ export async function prismaTestDatabase<C extends AnyContract>(
   const control = createPostgresControlClient({ connection: fresh.url });
 
   try {
-    const init = await control.dbInit({
-      contract,
-      invocation: { configPath: undefined, cwd: process.cwd(), dbGiven: true },
-      migrationsDir,
-      mode: "apply",
-    });
-
-    if (!init.ok) {
-      throw new Error("prismaTestDatabase: db init failed", {
-        cause: init.failure,
+    try {
+      const init = await control.dbInit({
+        contract,
+        invocation: {
+          configPath: undefined,
+          cwd: process.cwd(),
+          dbGiven: true,
+        },
+        migrationsDir,
+        mode: "apply",
       });
+
+      if (!init.ok) {
+        throw new Error("prismaTestDatabase: db init failed", {
+          cause: init.failure,
+        });
+      }
+    } finally {
+      // Before any drop: `with (force)` would kill its connection mid-close.
+      await control.close();
     }
   } catch (error) {
     // Don't leave a fasti_* database behind when db init fails.
-    await control.close();
     await drop();
     throw error;
   }
-
-  await control.close();
 
   // SAFETY: the same pg Pool at runtime; Prisma pins its own copy of @types/pg, so the types differ.
   // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- two copies of one declaration.

@@ -20,7 +20,10 @@ export type ContractHelpers = Parameters<
   Parameters<typeof defineContract>[1]
 >[0];
 
-/** A `sql` value of text built at runtime; the tag only takes template literals. */
+/**
+ * A `sql` value of text built at runtime. The tag only takes template literals, so this hands it
+ * a one-piece template; it reads `raw`, which holds `text` unchanged.
+ */
 function sqlText(text: string) {
   return sql(Object.assign([text], { raw: [text] }));
 }
@@ -30,7 +33,7 @@ function tableModel(
   { model }: ContractHelpers,
   table: string,
   fields: Readonly<Record<string, ScalarFieldBuilder>>,
-  checks: readonly ReturnType<typeof check>[] = []
+  checks: readonly ReturnType<typeof check>[]
 ) {
   return model(table, { fields }).sql({ checks: [...checks], table });
 }
@@ -153,13 +156,22 @@ function blockModel(
     Record<BlockColumn, string> & Partial<Record<string, string>>
   >;
 
-  return tableModel(helpers, schema.names.tables.block, {
-    id: helpers.field.column(helpers.type.Uuid()).id().column(names.id),
-    resourceId: column(helpers, schema.resource.idType.kind, names.resourceId),
-    start: column(helpers, "instant", names.start),
-    end: column(helpers, "instant", names.end),
-    ...fieldColumns(helpers, fields, names),
-  });
+  return tableModel(
+    helpers,
+    schema.names.tables.block,
+    {
+      id: helpers.field.column(helpers.type.Uuid()).id().column(names.id),
+      resourceId: column(
+        helpers,
+        schema.resource.idType.kind,
+        names.resourceId
+      ),
+      start: column(helpers, "instant", names.start),
+      end: column(helpers, "instant", names.end),
+      ...fieldColumns(helpers, fields, names),
+    },
+    []
+  );
 }
 
 /** The AvailabilityRule model. Its primary key is generated and private; dates are `date` strings, the window `time`. */
@@ -169,27 +181,39 @@ function availabilityRuleModel(schema: AnySchema, helpers: ContractHelpers) {
   const names: Readonly<Record<AvailabilityRuleColumn, string>> =
     schema.names.columns.availabilityRule;
 
-  return tableModel(helpers, schema.names.tables.availabilityRule, {
-    id: field
-      .column(type.Uuid())
-      .id()
-      .default(sql`gen_random_uuid()`)
-      .column(names.id),
-    resourceId: column(helpers, schema.resource.idType.kind, names.resourceId),
-    recurrence: field.column(type.Jsonb()).column(names.recurrence),
-    windowStart: field.column(type.Time()).column(names.windowStart),
-    windowEnd: field.column(type.Time()).column(names.windowEnd),
-    timezone: column(helpers, "text", names.timezone),
-    effectiveFrom: field
-      .column(type.Date())
-      .optional()
-      .column(names.effectiveFrom),
-    effectiveTo: field.column(type.Date()).optional().column(names.effectiveTo),
-    exceptions: field
-      .column(type.Date())
-      .many({ elementsNullable: true })
-      .column(names.exceptions),
-  });
+  return tableModel(
+    helpers,
+    schema.names.tables.availabilityRule,
+    {
+      id: field
+        .column(type.Uuid())
+        .id()
+        .default(sql`gen_random_uuid()`)
+        .column(names.id),
+      resourceId: column(
+        helpers,
+        schema.resource.idType.kind,
+        names.resourceId
+      ),
+      recurrence: field.column(type.Jsonb()).column(names.recurrence),
+      windowStart: field.column(type.Time()).column(names.windowStart),
+      windowEnd: field.column(type.Time()).column(names.windowEnd),
+      timezone: column(helpers, "text", names.timezone),
+      effectiveFrom: field
+        .column(type.Date())
+        .optional()
+        .column(names.effectiveFrom),
+      effectiveTo: field
+        .column(type.Date())
+        .optional()
+        .column(names.effectiveTo),
+      exceptions: field
+        .column(type.Date())
+        .many({ elementsNullable: true })
+        .column(names.exceptions),
+    },
+    []
+  );
 }
 
 /**
