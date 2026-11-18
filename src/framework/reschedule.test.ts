@@ -1,12 +1,12 @@
 /* eslint-disable vitest/no-standalone-expect */
 import { test } from "@fast-check/vitest";
-import { array, nat } from "fast-check";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { array, integer, nat, record, subarray } from "fast-check";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
 import type { Adapter } from "../adapter/contract.js";
 import type { BookingId } from "../core/types.js";
-import { createScheduler } from "../index.js";
+import { createScheduler, definePolicy } from "../index.js";
 import type {
   AdapterError,
   BookingNotFound,
@@ -31,8 +31,15 @@ import {
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
 import { mintBookingId } from "./booking-id.js";
+import type { Booking } from "./booking.js";
 
 const schema = uuidIdSchema;
+
+/** UTC midnight on or before `t`. */
+function day(t: Temporal.Instant): Temporal.Instant {
+  return t.toZonedDateTimeISO("UTC").startOfDay().toInstant();
+}
+
 const [room, otherRoom] = uuidIdResources;
 
 /** Weekdays 09:00–17:00 in Lisbon (UTC+1 in June). */
@@ -390,89 +397,182 @@ describe("reschedule", () => {
       arbInterval(),
       arbTimezone(),
       nat(),
+      record({
+        limit: integer({ max: 3, min: 1 }),
+        minimum: integer({ max: 24 * 60, min: 0 }),
+        nowOffset: integer({ max: 96, min: -48 }),
+        relax: subarray(["availability", "notice", "perDay"] as const),
+      }),
     ],
     propConfig
   )(
-    "accepts any slot findSlots({ excludeBookingId }) returns for that Booking",
-    async (rules, { bookings, range }, duration, interval, timezone, pick) => {
-      const adapter = memoryAdapter();
-      const ids: BookingId[] = [];
+    "at a fixed now, book and reschedule accept any slot findSlots({ relax }) returns, with an equal waived",
+    async (
+      rules,
+      { bookings, range },
+      duration,
+      interval,
+      timezone,
+      pick,
+      { limit, minimum, nowOffset, relax }
+    ) => {
+      const now = range.from.add({ hours: nowOffset });
 
-      await adapter(schema).withResourceLock(room, async (locked) => {
-        await locked.replaceRules({
-          resourceId: room,
-          rules: rules.map(({ resourceId: _, ...r }) => ({
-            ...r,
-            exceptions: [],
-          })),
+      /** A notice-like Policy: the start is at least `minimum` minutes after `now`. */
+      const notice = definePolicy(schema, {
+        appliesTo: ["book", "reschedule"],
+        check: (candidate) => {
+          const earliest = candidate.now.add({ minutes: minimum });
+
+          return Temporal.Instant.compare(candidate.start, earliest) < 0
+            ? { earliest: earliest.toString() }
+            : null;
+        },
+        name: "notice",
+      });
+
+      /** At most `limit` blocking Bookings start on a UTC day, the one being moved aside. */
+      const perDay = definePolicy(schema, {
+        appliesTo: ["book", "reschedule"],
+        check: (candidate, stored: readonly Booking<typeof schema>[]) => {
+          const count = stored.filter(
+            (b) =>
+              b.status === "booked" &&
+              (candidate.action === "book" || b.id !== candidate.previous.id) &&
+              day(b.start).equals(day(candidate.start))
+          ).length;
+
+          return count >= limit ? { count } : null;
+        },
+        load: async ({ from: f, reads, resourceId, to }) =>
+          await reads.listBookings({
+            overlapping: { from: day(f), to: day(to).add({ hours: 24 }) },
+            resourceId,
+          }),
+        name: "perDay",
+      });
+
+      /** A fresh Adapter with `rules` and the reachable subset of `bookings`; the first id blocks. */
+      async function seededWithPolicies() {
+        const adapter = memoryAdapter();
+        const ids: BookingId[] = [];
+
+        await adapter(schema).withResourceLock(room, async (locked) => {
+          await locked.replaceRules({
+            resourceId: room,
+            rules: rules.map(({ resourceId: _, ...r }) => ({
+              ...r,
+              exceptions: [],
+            })),
+          });
+
+          // Seed only states the Framework can reach: blocking Bookings never overlap, and the first one blocks.
+          const kept: typeof bookings = [];
+
+          for (const [i, b] of bookings.entries()) {
+            const blocking = i === 0 || b.isBlocking;
+
+            const clash = kept.some(
+              (k) =>
+                k.isBlocking &&
+                blocking &&
+                Temporal.Instant.compare(k.start, b.end) < 0 &&
+                Temporal.Instant.compare(b.start, k.end) < 0
+            );
+
+            if (!clash) {
+              kept.push({ ...b, isBlocking: blocking });
+            }
+          }
+
+          for (const b of kept) {
+            const id = mintBookingId();
+
+            ids.push(id);
+            // oxlint-disable-next-line no-await-in-loop -- in order, so ids[0] is the blocking one.
+            await locked.insertBooking({
+              end: b.end,
+              id,
+              resourceId: room,
+              start: b.start,
+              status: b.isBlocking ? "booked" : "cancelled",
+            });
+          }
         });
 
-        // Seed only states the Framework can reach: blocking Bookings never overlap, and the first one blocks.
-        const kept: typeof bookings = [];
+        const scheduler = createScheduler({
+          adapter,
+          policies: [notice, perDay],
+          schema,
+        });
 
-        for (const [i, b] of bookings.entries()) {
-          const blocking = i === 0 || b.isBlocking;
+        return { moving: ids[0], scheduler };
+      }
 
-          const clash = kept.some(
-            (k) =>
-              k.isBlocking &&
-              blocking &&
-              Temporal.Instant.compare(k.start, b.end) < 0 &&
-              Temporal.Instant.compare(b.start, k.end) < 0
-          );
+      const search = {
+        duration,
+        from: range.from,
+        interval,
+        relax,
+        resourceId: room,
+        timezone,
+        to: range.to,
+      };
 
-          if (!clash) {
-            kept.push({ ...b, isBlocking: blocking });
-          }
-        }
+      vi.useFakeTimers({ now: now.epochMilliseconds, toFake: ["Date"] });
 
-        for (const b of kept) {
-          const id = mintBookingId();
+      try {
+        const forBook = await seededWithPolicies();
+        const free = unwrap(await forBook.scheduler.findSlots(search));
+        const slot = free[pick % Math.max(free.length, 1)];
 
-          ids.push(id);
-          // oxlint-disable-next-line no-await-in-loop -- in order, so ids[0] is the blocking one.
-          await locked.insertBooking({
-            end: b.end,
-            id,
+        if (slot !== undefined) {
+          const booked = await forBook.scheduler.book({
+            end: slot.end.toInstant(),
+            relax,
             resourceId: room,
-            start: b.start,
-            status: b.isBlocking ? "booked" : "cancelled",
+            start: slot.start.toInstant(),
+          });
+
+          expect(booked).toMatchObject({
+            ok: true,
+            value: { waived: slot.waived },
           });
         }
-      });
 
-      const [moving] = ids;
-      const scheduler = createScheduler({ policies: [], adapter, schema });
+        const forMove = await seededWithPolicies();
 
-      if (moving === undefined) {
-        return;
+        if (forMove.moving === undefined) {
+          return;
+        }
+
+        const movable = unwrap(
+          await forMove.scheduler.findSlots({
+            ...search,
+            excludeBookingId: forMove.moving,
+          })
+        );
+
+        const target = movable[pick % Math.max(movable.length, 1)];
+
+        if (target === undefined) {
+          return;
+        }
+
+        const moved = await forMove.scheduler.reschedule({
+          end: target.end.toInstant(),
+          id: forMove.moving,
+          relax,
+          start: target.start.toInstant(),
+        });
+
+        expect(moved).toMatchObject({
+          ok: true,
+          value: { waived: target.waived },
+        });
+      } finally {
+        vi.useRealTimers();
       }
-
-      const slots = unwrap(
-        await scheduler.findSlots({
-          duration,
-          excludeBookingId: moving,
-          from: range.from,
-          interval,
-          resourceId: room,
-          timezone,
-          to: range.to,
-        })
-      );
-
-      const slot = slots[pick % Math.max(slots.length, 1)];
-
-      if (slot === undefined) {
-        return;
-      }
-
-      const result = await scheduler.reschedule({
-        end: slot.end.toInstant(),
-        id: moving,
-        start: slot.start.toInstant(),
-      });
-
-      expect(result).toMatchObject({ ok: true });
     }
   );
 

@@ -1,14 +1,19 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 
 import type { ResourceIdOf } from "../adapter/records.js";
-import { checkSearch, findFreeSlots } from "../core/find-free-slots.js";
+import { checkBookings } from "../core/checks.js";
+import { checkSearch, freeGridSlots } from "../core/find-free-slots.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
 import type { BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { floorMs } from "./booking.js";
 import { AdapterError } from "./errors.js";
+import type { BookingNotFound } from "./errors.js";
+import type { Form, Run } from "./forms.js";
 import { occupants } from "./occupancy.js";
+import { applicable, checkRelax, judge, loadPolicies } from "./policy-pass.js";
+import type { RelaxedNames, Violation } from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
 
 /** Params of `findSlots`: free `duration`-minute slots on one Resource, starting in `[from, to)`. */
@@ -25,35 +30,81 @@ export interface FindSlotsParams<S extends AnySchema> {
   readonly interval: number;
   /** IANA timezone that anchors the grid; slots are zoned in it. */
   readonly timezone: string;
-  /** Leave this Booking out of the conflict check: the slots it could be rescheduled to. */
+  /** The slots this Booking could be rescheduled to: it leaves the conflict check, and the `reschedule` Policies run instead of `book`'s. */
   readonly excludeBookingId?: BookingId;
 }
 
-/** A free slot from `findSlots`: the Core's Slot with the caller's typed Resource id. */
-export interface Slot<S extends AnySchema> {
+/** A free slot from `findSlots`, with the caller's typed Resource id; `W` is the Violations of the Policies `relax` named. */
+export interface Slot<S extends AnySchema, W = never> {
   readonly start: Temporal.ZonedDateTime;
   readonly end: Temporal.ZonedDateTime;
   readonly resourceId: ResourceIdOf<S>;
-  /** Stays empty until `relax` (checkpoint 7). */
-  readonly waived: readonly never[];
+  /** The relaxed Policies this slot breaks; empty without `relax`. */
+  readonly waived: readonly W[];
 }
 
-/** Every way `findSlots` can fail. */
-export type FindSlotsError = InvalidParams | AdapterError;
+/** Every way `findSlots` can fail. `BookingNotFound`: `excludeBookingId` names no Booking. */
+export type FindSlotsError = InvalidParams | BookingNotFound | AdapterError;
 
-/** Free slots on a Resource: no blocking Booking or Block overlaps them and they fit availability. Unlocked reads. */
+/** `findSlots`'s params when the Policies on its Action report `W`. */
+type SearchParams<S extends AnySchema, X> = Omit<
+  FindSlotsParams<S>,
+  "excludeBookingId"
+> & {
+  /** Skip these Policies: slots that break only these are listed, tagged in `waived`. */
+  readonly relax?: X;
+};
+
+/** The slots a search relaxing `X` returns, over Violations `W`. */
+type Slots<S extends AnySchema, W, X> = readonly Slot<
+  S,
+  Extract<W, { readonly policy: RelaxedNames<X> }>
+>[];
+
+/** `findSlots` in form `F`: `book`'s Policies (`B`) without `excludeBookingId`, `reschedule`'s (`Rs`) with it, so `relax` and `waived` narrow by it. */
+export interface FindSlotsAction<
+  F extends Form,
+  S extends AnySchema,
+  B extends Violation<string, unknown>,
+  Rs extends Violation<string, unknown>,
+> {
+  <const X extends readonly B["policy"][] | undefined = undefined>(
+    params: SearchParams<S, X> & { readonly excludeBookingId?: undefined }
+  ): Run<F, Slots<S, B, X>, FindSlotsError, never>;
+  <const X extends readonly Rs["policy"][] | undefined = undefined>(
+    params: SearchParams<S, X> & { readonly excludeBookingId: BookingId }
+  ): Run<F, Slots<S, Rs, X>, FindSlotsError, never>;
+}
+
+/**
+ * Free slots on a Resource: the Grid slots no blocking Booking or Block overlaps, judged by the same Policies as `book`, or `reschedule` with `excludeBookingId` (Invariant 5 of ADR 014's spec).
+ * A slot breaking an unrelaxed Policy is hidden. Unlocked reads; each `load` runs once, over `[from, to + duration)`.
+ */
 export function findSlots<S extends AnySchema, Tx>(
-  { adapter, codec }: ActionContext<S, Tx>,
+  ctx: ActionContext<S, Tx>,
   params: FindSlotsParams<S>
-): Effect.Effect<readonly Slot<S>[], FindSlotsError> {
+): Effect.Effect<
+  readonly Slot<S, Violation<string, unknown>>[],
+  FindSlotsError
+> {
+  const { adapter, codec } = ctx;
   const { duration, excludeBookingId, interval, resourceId, timezone } = params;
 
   const from = floorMs(params.from);
   const to = floorMs(params.to);
 
+  const target = excludeBookingId === undefined ? "book" : "reschedule";
+  const policies = applicable(ctx, target);
+  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- FindSlotsAction types `relax` for callers; the implementation takes it as data.
+  const { relax } = params as { readonly relax?: readonly string[] };
+
   // Checked before any Adapter call (Invariant 5), so `to.add(duration)` below can't throw.
   const valid = checked(
-    checkSearch({ duration, from, interval, timezone, to }),
+    [
+      ...checkSearch({ duration, from, interval, timezone, to }),
+      ...checkRelax(policies, target, relax),
+    ],
     () => null
   );
 
@@ -62,37 +113,71 @@ export function findSlots<S extends AnySchema, Tx>(
   }
 
   return Effect.gen(function* findSlotsRun() {
-    const coreId = String(resourceId);
-    const rules = yield* adapter.getRules(resourceId);
+    const previous =
+      excludeBookingId === undefined
+        ? null
+        : yield* adapter.getBooking(excludeBookingId);
+
+    if (excludeBookingId !== undefined && previous === null) {
+      return yield* Effect.fail<BookingNotFound>({
+        _tag: "BookingNotFound",
+        id: excludeBookingId,
+      });
+    }
+
+    const now = Temporal.Instant.fromEpochMilliseconds(
+      yield* Clock.currentTimeMillis
+    );
 
     // A slot starting before `to` can run to `to + duration`.
+    const range = { from, to: to.add({ minutes: duration }) };
+
     const { bookings } = yield* occupants(
       adapter,
       codec,
       "booking",
       resourceId,
-      {
-        from,
-        to: to.add({ minutes: duration }),
-      }
+      range
     );
 
-    const found = findFreeSlots({
-      bookings: bookings.filter((b) => b.id !== excludeBookingId),
-      duration,
-      from,
-      interval,
-      resourceId: coreId,
-      rules: rules.map((r) => ({ ...r, resourceId: coreId })),
-      timezone,
-      to,
-    });
+    // Stored data the Core finds invalid is the Adapter's (Invariant 6).
+    const grid = checked(checkBookings(bookings, String(resourceId)), () =>
+      freeGridSlots({
+        bookings: bookings.filter((b) => b.id !== excludeBookingId),
+        duration,
+        from,
+        interval,
+        timezone,
+        to,
+      })
+    );
 
-    // The params passed above, so only stored data can fail (Invariant 6).
-    if (!found.ok) {
-      return yield* Effect.fail(new AdapterError(found.error));
+    if (!grid.ok) {
+      return yield* Effect.fail(new AdapterError(grid.error));
     }
 
-    return found.value.map((s) => ({ ...s, resourceId, waived: [] }));
+    const loaded = yield* loadPolicies(adapter, policies, {
+      ...range,
+      now,
+      resourceId,
+    });
+
+    return grid.value.flatMap(({ end, start }) => {
+      const span = {
+        end: end.toInstant(),
+        resourceId,
+        start: start.toInstant(),
+      };
+
+      const { violations, waived } = judge(
+        loaded,
+        previous === null
+          ? { ...span, action: "book", now }
+          : { ...span, action: "reschedule", now, previous },
+        relax ?? []
+      );
+
+      return violations.length > 0 ? [] : [{ end, resourceId, start, waived }];
+    });
   });
 }
