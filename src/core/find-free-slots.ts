@@ -82,25 +82,29 @@ function* gridStarts(
   }
 }
 
-function findFreeSlotsUnchecked(
-  params: FindFreeSlotsParams
-): Slot<AvailabilityViolation>[] {
-  const {
-    bookings,
-    duration,
-    excludeBookingId,
-    from,
-    interval,
-    relax,
-    resourceId,
-    rules,
-    timezone,
-    to,
-  } = params;
-
-  const relaxAvailability = relax?.includes("availability") ?? false;
-  const windows = availableWindows(rules, { end: to, start: from });
-  const slots: Slot<AvailabilityViolation>[] = [];
+/** The Grid slots in `[from, to)` that overlap no blocking Booking except `excludeBookingId`: the search before any Policy. Internal; not exported from the Core's entry. */
+export function freeGridSlots({
+  bookings,
+  duration,
+  excludeBookingId,
+  from,
+  interval,
+  timezone,
+  to,
+}: Pick<
+  FindFreeSlotsParams,
+  | "bookings"
+  | "duration"
+  | "excludeBookingId"
+  | "from"
+  | "interval"
+  | "timezone"
+  | "to"
+>): Pick<Slot, "start" | "end">[] {
+  const slots: {
+    start: Temporal.ZonedDateTime;
+    end: Temporal.ZonedDateTime;
+  }[] = [];
 
   for (const start of gridStarts(from, to, interval, timezone)) {
     const range = {
@@ -108,23 +112,39 @@ function findFreeSlotsUnchecked(
       start: start.toInstant(),
     };
 
-    if (overlapsBlockingBooking(bookings, range, excludeBookingId)) {
-      continue;
-    }
-
-    const available = fitsInSomeWindow(windows, range);
-
-    if (available || relaxAvailability) {
-      slots.push({
-        end: range.end.toZonedDateTimeISO(timezone),
-        resourceId,
-        start,
-        waived: available ? [] : [outsideAvailability],
-      });
+    if (!overlapsBlockingBooking(bookings, range, excludeBookingId)) {
+      slots.push({ end: range.end.toZonedDateTimeISO(timezone), start });
     }
   }
 
   return slots;
+}
+
+function findFreeSlotsUnchecked(
+  params: FindFreeSlotsParams
+): Slot<AvailabilityViolation>[] {
+  const { from, relax, resourceId, rules, to } = params;
+
+  const relaxAvailability = relax?.includes("availability") ?? false;
+  const windows = availableWindows(rules, { end: to, start: from });
+
+  return freeGridSlots(params).flatMap(({ end, start }) => {
+    const available = fitsInSomeWindow(windows, {
+      end: end.toInstant(),
+      start: start.toInstant(),
+    });
+
+    return available || relaxAvailability
+      ? [
+          {
+            end,
+            resourceId,
+            start,
+            waived: available ? [] : [outsideAvailability],
+          },
+        ]
+      : [];
+  });
 }
 
 /** The search params' issues: whole-minute `duration` and `interval`, an IANA `timezone`, `from < to`. Internal; the Framework checks these before any Adapter call. */

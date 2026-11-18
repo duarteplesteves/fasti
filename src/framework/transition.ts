@@ -14,7 +14,7 @@ import type {
 } from "./errors.js";
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
-import { conflictsAt } from "./occupancy.js";
+import { checkOverlap, conflictsAt } from "./occupancy.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
   AlsoContext,
@@ -102,16 +102,8 @@ export function transition<S extends AnySchema, Tx, R = never>(
         } as const;
 
         // A blocking Booking already holds its slot; only one coming back from a non-blocking Status must re-check it.
-        const conflicts =
-          !ctx.codec.isBlocking(from) && ctx.codec.isBlocking(to)
-            ? yield* conflictsAt(locked, ctx.codec, range)
-            : [];
-
-        if (conflicts.length > 0) {
-          return yield* Effect.fail<SlotConflict>({
-            _tag: "SlotConflict",
-            conflicts,
-          });
+        if (!ctx.codec.isBlocking(from) && ctx.codec.isBlocking(to)) {
+          yield* checkOverlap(locked, ctx.codec, range);
         }
 
         const updated = yield* locked.updateBooking({

@@ -9,8 +9,8 @@ import { mintBookingId } from "./booking-id.js";
 import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
-import { conflictsAt } from "./occupancy.js";
-import { checkPlacement } from "./placement.js";
+import { checkOverlap, conflictsAt } from "./occupancy.js";
+import { checkAvailability } from "./placement.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
 import type { AlsoParam, WriteEffect } from "./write-unit.js";
@@ -110,10 +110,12 @@ export function book<S extends AnySchema, Tx, R = never>(
     resourceId,
     (locked) =>
       Effect.gen(function* bookUnit() {
-        yield* checkPlacement(locked, ctx, {
-          ...range,
-          blocking: ctx.codec.isBlocking(status),
-        });
+        // A non-blocking Booking can't conflict.
+        if (ctx.codec.isBlocking(status)) {
+          yield* checkOverlap(locked, ctx.codec, range);
+        }
+
+        yield* checkAvailability(locked, range);
 
         // SAFETY: the base columns are set, and every schema field is set: required ones by BookParams' type, optional ones to their value or `null`.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.

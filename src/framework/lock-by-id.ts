@@ -38,7 +38,8 @@ export interface LockedByIdParams<
   /** The locked work on the stored row; fail with `retry` when compare-and-set reports `changed`. */
   readonly work: (
     locked: EffectLocked<S, Tx>,
-    stored: Rec
+    stored: Rec,
+    now: Temporal.Instant
   ) => Effect.Effect<Outcome<V, C>, E | Retry>;
   /** The developer's `also`, run by `writeUnit` after `work`. */
   readonly also: EffectAlso<C, Tx, R> | undefined;
@@ -70,7 +71,7 @@ export function lockedById<
       return yield* writeUnit(
         ctx,
         params.destination ?? seen.resourceId,
-        (locked) =>
+        (locked, now) =>
           Effect.gen(function* lockedByIdUnit() {
             const stored = yield* params.read(locked);
 
@@ -82,7 +83,7 @@ export function lockedById<
               return yield* Effect.fail(retry);
             }
 
-            return yield* params.work(locked, stored);
+            return yield* params.work(locked, stored, now);
           }),
         params.also
       );
