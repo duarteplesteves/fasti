@@ -107,7 +107,12 @@ Milestones marked _open_ carry questions that get decided when that milestone st
 
 **Goal:** the rest of the first-party Adapters.
 
-**Scope:** `@fastijs/scheduler/drizzle/sqlite`; `@fastijs/scheduler/prisma` on Prisma 8. Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, the Prisma Adapter ships marked experimental, and the label goes in a `1.x` once GA lands.
+**Scope:**
+
+- `@fastijs/scheduler/drizzle/sqlite`, on Drizzle's async SQLite drivers (libsql). Drivers whose transactions are synchronous (better-sqlite3, `node:sqlite`, `bun:sqlite`) can't hold the Resource Lock across an `await`; they are deferred past `1.0`.
+- `@fastijs/scheduler/prisma` on Prisma 8, Postgres only. Prisma 8's SQLite target is experimental and can't start a transaction as `BEGIN IMMEDIATE`; SQLite users take the Drizzle SQLite Adapter.
+
+Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, the Prisma Adapter ships marked experimental, and the label goes in a `1.x` once GA lands.
 
 **Test of done:** the Conformance Suite passes on each new Adapter in CI.
 
@@ -146,6 +151,8 @@ Deferred past `1.0`, in no order.
 - **Monthly recurrence.** Guard: recurrence is already one `frequency`-discriminated value (milestone 2).
 - **Recurring booking series.**
 - **Holds that expire**: a Status that blocks only until a deadline; it has to fit with ADR 009's "blocking comes from Status alone".
+- **Synchronous SQLite drivers** (better-sqlite3, `node:sqlite`, `bun:sqlite`) for the Drizzle SQLite Adapter: fasti would issue `BEGIN IMMEDIATE` / `COMMIT` itself on one connection per unit of work, from a connection factory the developer passes. An extra function next to the async `drizzleAdapter`, so adding it later breaks nothing. Workaround: open fasti's database with libsql.
+- **Prisma 8 on SQLite**, once Prisma's SQLite target leaves experimental. Its lock needs a zero-row first write, `busy_timeout = 0` and an async retry, since Prisma always sends a deferred `BEGIN`.
 - **Cloudflare D1**: no interactive transactions, so no Resource Lock. Likeliest route: a Durable Object per Resource as the lock.
 - **Cross-day availability windows.** Workaround: two rules.
 - **DST fall-back double-occurrence opt-in** ([ADR 005](./docs/adr/005-dst-policy.md)).
