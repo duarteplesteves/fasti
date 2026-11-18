@@ -10,6 +10,8 @@ import type {
   ListBookingsQuery,
   SchemaAdapter,
 } from "../../adapter/contract.js";
+import { LOCK_NAMESPACE, isPgTransient } from "../../adapter/postgres-lock.js";
+import { retryTransient } from "../../adapter/retry.js";
 import { noOverlapConstraint } from "../../schema/backstop-sql.js";
 import type { AnySchema, BlockSchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
@@ -33,43 +35,6 @@ type AnyPgDatabase = PgAsyncDatabase<any, any>;
 type TxOf<DB extends AnyPgDatabase> = Parameters<
   Parameters<DB["transaction"]>[0]
 >[0];
-
-/** The first key of every fasti advisory lock ("fsti" in ASCII), so other advisory locks in the database don't collide. */
-const LOCK_NAMESPACE = 0x66_73_74_69;
-
-/** Attempts at a unit of work that fails with a transient error, the first included. */
-const MAX_ATTEMPTS = 3;
-
-/** 40001 serialization_failure or 40P01 deadlock_detected, found anywhere on the `cause` chain. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is whatever was thrown.
-function isTransient(error: unknown): boolean {
-  // At most 10 links, so a `cause` that loops back (a developer's thrown value can) ends the walk.
-  for (
-    let depth = 0, e = error;
-    e instanceof Object && depth < 10;
-    e = "cause" in e ? e.cause : null, depth += 1
-  ) {
-    if ("code" in e && (e.code === "40001" || e.code === "40P01")) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/** Run `unit`, rerunning the whole of it on a transient error (ADR 008), up to {@link MAX_ATTEMPTS} times. */
-async function retryTransient<T>(unit: () => Promise<T>): Promise<T> {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- attempts run one after another.
-      return await unit();
-    } catch (error) {
-      if (!isTransient(error) || attempt === MAX_ATTEMPTS) {
-        throw error;
-      }
-    }
-  }
-}
 
 /** A Booking or Block table of this dialect. */
 type RecordTable = SharedRecordTable<PgTable>;
@@ -393,7 +358,8 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
         // The whole unit reruns on a transient error, `work` and the developer's writes in `tx` included.
         withResourceLock: async (lockedId, work) =>
           await retryTransient(
-            async () => await singleAttempt.withResourceLock(lockedId, work)
+            async () => await singleAttempt.withResourceLock(lockedId, work),
+            isPgTransient
           ),
       };
     }
