@@ -4,11 +4,16 @@ import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
-import type { BlockId, BookingId } from "../core/types.js";
+import type {
+  AvailabilityViolation,
+  BlockId,
+  BookingId,
+} from "../core/types.js";
 import { column, createScheduler, defineSchema } from "../index.js";
 import type {
   BookError,
   Booking,
+  PolicyViolation,
   CancelError,
   CancelValue,
   Scheduler,
@@ -71,7 +76,7 @@ function expectContext<C extends SeenContext>(
 
 async function setup() {
   const adapter = memoryAdapter();
-  const scheduler = createScheduler({ adapter, schema });
+  const scheduler = createScheduler({ policies: [], adapter, schema });
 
   unwrap(
     await scheduler.availability.set({ resourceId: room, rules: [weekdays] })
@@ -107,7 +112,11 @@ describe("also on book", () => {
     const raw = memoryAdapter();
 
     unwrap(
-      await createScheduler({ adapter: raw, schema }).availability.set({
+      await createScheduler({
+        policies: [],
+        adapter: raw,
+        schema,
+      }).availability.set({
         resourceId: room,
         rules: [weekdays],
       })
@@ -137,7 +146,11 @@ describe("also on book", () => {
       };
     });
 
-    const result = await createScheduler({ adapter: slowInsert, schema }).book({
+    const result = await createScheduler({
+      policies: [],
+      adapter: slowInsert,
+      schema,
+    }).book({
       also: ({ now }) => ({ ok: true, value: now }),
       end,
       resourceId: room,
@@ -267,7 +280,7 @@ async function recordingRejections() {
 describe("what the Adapter sees when a unit fails", () => {
   it("gets what `also` threw, so it can classify it", async () => {
     const { adapter, reasons } = await recordingRejections();
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
     const thrown = new Error("deadlock detected");
 
     await expect(
@@ -307,7 +320,11 @@ describe("what the Adapter sees when a unit fails", () => {
       };
     });
 
-    const result = await createScheduler({ adapter: failing, schema }).book({
+    const result = await createScheduler({
+      policies: [],
+      adapter: failing,
+      schema,
+    }).book({
       end,
       resourceId: room,
       start,
@@ -323,7 +340,7 @@ describe("what the Adapter sees when a unit fails", () => {
 
   it("gets neither a veto's reason nor fasti's expected failures", async () => {
     const { adapter, reasons } = await recordingRejections();
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
 
     const result = await scheduler.book({
       also: () => ({ error: "no", ok: false }),
@@ -593,7 +610,10 @@ describe("also when nothing changes", () => {
 type S = typeof schema;
 
 /** Never called: only the types each call resolves to are checked. */
-function typedCalls(scheduler: Scheduler<S, undefined>, id: BookingId) {
+function typedCalls(
+  scheduler: Scheduler<S, undefined, readonly []>,
+  id: BookingId
+) {
   return {
     async: scheduler.book({
       also: async ({ booking }) => {
@@ -641,26 +661,22 @@ type Err<R> = R extends { readonly ok: false; readonly error: infer E }
   ? E
   : never;
 
+/** `book`'s error with no developer Policies: the built-in `availability` only. */
+type BookErr = BookError | PolicyViolation<AvailabilityViolation>;
+
 describe("also types", () => {
   it("adds neither an `also` key nor Vetoed without `also`", () => {
-    expectTypeOf<Calls["plain"]>().toEqualTypeOf<
-      Result<Booking<S>, BookError>
-    >();
+    expectTypeOf<Calls["plain"]>().toEqualTypeOf<Result<Booking<S>, BookErr>>();
   });
 
   it("accepts a sync and an async `also`, adding its value and veto", () => {
     expectTypeOf<Calls["async"]>().toEqualTypeOf<
-      Result<
-        Booking<S> & { readonly also: number },
-        BookError | Vetoed<"empty">
-      >
+      Result<Booking<S> & { readonly also: number }, BookErr | Vetoed<"empty">>
     >();
     expectTypeOf<Ok<Calls["sync"]>>().toEqualTypeOf<
       Booking<S> & { readonly also: "yes" }
     >();
-    expectTypeOf<Err<Calls["sync"]>>().toEqualTypeOf<
-      BookError | Vetoed<"no">
-    >();
+    expectTypeOf<Err<Calls["sync"]>>().toEqualTypeOf<BookErr | Vetoed<"no">>();
   });
 
   it("types cancel's value as a union: only a write carries `also`", () => {

@@ -12,7 +12,8 @@ const adapter = drizzleAdapter(db);
 class AppScheduler extends Scheduler<
   AppScheduler,
   typeof schema,
-  TxOf<typeof adapter>
+  TxOf<typeof adapter>,
+  readonly []
 >()("example/AppScheduler") {}
 
 // A fresh Resource, so the script can run again.
@@ -54,7 +55,9 @@ const program = Effect.gen(function* bookAndCancel() {
 
 try {
   await Effect.runPromise(
-    program.pipe(Effect.provide(AppScheduler.layer({ adapter, schema })))
+    program.pipe(
+      Effect.provide(AppScheduler.layer({ policies: [], adapter, schema }))
+    )
   );
 } finally {
   await pool.end();

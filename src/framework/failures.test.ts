@@ -50,14 +50,14 @@ async function seeded() {
   const adapter = memoryAdapter();
 
   unwrap(
-    await createScheduler({ adapter, schema }).availability.set({
+    await createScheduler({ policies: [], adapter, schema }).availability.set({
       resourceId: room,
       rules: [weekdays],
     })
   );
 
   const booking = unwrap(
-    await createScheduler({ adapter, schema }).book({
+    await createScheduler({ policies: [], adapter, schema }).book({
       ...seededSlot,
       resourceId: room,
     })
@@ -127,23 +127,23 @@ function commitRejects(inner: Inner) {
 /** One call per Action, each valid enough to reach the Adapter. */
 const actions = {
   "availability.get": async (adapter: Inner) =>
-    await createScheduler({ adapter, schema }).availability.get({
+    await createScheduler({ policies: [], adapter, schema }).availability.get({
       resourceId: room,
     }),
   "availability.set": async (adapter: Inner) =>
-    await createScheduler({ adapter, schema }).availability.set({
+    await createScheduler({ policies: [], adapter, schema }).availability.set({
       resourceId: room,
       rules: [weekdays],
     }),
   book: async (adapter: Inner) =>
-    await createScheduler({ adapter, schema }).book({
+    await createScheduler({ policies: [], adapter, schema }).book({
       ...freeSlot,
       resourceId: room,
     }),
   cancel: async (adapter: Inner, id: BookingId) =>
-    await createScheduler({ adapter, schema }).cancel({ id }),
+    await createScheduler({ policies: [], adapter, schema }).cancel({ id }),
   findSlots: async (adapter: Inner) =>
-    await createScheduler({ adapter, schema }).findSlots({
+    await createScheduler({ policies: [], adapter, schema }).findSlots({
       duration: 60,
       from: freeSlot.start,
       interval: 30,

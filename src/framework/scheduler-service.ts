@@ -33,9 +33,11 @@ import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { CreateSchedulerParams } from "./create-scheduler.js";
 import { liftAdapter } from "./effect-adapter.js";
 import type { EffectAdapter } from "./effect-adapter.js";
+import type { PolicyViolation } from "./errors.js";
 import { findSlots } from "./find-slots.js";
 import type { FindSlotsError, FindSlotsParams, Slot } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
+import type { AnyPolicyOf, ViolationFor } from "./policy.js";
 import { reschedule } from "./reschedule.js";
 import type { RescheduleError, RescheduleParams } from "./reschedule.js";
 import { transition } from "./transition.js";
@@ -46,20 +48,27 @@ export interface ActionContext<S extends AnySchema, Tx> {
   readonly schema: S;
   readonly codec: StatusCodec<StatusOf<S>>;
   readonly adapter: EffectAdapter<S, Tx>;
+  /** The developer's Policies, names unique. */
+  readonly policies: readonly AnyPolicyOf<S>[];
 }
 
 /**
  * Every Action, in form `F`: each declared once for both forms, so they can't drift (ADR 010).
- * `blocks` only when the schema declares `block`; `transition` only when some declared Transition doesn't end in `cancelled`. `Tx` is the Adapter's transaction handle, as `also` gets it.
+ * `blocks` only when the schema declares `block`; `transition` only when some declared Transition doesn't end in `cancelled`. `Tx` is the Adapter's transaction handle, as `also` gets it; `P` the Policies tuple.
  */
-export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
+export type SchedulerActions<
+  S extends AnySchema,
+  Tx,
+  P extends readonly AnyPolicyOf<S>[],
+  F extends Form,
+> = {
   /** Store a new Booking. */
   readonly book: WriteAction<
     F,
     BookParams<S>,
     BookAlso<S, Tx>,
     Booking<S>,
-    BookError
+    BookError | PolicyViolation<ViolationFor<P[number], "book">>
   >;
   /** Move a Booking in time or to another Resource, keeping its id and Status. */
   readonly reschedule: WriteAction<
@@ -118,25 +127,39 @@ export type SchedulerActions<S extends AnySchema, Tx, F extends Form> = {
         >;
       });
 
-/** The Actions, Effect form, over an Adapter whose transaction handle is `Tx`. */
-export type SchedulerService<S extends AnySchema, Tx> = SchedulerActions<
-  S,
+/** The Actions, Effect form, over an Adapter whose transaction handle is `Tx`, with Policies `P`. */
+export type SchedulerService<
+  S extends AnySchema,
   Tx,
-  "effect"
->;
+  P extends readonly AnyPolicyOf<S>[],
+> = SchedulerActions<S, Tx, P, "effect">;
 
 /** Each Action, as written: a single Effect signature, before it's fitted to the overloaded {@link WriteAction}. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- params are typed by SchedulerActions at the call site.
 type ActionImpl = (params: never) => Effect.Effect<unknown, unknown>;
 
-/** Bind the Actions to a schema and an Adapter. */
-export function makeScheduler<S extends AnySchema, Tx>({
+/** Bind the Actions to a schema, an Adapter and Policies. Throws on duplicate Policy names. */
+export function makeScheduler<
+  S extends AnySchema,
+  Tx,
+  const P extends readonly AnyPolicyOf<S>[],
+>({
   adapter,
+  policies,
   schema,
-}: CreateSchedulerParams<S, Tx>): SchedulerActions<S, Tx, "effect"> {
+}: CreateSchedulerParams<S, Tx, P>): SchedulerActions<S, Tx, P, "effect"> {
+  const names = policies.map((p) => p.name);
+  const duplicate = names.find((n, i) => names.indexOf(n) !== i);
+
+  // Plain-JS callers can get past UniqueNames.
+  if (duplicate !== undefined) {
+    throw new Error(`fasti: two Policies are named ${duplicate}`);
+  }
+
   const ctx: ActionContext<S, Tx> = {
     adapter: liftAdapter(adapter(schema), schema),
     codec: statusCodec(schema),
+    policies,
     schema,
   };
 
@@ -164,5 +187,5 @@ export function makeScheduler<S extends AnySchema, Tx>({
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an overloaded interface can't be implemented by a single-signature arrow.
   return (
     schema.block === null ? base : { ...base, blocks }
-  ) as SchedulerActions<S, Tx, "effect">;
+  ) as SchedulerActions<S, Tx, P, "effect">;
 }

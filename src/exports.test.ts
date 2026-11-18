@@ -37,7 +37,13 @@ interface Entry {
 const surface = [
   {
     module: root,
-    names: ["AdapterError", "column", "createScheduler", "defineSchema"],
+    names: [
+      "AdapterError",
+      "column",
+      "createScheduler",
+      "definePolicy",
+      "defineSchema",
+    ],
     source: "index.js",
   },
   { module: adapter, names: ["defineAdapter"], source: "adapter/index.js" },

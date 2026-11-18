@@ -52,7 +52,7 @@ const slot = { end: at(2), resourceId: "room", start: at(1) } as const;
 
 /** A scheduler over `adapter` with `weekdays` on `room` and one Booking in `slot`. */
 async function seeded(adapter: Adapter<Tx, "blocks"> = memoryAdapter()) {
-  const scheduler = createScheduler({ adapter, schema });
+  const scheduler = createScheduler({ policies: [], adapter, schema });
 
   unwrap(
     await scheduler.availability.set({ resourceId: "room", rules: [weekdays] })
@@ -133,14 +133,19 @@ describe("transition", () => {
   });
 
   it("gives InvalidParams at `to`, before any Adapter call, for an undeclared pair, `to: cancelled`, or a schema with no edge", async () => {
-    const scheduler = createScheduler({ adapter: refusing, schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: refusing,
+      schema,
+    });
 
     // SAFETY: `transition` is always bound; a plain-JS caller can reach it on a schema whose types hide it.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
     const bare = createScheduler({
+      policies: [],
       adapter: refusing,
       schema: uuidIdSchema,
-    }) as Scheduler<typeof uuidIdSchema, Tx> &
+    }) as Scheduler<typeof uuidIdSchema, Tx, readonly []> &
       Pick<typeof scheduler, "transition">;
 
     const id = mintBookingId();
@@ -384,15 +389,17 @@ describe("transition types", () => {
       booking: { transitions: { cancelled: ["booked"] } },
     });
 
-    expectTypeOf<Scheduler<typeof uuidIdSchema, Tx>>().not.toHaveProperty(
+    expectTypeOf<
+      Scheduler<typeof uuidIdSchema, Tx, readonly []>
+    >().not.toHaveProperty("transition");
+    expectTypeOf<
+      Scheduler<typeof onlyStatuses, Tx, readonly []>
+    >().not.toHaveProperty("transition");
+    expectTypeOf<
+      Scheduler<typeof onlyIntoCancelled, Tx, readonly []>
+    >().not.toHaveProperty("transition");
+    expectTypeOf<Scheduler<typeof onlyBack, Tx, readonly []>>().toHaveProperty(
       "transition"
     );
-    expectTypeOf<Scheduler<typeof onlyStatuses, Tx>>().not.toHaveProperty(
-      "transition"
-    );
-    expectTypeOf<Scheduler<typeof onlyIntoCancelled, Tx>>().not.toHaveProperty(
-      "transition"
-    );
-    expectTypeOf<Scheduler<typeof onlyBack, Tx>>().toHaveProperty("transition");
   });
 });

@@ -80,7 +80,7 @@ function wrapLocked(
 /** A scheduler over a fresh memory Adapter, with weekday availability so `book` works. */
 async function fresh() {
   const adapter = memoryAdapter();
-  const scheduler = createScheduler({ adapter, schema });
+  const scheduler = createScheduler({ policies: [], adapter, schema });
 
   unwrap(
     await scheduler.availability.set({
@@ -157,7 +157,11 @@ describe("blocks.create and blocks.list", () => {
   });
 
   it("refuses end <= start as InvalidParams at end, before any Adapter call", async () => {
-    const scheduler = createScheduler({ adapter: spyAdapter, schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: spyAdapter,
+      schema,
+    });
 
     for (const end of [at(1), at(0)]) {
       // oxlint-disable-next-line no-await-in-loop -- two independent cases, in order.
@@ -282,7 +286,11 @@ describe("blocks.create and blocks.list", () => {
   });
 
   it("refuses to <= from as InvalidParams at to, before any Adapter call", async () => {
-    const scheduler = createScheduler({ adapter: spyAdapter, schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: spyAdapter,
+      schema,
+    });
 
     const result = await scheduler.blocks.list({
       from: at(1),
@@ -321,7 +329,7 @@ describe("blocks.create and blocks.list", () => {
       };
     });
 
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
 
     const result = await scheduler.blocks.create({
       ...reason,
@@ -491,7 +499,11 @@ describe("Blocks occupy time", () => {
       };
     });
 
-    const result = await createScheduler({ adapter, schema }).book({
+    const result = await createScheduler({
+      policies: [],
+      adapter,
+      schema,
+    }).book({
       end: at(2),
       resourceId: room,
       start: at(1),
@@ -538,7 +550,7 @@ describe("Blocks occupy time", () => {
         ),
     }));
 
-    const scheduler = createScheduler({ adapter, schema: plain });
+    const scheduler = createScheduler({ policies: [], adapter, schema: plain });
 
     unwrap(
       await scheduler.availability.set({
@@ -642,7 +654,11 @@ describe("blocks.update", () => {
   });
 
   it("refuses end <= start as InvalidParams at end, before any Adapter call", async () => {
-    const scheduler = createScheduler({ adapter: spyAdapter, schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: spyAdapter,
+      schema,
+    });
 
     const result = await scheduler.blocks.update({
       end: at(1),
@@ -724,6 +740,7 @@ describe("blocks.update", () => {
     const block = await createBlockAt(seed, 1, 2);
 
     const scheduler = createScheduler({
+      policies: [],
       adapter: wrapLocked(inner, () => ({ updateBlock: refuse })),
       schema,
     });
@@ -745,6 +762,7 @@ describe("blocks.update", () => {
     let calls = 0;
 
     const scheduler = createScheduler({
+      policies: [],
       adapter: wrapLocked(inner, (locked) => ({
         updateBlock: async (params) => {
           calls += 1;
@@ -806,6 +824,7 @@ describe("blocks.delete", () => {
     const block = await createBlockAt(seed, 1, 2);
 
     const scheduler = createScheduler({
+      policies: [],
       adapter: wrapLocked(inner, () => ({
         deleteBlock: async () =>
           await Promise.resolve({ ok: false, reason: "missing" } as const),

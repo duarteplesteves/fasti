@@ -3,23 +3,30 @@ import { Cause, Effect, Exit, Result as EffectResult } from "effect";
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import type { AnyPolicyOf, UniqueNames } from "./policy.js";
 import { makeScheduler } from "./scheduler-service.js";
 import type { SchedulerActions } from "./scheduler-service.js";
 
 /** Params of {@link createScheduler}. */
-export interface CreateSchedulerParams<S extends AnySchema, Tx> {
+export interface CreateSchedulerParams<
+  S extends AnySchema,
+  Tx,
+  P extends readonly AnyPolicyOf<S>[],
+> {
   /** The schema from `defineSchema`. */
   readonly schema: S;
   /** The Adapter over the developer's database, e.g. `drizzleAdapter(db)`. A schema with `block` needs one that implements Blocks. */
   readonly adapter: Adapter<Tx, GroupsOf<S>>;
+  /** The Policies from `definePolicy`, names unique; `[]` for none. The built-in `availability` always runs. */
+  readonly policies: P & UniqueNames<P>;
 }
 
 /** The Actions, plain form: no Effect in sight; expected failures are values, defects reject. */
-export type Scheduler<S extends AnySchema, Tx> = SchedulerActions<
-  S,
+export type Scheduler<
+  S extends AnySchema,
   Tx,
-  "plain"
->;
+  P extends readonly AnyPolicyOf<S>[],
+> = SchedulerActions<S, Tx, P, "plain">;
 
 /** A typed failure becomes `error`; a defect or interruption is thrown, so the promise rejects. */
 function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
@@ -120,14 +127,16 @@ function toPlain(service: object): PlainTree {
  *
  * @example
  * ```ts
- * const scheduler = createScheduler({ schema, adapter: drizzleAdapter(db) });
+ * const scheduler = createScheduler({ schema, adapter: drizzleAdapter(db), policies: [] });
  * const result = await scheduler.book({ resourceId, start, end });
  * ```
  */
-export function createScheduler<S extends AnySchema, Tx>(
-  params: CreateSchedulerParams<S, Tx>
-): Scheduler<S, Tx> {
+export function createScheduler<
+  S extends AnySchema,
+  Tx,
+  const P extends readonly AnyPolicyOf<S>[],
+>(params: CreateSchedulerParams<S, Tx, P>): Scheduler<S, Tx, P> {
   // SAFETY: SchedulerActions<S, Tx, "plain"> is the "effect" form with each Run mapped as this walk does.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the walk can't carry the form parameter.
-  return toPlain(makeScheduler(params)) as Scheduler<S, Tx>;
+  return toPlain(makeScheduler(params)) as Scheduler<S, Tx, P>;
 }

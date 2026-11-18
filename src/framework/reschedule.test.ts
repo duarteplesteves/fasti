@@ -5,7 +5,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
 import type { Adapter } from "../adapter/contract.js";
-import type { BookingId } from "../core/types.js";
+import type { AvailabilityViolation, BookingId } from "../core/types.js";
 import { createScheduler } from "../index.js";
 import type {
   AdapterError,
@@ -57,7 +57,7 @@ function at(hour: number, minute = 0): Temporal.Instant {
 
 /** A scheduler over `adapter` with weekday availability on `room`, and a 14:00–15:00 Booking there. */
 async function seeded(adapter: Adapter<undefined, "blocks"> = memoryAdapter()) {
-  const scheduler = createScheduler({ adapter, schema });
+  const scheduler = createScheduler({ policies: [], adapter, schema });
 
   unwrap(
     await scheduler.availability.set({ resourceId: room, rules: [weekdays] })
@@ -288,6 +288,7 @@ describe("reschedule", () => {
     }));
 
     const result = await createScheduler({
+      policies: [],
       adapter: refusing,
       schema,
     }).reschedule({ end: at(10), id: mintBookingId(), start: at(10) });
@@ -323,7 +324,11 @@ describe("reschedule", () => {
           }
 
           unwrap(
-            await createScheduler({ adapter: inner, schema }).cancel({
+            await createScheduler({
+              policies: [],
+              adapter: inner,
+              schema,
+            }).cancel({
               id: booking.id,
             })
           );
@@ -344,7 +349,7 @@ describe("reschedule", () => {
     });
 
     await expect(
-      createScheduler({ adapter, schema }).reschedule({
+      createScheduler({ policies: [], adapter, schema }).reschedule({
         end: at(15),
         id: booking.id,
         resourceId: otherRoom,
@@ -438,7 +443,7 @@ describe("reschedule", () => {
       });
 
       const [moving] = ids;
-      const scheduler = createScheduler({ adapter, schema });
+      const scheduler = createScheduler({ policies: [], adapter, schema });
 
       if (moving === undefined) {
         return;
@@ -478,7 +483,7 @@ describe("reschedule", () => {
       | BookingNotFound
       | StatusMismatch<"booked" | "cancelled">
       | SlotConflict
-      | PolicyViolation
+      | PolicyViolation<AvailabilityViolation>
       | AdapterError
     >();
   });

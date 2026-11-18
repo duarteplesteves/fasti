@@ -42,7 +42,7 @@ const saturdays = {
 } as const;
 
 function setup() {
-  return createScheduler({ adapter: memoryAdapter(), schema });
+  return createScheduler({ policies: [], adapter: memoryAdapter(), schema });
 }
 
 describe("availability", () => {
@@ -115,7 +115,11 @@ describe("availability", () => {
   });
 
   it("types: get's value feeds set's rules; exact error unions", () => {
-    type Availability = Scheduler<typeof schema, undefined>["availability"];
+    type Availability = Scheduler<
+      typeof schema,
+      undefined,
+      readonly []
+    >["availability"];
 
     type GetValue =
       Awaited<ReturnType<Availability["get"]>> extends Result<infer A, unknown>

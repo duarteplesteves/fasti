@@ -8,7 +8,7 @@ import type {
 import { checkInstantRange } from "../core/checks.js";
 import { checked } from "../core/result.js";
 import type { InvalidParams } from "../core/result.js";
-import type { BookingId } from "../core/types.js";
+import type { AvailabilityViolation, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { fieldPatch, floorMs } from "./booking.js";
 import type { Booking, ChangeAlso, FieldsPatch } from "./booking.js";
@@ -22,7 +22,7 @@ import type {
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
-import { checkAvailability } from "./placement.js";
+import { availabilityPolicy, enforcePolicies } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
   AlsoContext,
@@ -49,7 +49,7 @@ export type RescheduleError<S extends AnySchema> =
   | BookingNotFound
   | StatusMismatch<StatusOf<S>>
   | SlotConflict
-  | PolicyViolation
+  | PolicyViolation<AvailabilityViolation>
   | AdapterError;
 
 /** Move a blocking Booking in time or to another Resource, keeping its id and Status (ADR 009): overlap first, ignoring itself, then availability. */
@@ -84,12 +84,12 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
     destination: params.resourceId ?? null,
     notFound,
     read: (reads) => reads.getBooking(id),
-    work: (locked, stored) =>
+    work: (locked, stored, now) =>
       Effect.gen(function* rescheduleUnit(): Effect.fn.Return<
         Outcome<Booking<S>, AlsoContext<ChangeAlso<S, Tx>>>,
         | StatusMismatch<StatusOf<S>>
         | SlotConflict
-        | PolicyViolation
+        | PolicyViolation<AvailabilityViolation>
         | AdapterError
         | Retry
       > {
@@ -109,7 +109,14 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
         };
 
         yield* checkOverlap(locked, ctx.codec, placement);
-        yield* checkAvailability(locked, placement);
+        // shortcut: only the built-in availability runs here, on a book-shaped candidate; #125 gives reschedule its own candidate and Policies.
+        yield* enforcePolicies(locked, [availabilityPolicy<S>()], {
+          action: "book",
+          end,
+          now,
+          resourceId: placement.resourceId,
+          start,
+        });
 
         // SAFETY: base columns of the right types, and a patch of declared fields only.
         // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.

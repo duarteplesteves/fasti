@@ -59,7 +59,11 @@ async function refuse(): Promise<never> {
 
 describe("findSlots", () => {
   it("returns free slots zoned in the caller's timezone, with the typed resourceId", async () => {
-    const scheduler = createScheduler({ adapter: await seeded(), schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: await seeded(),
+      schema,
+    });
 
     // 16:00 and 16:30 Lisbon start in range; only 16:00 fits before 17:00.
     const result = await scheduler.findSlots(
@@ -86,7 +90,11 @@ describe("findSlots", () => {
   });
 
   it("finds a slot whose end passes `to`", async () => {
-    const scheduler = createScheduler({ adapter: await seeded(), schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: await seeded(),
+      schema,
+    });
 
     const result = await scheduler.findSlots(
       query(Temporal.Instant.from("2030-06-03T15:01:00Z"))
@@ -98,7 +106,7 @@ describe("findSlots", () => {
 
   it("hides a slot when a Booking overlaps only its tail past `to`", async () => {
     const adapter = await seeded();
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
 
     const booked = await scheduler.book({
       end: Temporal.Instant.from("2030-06-03T16:00:00Z"),
@@ -117,7 +125,12 @@ describe("findSlots", () => {
   });
 
   it("drops a booked slot, and brings it back after cancel", async () => {
-    const scheduler = createScheduler({ adapter: await seeded(), schema });
+    const scheduler = createScheduler({
+      policies: [],
+      adapter: await seeded(),
+      schema,
+    });
+
     const to = Temporal.Instant.from("2030-06-03T16:00:00Z");
 
     const booked = await scheduler.book({
@@ -158,7 +171,7 @@ describe("findSlots", () => {
         withResourceLock: refuse,
       }));
 
-      const scheduler = createScheduler({ adapter, schema });
+      const scheduler = createScheduler({ policies: [], adapter, schema });
 
       const result = await scheduler.findSlots({
         ...query(Temporal.Instant.from("2030-06-03T16:00:00Z")),
@@ -187,7 +200,7 @@ describe("findSlots", () => {
       };
     });
 
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
 
     const result = await scheduler.findSlots(
       query(Temporal.Instant.from("2030-06-03T16:00:00Z"))

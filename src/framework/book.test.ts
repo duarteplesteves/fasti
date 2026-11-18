@@ -55,7 +55,7 @@ function at(hours: number): Temporal.Instant {
 describe("book", () => {
   it("books a free slot inside availability, with a fresh UUIDv7 id", async () => {
     const adapter = memoryAdapter();
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
 
     unwrap(
       await scheduler.availability.set({ resourceId: room, rules: [weekdays] })
@@ -92,7 +92,7 @@ describe("book", () => {
       withResourceLock: refuse,
     }));
 
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
     const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
 
     const same = await scheduler.book({ end: start, resourceId: room, start });
@@ -114,7 +114,7 @@ describe("book", () => {
       await locked.replaceRules({ resourceId: room, rules: [weekdays] });
     });
 
-    const scheduler = createScheduler({ adapter, schema });
+    const scheduler = createScheduler({ policies: [], adapter, schema });
 
     const result = await scheduler.book({
       end: Temporal.Instant.from("2030-06-03T10:00:00.000999999Z"),
@@ -181,7 +181,11 @@ describe("book", () => {
 
       return {
         adapter,
-        scheduler: createScheduler({ adapter, schema: textIdSchema }),
+        scheduler: createScheduler({
+          policies: [],
+          adapter,
+          schema: textIdSchema,
+        }),
       };
     }
 

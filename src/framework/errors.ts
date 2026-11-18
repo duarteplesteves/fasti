@@ -1,8 +1,5 @@
-import type {
-  AvailabilityViolation,
-  BlockId,
-  BookingId,
-} from "../core/types.js";
+import type { BlockId, BookingId } from "../core/types.js";
+import type { Violation } from "./policy.js";
 
 /** A blocking Booking that a requested slot overlaps; no Developer Fields, so no customer data. */
 export interface ConflictingBooking {
@@ -29,13 +26,12 @@ export interface SlotConflict {
   readonly conflicts: readonly Conflict[];
 }
 
-/** The slot breaks one or more Policies (ADR 014). */
-export interface PolicyViolation {
+/** The write breaks one or more Policies: every broken one, with its `detail` (ADR 014). */
+export interface PolicyViolation<
+  V extends Violation<string, unknown> = Violation<string, unknown>,
+> {
   readonly _tag: "PolicyViolation";
-  readonly violations: readonly [
-    AvailabilityViolation,
-    ...AvailabilityViolation[],
-  ];
+  readonly violations: readonly [V, ...V[]];
 }
 
 /** No Booking has this id. */
