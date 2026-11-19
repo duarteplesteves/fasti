@@ -2,10 +2,16 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
+
+/** The repo's drizzle-kit CLI, whatever the working directory. */
+const drizzleKit = fileURLToPath(
+  new URL("../../node_modules/.bin/drizzle-kit", import.meta.url)
+);
 
 /** A fresh libsql file database for one test file. */
 export interface SqliteTestDatabase {
@@ -36,7 +42,7 @@ export async function sqliteTestDatabase(
   try {
     // The developer's setup, not fasti's (ADR 007): fasti never runs this pragma.
     await client.execute("pragma journal_mode = wal");
-    execFileSync(path.resolve("node_modules/.bin/drizzle-kit"), [
+    execFileSync(drizzleKit, [
       "push",
       "--dialect",
       "sqlite",

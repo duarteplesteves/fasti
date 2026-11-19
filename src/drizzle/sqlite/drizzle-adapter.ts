@@ -76,8 +76,6 @@ async function overlapping<S extends AnySchema>(
     )
     .orderBy(asc(col(t, "start")), asc(col(t, "id")));
 
-  // SAFETY: a record table's columns are the schema's, of the kinds Row holds.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the table is typed generically.
   return rows;
 }
 
@@ -93,8 +91,6 @@ async function byId(
     .where(eq(col(t, "id"), id))
     .limit(1);
 
-  // SAFETY: as in overlapping.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the table is typed generically.
   return row;
 }
 
