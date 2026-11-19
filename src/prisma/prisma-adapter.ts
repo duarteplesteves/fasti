@@ -115,7 +115,7 @@ function ref(f: Fields, name: string): Expression {
   const column = f[name];
 
   if (column === undefined) {
-    throw new Error(`prismaAdapter: no column "${name}"`);
+    throw new Error(`prismaAdapter: no column "${name}" on the table builder`);
   }
 
   return column;
@@ -137,8 +137,8 @@ async function rowsOf(q: Queryable, plan: Plan): Promise<readonly PrismaRow[]> {
   return (await q.query(plan)) as readonly PrismaRow[];
 }
 
-/** A Booking or Block table: its physical name and columns. */
-interface RecordTable {
+/** A fasti table: its physical name and its columns, logical → physical. */
+interface PhysicalTable {
   readonly name: string;
   readonly names: ColumnNames;
 }
@@ -146,7 +146,7 @@ interface RecordTable {
 /** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
 async function overlapping<S extends AnySchema>(
   q: Queryable,
-  { name, names }: RecordTable,
+  { name, names }: PhysicalTable,
   { overlapping: { from, to }, resourceId }: ListBookingsQuery<S>
 ): Promise<readonly PrismaRow[]> {
   const plan = tableOf(q, name)
@@ -168,7 +168,7 @@ async function overlapping<S extends AnySchema>(
 /** The row of `t` with this id, if any. */
 async function byId(
   q: Queryable,
-  { name, names }: RecordTable,
+  { name, names }: PhysicalTable,
   id: string
 ): Promise<PrismaRow | undefined> {
   const plan = tableOf(q, name)
@@ -187,7 +187,7 @@ async function byId(
  */
 async function compareAndSet(
   q: Queryable,
-  { name, names }: RecordTable,
+  { name, names }: PhysicalTable,
   expected: PrismaRow,
   changes: PrismaRow
 ): Promise<boolean> {
@@ -229,23 +229,23 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
       const { columns, tables } = schema.names;
       const codec = statusCodec(schema);
 
-      const bookings: RecordTable = {
+      const bookings: PhysicalTable = {
         name: tables.booking,
         names: columns.booking,
       };
 
-      const blocks: RecordTable | null =
+      const blocks: PhysicalTable | null =
         schema.block === null
           ? null
           : { name: tables.block, names: columns.block };
 
-      const rules: RecordTable = {
+      const rules: PhysicalTable = {
         name: tables.availabilityRule,
         names: columns.availabilityRule,
       };
 
       /** The Block table, for a write. */
-      function blockWriteTable(verb: string): RecordTable {
+      function blockWriteTable(verb: string): PhysicalTable {
         // shortcut: a schema without `block` has no Block table, and the Framework never calls a Block write for it
         // (its liftAdapter dies first), so this only guards direct misuse; keep it if a caller ever can reach it.
         if (blocks === null) {
