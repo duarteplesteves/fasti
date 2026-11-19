@@ -321,11 +321,12 @@ function adapterTests(): void {
         await insertVisit(integerIdResources[0]);
 
         try {
+          // restrict_violation: RESTRICT's own code; NO ACTION would give 23503.
           await expect(
             database.pool.query("delete from test_staff where id = $1", [
               integerIdResources[0],
             ])
-          ).rejects.toMatchObject({ code: "23503" });
+          ).rejects.toMatchObject({ code: "23001" });
         } finally {
           await truncate(integerIdSchema);
         }
