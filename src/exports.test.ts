@@ -9,6 +9,7 @@ import * as drizzleSqlite from "./drizzle/sqlite/index.js";
 import * as effect from "./effect/index.js";
 import * as root from "./index.js";
 import * as memory from "./memory/index.js";
+import * as prisma from "./prisma/index.js";
 import * as testing from "./testing/index.js";
 
 interface PackageJson {
@@ -84,6 +85,11 @@ const surface = [
   },
   { module: effect, names: ["Scheduler"], source: "effect/index.js" },
   { module: memory, names: ["memoryAdapter"], source: "memory/index.js" },
+  {
+    module: prisma,
+    names: ["backstopSql", "prismaAdapter", "prismaModels"],
+    source: "prisma/index.js",
+  },
   {
     module: testing,
     names: ["conformanceCases", "runCase", "testAdapter"],

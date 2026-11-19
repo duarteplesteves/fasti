@@ -1,17 +1,44 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { defineContract } from "@prisma/orm-postgres/contract-builder";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { assert, afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { textIdSchema } from "../test-utils/conformance-schemas.js";
+import { drizzleAdapter } from "../drizzle/pg/index.js";
+import { createScheduler } from "../framework/create-scheduler.js";
+import type { AnySchema } from "../schema/define-schema.js";
+import {
+  integerIdResources,
+  integerIdSchema,
+  textIdResources,
+  textIdSchema,
+  uuidIdResources,
+  uuidIdSchema,
+} from "../test-utils/conformance-schemas.js";
 import { postgresUrl } from "../test-utils/postgres.js";
 import { prismaTestDatabase } from "../test-utils/prisma.js";
+import { conformanceCases, runCase, testAdapter } from "../testing/index.js";
+import type { TestAdapterParams, TxProbe } from "../testing/index.js";
 import { prismaModels } from "./models.js";
+import { createPrismaAdapter, prismaAdapter } from "./prisma-adapter.js";
 
 const url = postgresUrl();
 
+/** The three Conformance schemas' tables, and a scratch table of the developer's own for the `tx` probe. */
 const contract = defineContract({}, (helpers) => ({
-  models: prismaModels(textIdSchema, helpers),
+  models: {
+    ...prismaModels(textIdSchema, helpers),
+    ...prismaModels(uuidIdSchema, helpers),
+    ...prismaModels(integerIdSchema, helpers),
+    test_probe: helpers
+      .model("test_probe", {
+        fields: {
+          id: helpers.field.column(helpers.type.Uuid()).id().column("id"),
+        },
+      })
+      .sql({ table: "test_probe" }),
+  },
 }));
 
 let database: Awaited<ReturnType<typeof prismaTestDatabase<typeof contract>>>;
@@ -118,18 +145,190 @@ function row(id: string, status: string) {
   };
 }
 
-describe.skipIf(url === undefined)(
-  "Prisma spike: renamed tables through tx.sql",
-  () => {
-    beforeAll(async () => {
-      // SAFETY: skipIf leaves this block unrun when url is undefined.
-      database = await prismaTestDatabase(url ?? "", contract);
+const concurrencyCases = conformanceCases.filter((c) =>
+  c.tags.includes("concurrency")
+);
+
+const probe: TxProbe<Tx> = {
+  async count() {
+    const rows = await database.db.query(
+      database.db.sql.public.test_probe.select("id").build()
+    );
+
+    return rows.length;
+  },
+  async write(tx) {
+    await tx.execute(
+      tx.sql.public.test_probe.insert([{ id: randomUUID() }]).build()
+    );
+  },
+};
+
+/** Empty `schema`'s tables and the probe's, outside Prisma. */
+async function truncate(schema: AnySchema): Promise<void> {
+  const { tables } = schema.names;
+
+  const names = [
+    tables.booking,
+    tables.availabilityRule,
+    ...(schema.block === null ? [] : [tables.block]),
+    "test_probe",
+  ];
+
+  await database.pool.query(`truncate ${names.join(", ")}`);
+}
+
+/** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
+function suite<S extends AnySchema>(
+  schema: S,
+  resources: TestAdapterParams<S, Tx>["resources"]
+): void {
+  const params: TestAdapterParams<S, Tx> = {
+    // The overlap guard (`backstop: true`) comes with #144.
+    groups: { backstop: false, tx: probe },
+    makeAdapter: () => prismaAdapter(database.db),
+    reset: async () => {
+      await truncate(schema);
+    },
+    resources,
+    schema,
+  };
+
+  describe(schema.names.tables.booking, () => {
+    testAdapter(params);
+
+    // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
+    // Blocks cases are skipped without `block`, so a failure there would prove nothing.
+    it.fails.each(
+      concurrencyCases.filter(
+        (c) => schema.block !== null || !c.tags.includes("blocks")
+      )
+    )("[lock off] $name", async (c) => {
+      await expect(
+        runCase(c, {
+          ...params,
+          makeAdapter: () => createPrismaAdapter(database.db, { lock: false }),
+        })
+      ).resolves.toBeUndefined();
+    });
+  });
+}
+
+/** The Prisma Adapter's own tests, on the database the spike's contract built. */
+function adapterTests(): void {
+  describe(prismaAdapter, () => {
+    suite(textIdSchema, textIdResources);
+    suite(uuidIdSchema, uuidIdResources);
+    // No `block`: no Block table exists for it, and none is needed.
+    suite(integerIdSchema, integerIdResources);
+
+    it("a driver error gives AdapterError with the Prisma error as cause", async () => {
+      await truncate(uuidIdSchema);
+
+      const table = uuidIdSchema.names.tables.booking;
+
+      await database.pool.query(`
+        create function fasti_test_fail() returns trigger language plpgsql
+        as $$ begin raise exception 'test' using errcode = 'P0001'; end $$`);
+      await database.pool.query(
+        `create trigger fasti_test_fail before insert on ${table} for each row execute function fasti_test_fail()`
+      );
+
+      try {
+        const scheduler = createScheduler({
+          adapter: prismaAdapter(database.db),
+          policies: [],
+          schema: uuidIdSchema,
+        });
+
+        const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
+
+        await scheduler.availability.set({
+          resourceId: uuidIdResources[0],
+          rules: [
+            {
+              exceptions: [],
+              recurrence: { daysOfWeek: [1], frequency: "weekly", interval: 1 },
+              timeWindow: {
+                end: Temporal.PlainTime.from("17:00"),
+                start: Temporal.PlainTime.from("09:00"),
+              },
+              timezone: "UTC",
+            },
+          ],
+        });
+
+        const result = await scheduler.book({
+          end: start.add({ hours: 1 }),
+          resourceId: uuidIdResources[0],
+          start,
+        });
+
+        assert(!result.ok, "expected an error");
+        expect(result.error).toMatchObject({
+          _tag: "AdapterError",
+          cause: {
+            cause: { sqlState: "P0001" },
+            message: "prismaAdapter: insertBooking failed",
+          },
+        });
+      } finally {
+        await database.pool.query(
+          `drop trigger fasti_test_fail on ${table}; drop function fasti_test_fail()`
+        );
+      }
     });
 
-    afterAll(async () => {
-      await database?.drop();
-    });
+    it("units through the Drizzle Postgres Adapter and the Prisma Adapter on one Resource never interleave", async () => {
+      const [resource] = textIdResources;
 
+      const viaDrizzle = drizzleAdapter(drizzle({ client: database.pool }))(
+        textIdSchema
+      );
+
+      const viaPrisma = prismaAdapter(database.db)(textIdSchema);
+      const log: string[] = [];
+
+      /** A unit that logs its entry and exit, with time between for another unit to slip in. */
+      async function logged(name: string): Promise<void> {
+        log.push(`enter ${name}`);
+        await sleep(2);
+        log.push(`exit ${name}`);
+      }
+
+      await Promise.all(
+        Array.from({ length: 10 }, async (_, i) => {
+          await Promise.all([
+            viaDrizzle.withResourceLock(resource, async () => {
+              await logged(`drizzle ${i}`);
+            }),
+            viaPrisma.withResourceLock(resource, async () => {
+              await logged(`prisma ${i}`);
+            }),
+          ]);
+        })
+      );
+
+      expect(log).toHaveLength(40);
+
+      for (let i = 0; i < log.length; i += 2) {
+        expect(log[i + 1]).toBe(log[i]?.replace("enter", "exit"));
+      }
+    });
+  });
+}
+
+describe.skipIf(url === undefined)("Prisma on Postgres", () => {
+  beforeAll(async () => {
+    // SAFETY: skipIf leaves this block unrun when url is undefined.
+    database = await prismaTestDatabase(url ?? "", contract);
+  });
+
+  afterAll(async () => {
+    await database?.drop();
+  });
+
+  describe("spike: renamed tables through tx.sql", () => {
     it("inserts and selects a Booking on a table named at runtime", async () => {
       const id = randomUUID();
 
@@ -214,5 +413,7 @@ describe.skipIf(url === undefined)(
         )
       ).rejects.toThrow(/check constraint/iu);
     });
-  }
-);
+  });
+
+  adapterTests();
+});

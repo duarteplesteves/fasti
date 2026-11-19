@@ -32,10 +32,12 @@
         "vitest": "^5.1.0",
       },
       "peerDependencies": {
+        "@prisma/orm-postgres": ">=8.0.0-rc.24 <9",
         "drizzle-orm": ">=1.0.0-rc.5 <2",
         "vitest": "^5.1.0",
       },
       "optionalPeers": [
+        "@prisma/orm-postgres",
         "drizzle-orm",
         "vitest",
       ],

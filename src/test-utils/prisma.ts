@@ -6,6 +6,7 @@ import { createPostgresControlClient } from "@prisma/orm-postgres/control";
 import postgres from "@prisma/orm-postgres/runtime";
 
 import { freshDatabase } from "./postgres.js";
+import type { FreshDatabase } from "./postgres.js";
 
 /** A contract the Postgres client accepts. */
 type AnyContract = Parameters<typeof postgres>[0]["contract"];
@@ -13,6 +14,8 @@ type AnyContract = Parameters<typeof postgres>[0]["contract"];
 /** A fresh database for one test file, with `contract` applied. */
 export interface PrismaTestDatabase<C extends AnyContract> {
   readonly db: ReturnType<typeof postgres<C>>;
+  /** The pool `db` runs on, for statements outside Prisma (resets, a Drizzle client on the same database). */
+  readonly pool: FreshDatabase["pool"];
   /** Close the client and drop the database. */
   readonly drop: () => Promise<void>;
 }
@@ -71,5 +74,5 @@ export async function prismaTestDatabase<C extends AnyContract>(
     Parameters<typeof postgres>[0]["pg"]
   >;
 
-  return { db: postgres({ contract, pg }), drop };
+  return { db: postgres({ contract, pg }), drop, pool: fresh.pool };
 }
