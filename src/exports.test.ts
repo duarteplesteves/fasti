@@ -5,6 +5,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import * as adapter from "./adapter/index.js";
 import * as core from "./core/index.js";
 import * as drizzlePg from "./drizzle/pg/index.js";
+import * as drizzleSqlite from "./drizzle/sqlite/index.js";
 import * as effect from "./effect/index.js";
 import * as root from "./index.js";
 import * as memory from "./memory/index.js";
@@ -70,6 +71,16 @@ const surface = [
       "drizzleAdapter",
     ],
     source: "drizzle/pg/index.js",
+  },
+  {
+    module: drizzleSqlite,
+    names: [
+      "availabilityRuleTable",
+      "blockTable",
+      "bookingTable",
+      "drizzleAdapter",
+    ],
+    source: "drizzle/sqlite/index.js",
   },
   { module: effect, names: ["Scheduler"], source: "effect/index.js" },
   { module: memory, names: ["memoryAdapter"], source: "memory/index.js" },

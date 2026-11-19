@@ -39,6 +39,10 @@
       "types": "./dist/drizzle/pg/index.d.ts",
       "default": "./dist/drizzle/pg/index.js"
     },
+    "./drizzle/sqlite": {
+      "types": "./dist/drizzle/sqlite/index.d.ts",
+      "default": "./dist/drizzle/sqlite/index.js"
+    },
     "./effect": {
       "types": "./dist/effect/index.d.ts",
       "default": "./dist/effect/index.js"
@@ -76,6 +80,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/cli": "^3.0.3",
     "@fast-check/vitest": "^0.5.0",
+    "@libsql/client": "^0.18",
     "@prisma/orm-postgres": "8.0.0-rc.24",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
