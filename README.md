@@ -24,6 +24,8 @@ One package, several entry points:
 | `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, the `column` helpers and the error types.            |
 | `@fastijs/scheduler/effect`     | `Scheduler`, the Effect form of the Actions.                                            |
 | `@fastijs/scheduler/drizzle/pg` | `drizzleAdapter`, the table builders and `backstopSql` (needs `drizzle-orm` 1.0 RC.5+). |
+| `@fastijs/scheduler/drizzle/sqlite` | The same names as `drizzle/pg`, for libsql file databases (needs `drizzle-orm` 1.0 RC.5+ and `@libsql/client`). |
+| `@fastijs/scheduler/prisma`     | `prismaAdapter`, `prismaModels` and `backstopSql`, for Prisma 8 on Postgres. Experimental while Prisma 8 is an RC. |
 | `@fastijs/scheduler/memory`     | `memoryAdapter`, for tests and prototypes.                                              |
 | `@fastijs/scheduler/adapter`    | The Adapter contract types and `defineAdapter`, for writing your own Adapter.           |
 | `@fastijs/scheduler/testing`    | `testAdapter`, the Conformance Suite every Adapter must pass (needs `vitest`).          |
@@ -579,6 +581,69 @@ npx drizzle-kit generate --custom --name=fasti-backstop
 ```
 
 Then paste each statement from `backstopSql(schema)` into the generated file, separated by `--> statement-breakpoint`. drizzle-kit doesn't know about this constraint: later generated migrations neither include nor drop it. If you rename the Booking table, its columns or a blocking Status, or add, remove or flip a blocking Status, drop the old constraint and add the new statements from `backstopSql(schema)` in a new custom migration. Declared Statuses also change the `CHECK` constraint on `status`, which drizzle-kit generates for you. The constraint assumes a capacity of one Booking per Resource at a time.
+
+### Drizzle on SQLite
+
+The same names and shapes as `drizzle/pg`, so moving between the two is an import change. Instants are stored as integer milliseconds, recurrence and exceptions as JSON text, and Status as `text` with a `CHECK` over its stored values.
+
+```typescript
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { integer, sqliteTable } from "drizzle-orm/sqlite-core";
+import {
+  availabilityRuleTable,
+  bookingTable,
+  drizzleAdapter,
+} from "@fastijs/scheduler/drizzle/sqlite";
+
+export const staff = sqliteTable("staff", { id: integer().primaryKey() });
+export const appointments = bookingTable(schema, { references: () => staff.id });
+export const hours = availabilityRuleTable(schema, { references: () => staff.id });
+
+const db = drizzle({ client: createClient({ url: "file:app.db" }) });
+const adapter = drizzleAdapter(db);
+```
+
+- **The lock is the whole database.** Units on one `db` run one after another, each inside `BEGIN IMMEDIATE`, so writes to different Resources take turns. Waiting never blocks the event loop.
+- **One writer process per file.** Another process writing to the same file makes units fail with `SQLITE_BUSY` instead of waiting. Cross-process writes wait on a libsql fix ([#142](https://github.com/duarteplesteves/fasti/issues/142)).
+- **File databases only.** `:memory:` and embedded replicas get a single connection, so a read during a unit of work fails. Turso isn't tested.
+- **Leave libsql's `timeout` unset.** A busy timeout blocks Node's event loop while it waits.
+- **Use WAL** (`PRAGMA journal_mode = WAL`, once, in your own setup). fasti never runs it (ADR 007).
+- **Foreign keys** from `references` are enforced only with `PRAGMA foreign_keys = ON` on each connection.
+- **No backstop.** SQLite has no `EXCLUDE` constraint, so a write to the bookings table outside fasti isn't caught by the database.
+- **Async drivers only.** A database on better-sqlite3, `node:sqlite` or `bun:sqlite` is a type error: their transactions can't stay open across an `await`. Switch to libsql: a different `drizzle(…)` import and client, with the same file, tables and queries. Sync drivers are on the [roadmap](./ROADMAP.md#beyond-the-framework).
+
+### Prisma on Postgres
+
+Experimental while Prisma 8 is a release candidate. Postgres only. Spread `prismaModels` into your contract and let Prisma's tooling create the tables; fasti never runs DDL.
+
+```typescript
+import { defineContract } from "@prisma/orm-postgres/contract-builder";
+import postgres from "@prisma/orm-postgres/runtime";
+import { prismaAdapter, prismaModels } from "@fastijs/scheduler/prisma";
+
+export const contract = defineContract({}, (helpers) => {
+  const staff = helpers
+    .model("staff", {
+      fields: { id: helpers.field.column(helpers.type.Int()).id() },
+    })
+    .sql({ table: "staff" });
+
+  return {
+    models: {
+      staff,
+      ...prismaModels(schema, helpers, { references: { model: staff, field: "id" } }),
+    },
+  };
+});
+
+const db = postgres({ contract, url: process.env.DATABASE_URL });
+const adapter = prismaAdapter(db);
+```
+
+It takes the same advisory lock as the Drizzle Postgres Adapter, so units through either Adapter on one Resource exclude each other. A unit that fails with a serialization failure or deadlock reruns whole, `also` included, up to 3 attempts. `tx` is Prisma's own transaction.
+
+**The backstop.** Prisma can't express `EXCLUDE` either: create a raw SQL migration with `prisma migration new` and paste the statements from `backstopSql(schema)`. The same rules as on [Drizzle](#drizzle-on-postgres) apply when you rename or change blocking Statuses.
 
 ### Writing a custom Adapter
 

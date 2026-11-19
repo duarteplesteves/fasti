@@ -116,6 +116,8 @@ Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, th
 
 **Test of done:** the Conformance Suite passes on each new Adapter in CI.
 
+**Done** in `0.5.0`. **Follow-up:** writes to one SQLite file from several processes ([#142](https://github.com/duarteplesteves/fasti/issues/142)). Blocked on a libsql bug; until it's fixed, write from one process only.
+
 ## 9. Plugin system — `0.6` (public)
 
 **Goal:** extend the Framework without forking it.

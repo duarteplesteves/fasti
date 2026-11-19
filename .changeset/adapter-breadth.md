@@ -1,0 +1,9 @@
+---
+"@fastijs/scheduler": minor
+---
+
+Two new first-party Adapters, each passing the full Conformance Suite.
+
+**`@fastijs/scheduler/drizzle/sqlite`**: the Drizzle SQLite Adapter, for a libsql file database, with the same names and shapes as `drizzle/pg`. `bookingTable`, `blockTable` and `availabilityRuleTable` build your tables for drizzle-kit: Instants are integer `timestamp_ms`, recurrence and exceptions JSON text, Status `text` with a `CHECK` over its stored values, and `references` adds a foreign key with `ON DELETE RESTRICT`. `drizzleAdapter(db)` runs units on one database object one after another, each inside `BEGIN IMMEDIATE`. SQLite has no backstop, so `insertBooking` never returns `conflict`. Only async drivers type-check; a sync driver (better-sqlite3, `node:sqlite`, `bun:sqlite`) is a type error. Use a file database (`:memory:` and embedded replicas have one connection) and leave libsql's `timeout` unset, as it blocks the event loop. Write to the file from one process only; another process writing to it makes units fail with `SQLITE_BUSY`.
+
+**`@fastijs/scheduler/prisma`** (experimental): the Adapter for Prisma 8 on Postgres. Spread `prismaModels(schema, helpers)` into your `defineContract` models and pass `prismaAdapter(db)` to `createScheduler`; `tx` is Prisma's own transaction. Pass `{ references: { model: staff, field: "id" } }` for a foreign key with `ON DELETE RESTRICT` to your Resource model. It takes the same advisory lock as the Drizzle Postgres Adapter, so units through either Adapter on one Resource exclude each other. Apply `backstopSql(schema)` through `prisma migration new`'s raw SQL, and an overlapping Booking write becomes a `conflict` (inside a savepoint, so the unit keeps going). A unit that fails with `40001` or `40P01` reruns whole, `also` included, up to 3 attempts. `@prisma/orm-postgres` (`>=8.0.0-rc.24 <9`) is an optional peer dependency.

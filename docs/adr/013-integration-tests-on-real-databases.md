@@ -40,3 +40,8 @@ We choose option 4.
 ## Amendment (2026-11-14): the negative control replaces asserting the pool size
 
 The suite does not assert that `makeAdapter` supplies at least N connections. No Adapter-agnostic check exists: the contract has no notion of a pool, and a pool smaller than N makes units of work queue for a connection, which still serializes them. The negative control already covers the failure that matters: if a small pool, or anything else, kept calls from overlapping, the lock-off concurrency cases would pass, their `it.fails` would fail, and CI would turn red. `TestAdapterParams.makeAdapter` documents the requirement of 20 concurrent units of work instead.
+
+## Amendment (2026-11-19): SQLite and Prisma test databases (checkpoint 8)
+
+- **SQLite.** Each test file gets a libsql file in a fresh temp directory, set to WAL by the test helper (the developer's setup, not fasti's). drizzle-kit `1.0.0-rc.5` exports no SQLite `pushSchema`, so tables are pushed with the `drizzle-kit push` CLI. `:memory:` can't be used: it has one connection, so a read during a locked unit would fail.
+- **Prisma** runs on Postgres only. Each test file gets a fresh database, and the contract built with `prismaModels` is applied through Prisma's own `db init`, never hand-written SQL. The backstop is added as a developer would through `prisma migration new`.
