@@ -260,7 +260,7 @@ await scheduler.transition({ id, from: "booked", to: "done" }); // type error: n
 - `book` takes `status` only when `initial` has more than one entry. Booking into a non-blocking Status skips the overlap check, but availability still applies.
 - `scheduler.transition` exists when some declared Transition doesn't end in `cancelled`. A schema that declares only Statuses, or only Transitions into `cancelled`, has no `transition`.
 - Stored values can be renamed under `names.statuses`, like the base ones. Redeclaring `booked` or `cancelled`, naming an unknown Status in `transitions` or `initial`, or two Statuses sharing a stored value is a type error, and throws in `defineSchema`.
-- On Drizzle, the Status `CHECK` constraint and `backstopSql` list your Statuses: adding one, or flipping its `blocking`, needs a migration ([the backstop](#drizzle-on-postgres)).
+- On Drizzle and Prisma, the Status `CHECK` constraint and `backstopSql` list your Statuses: adding one, or flipping its `blocking`, needs a migration. Your migration tool generates the `CHECK` change; the backstop you redo by hand ([the backstop](#drizzle-on-postgres)). If you don't, a new blocking Status isn't covered by it, and a Status flipped to non-blocking still has its overlaps refused, as `SlotConflict`.
 
 ## Your writes in the same transaction (`also`)
 
@@ -292,6 +292,7 @@ const result = await scheduler.book({
 - Returning `{ ok: false, error }` vetoes: everything rolls back, fasti's write included, and the Action fails with `{ _tag: "Vetoed", reason: error }`. A throw also rolls back, and the promise rejects with what was thrown.
 - Write only through `tx`: anything else isn't part of the unit and won't roll back. On the memory Adapter `tx` is `undefined`.
 - `also` may run more than once. The Drizzle Adapter reruns the whole unit, `also` included, when it fails with a deadlock or a serialization failure (`40P01`, `40001`), up to 3 attempts. When they run out, it fails as on the last attempt: an `AdapterError` if fasti's write failed, a rejection if `also` threw. So a deadlock hit by a query inside a plain `also` rejects the promise rather than returning `AdapterError`. Another reason to write only through `tx`.
+- Side effects that can't roll back, such as an email or a webhook, don't belong in `also`: send them after the call returns `ok`. If one must never be lost, insert an outbox row through `tx` and send it from a background job.
 - `also` runs under the Resource Lock, so a slow `also` delays every other write to that Resource. Don't call an Action from inside it: that's unsupported, and on the same Resource it deadlocks.
 - What each Action passes, besides `tx` and `now`: `book` gets `booking`; `reschedule`, `cancel` and `transition` get `booking` and `previous`; `availability.set` gets `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
