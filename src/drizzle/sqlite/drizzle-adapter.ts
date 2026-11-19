@@ -350,6 +350,8 @@ export function createDrizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
  * {@link availabilityRuleTable} and, if your schema declares `block`, {@link blockTable}.
  * `tx` is Drizzle's own transaction, for your writes in the same unit of work.
  * Use a libsql *file* database on an async driver; leave libsql's `timeout` unset, as it blocks the event loop.
+ * Write to the file from one process only: units in one process wait their turn, but another
+ * process's writer makes a unit fail with `SQLITE_BUSY`.
  */
 export function drizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
   db: DB
