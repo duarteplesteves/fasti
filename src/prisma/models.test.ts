@@ -116,3 +116,114 @@ describe(prismaModels, () => {
     });
   });
 });
+
+/** The foreign keys and indexes of each table, with a `dev_resource` model of `kind` ids as the Resource. */
+function foreignKeysOf(schema: AnySchema, kind: "Int" | "Uuid") {
+  const contract = defineContract({}, (helpers) => {
+    const resource = helpers
+      .model("Resource", {
+        fields: {
+          id: helpers.field.column(helpers.type[kind]()).id().column("id"),
+        },
+      })
+      .sql({ table: "dev_resource" });
+
+    return {
+      models: {
+        Resource: resource,
+        ...prismaModels(schema, helpers, {
+          // SAFETY: callers pair each schema with the `kind` of its Resource id; the type test below checks the pairing.
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion, typescript/no-unnecessary-type-assertion -- see above.
+          references: { field: "id", model: resource } as never,
+        }),
+      },
+    };
+  });
+
+  const tables = contract.storage.namespaces.public.entries.table;
+
+  return Object.fromEntries(
+    Object.entries(tables).map(([name, table]) => [
+      name,
+      { foreignKeys: table.foreignKeys, indexes: table.indexes },
+    ])
+  );
+}
+
+/** The foreign key from `column` to `dev_resource.id`, and no backing index. */
+function fk(column: string) {
+  return {
+    foreignKeys: [
+      {
+        onDelete: "restrict",
+        source: { columns: [column] },
+        target: { columns: ["id"], tableName: "dev_resource" },
+      },
+    ],
+    indexes: [],
+  };
+}
+
+describe("prismaModels references", () => {
+  it("adds a foreign key on the Resource id column of every table, ON DELETE RESTRICT, with no backing index", () => {
+    expect(foreignKeysOf(uuidIdSchema, "Uuid")).toMatchObject({
+      u_closures: fk("u_off_room_id"),
+      u_hours: fk("u_staff_id"),
+      u_reservations: fk("u_room_id"),
+    });
+    expect(foreignKeysOf(integerIdSchema, "Int")).toMatchObject({
+      i_hours: fk("i_staff_id"),
+      i_visits: fk("i_staff_id"),
+    });
+  });
+
+  it("adds no foreign key without references", () => {
+    const contract = defineContract({}, (helpers) => ({
+      models: prismaModels(integerIdSchema, helpers),
+    }));
+
+    for (const table of Object.values(
+      contract.storage.namespaces.public.entries.table
+    )) {
+      expect(table.foreignKeys).toStrictEqual([]);
+    }
+  });
+
+  it("type-checks only a target whose column type is the Resource id's (the @ts-expect-error lines are the assertions)", () => {
+    expect(() =>
+      defineContract({}, (helpers) => {
+        const staff = helpers.model("Staff", {
+          fields: {
+            id: helpers.field.column(helpers.type.Int()).id(),
+            slug: helpers.field.column(helpers.type.String()),
+            uuid: helpers.field.column(helpers.type.Uuid()),
+          },
+        });
+
+        return {
+          models: {
+            Staff: staff,
+            ...prismaModels(integerIdSchema, helpers, {
+              references: { field: "id", model: staff },
+            }),
+            ...prismaModels(textIdSchema, helpers, {
+              references: { field: "slug", model: staff },
+            }),
+            ...prismaModels(uuidIdSchema, helpers, {
+              // @ts-expect-error an int4 column can't hold a uuid Resource id
+              references: { field: "id", model: staff },
+            }),
+            ...prismaModels(textIdSchema, helpers, {
+              // @ts-expect-error a uuid column can't hold a text Resource id: Postgres refuses the foreign key
+              references: { field: "uuid", model: staff },
+            }),
+            ...prismaModels(integerIdSchema, helpers, {
+              // @ts-expect-error not a field of Staff
+              references: { field: "nope", model: staff },
+            }),
+          },
+        };
+      })
+    ).toBeDefined();
+  });
+});
