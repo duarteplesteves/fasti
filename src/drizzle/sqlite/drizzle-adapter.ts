@@ -1,3 +1,5 @@
+import { setTimeout } from "node:timers/promises";
+
 import { and, asc, eq, gt, lt, sql } from "drizzle-orm";
 import type { SQLiteAsyncDatabase, SQLiteTable } from "drizzle-orm/sqlite-core";
 
@@ -13,6 +15,7 @@ import type {
 } from "../../adapter/contract.js";
 import { serialize } from "../../adapter/queue.js";
 import type { Serialize } from "../../adapter/queue.js";
+import { retryTransient, someCause } from "../../adapter/retry.js";
 import type { AnySchema, BlockSchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
@@ -56,6 +59,12 @@ function queueOf(db: AnyAsyncSQLiteDatabase): Serialize {
   queues.set(db, queue);
 
   return queue;
+}
+
+/** Whether SQLite said busy: another connection holds the writer slot, or a reader blocks `COMMIT`. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is whatever was thrown.
+function isBusy(error: unknown): boolean {
+  return someCause(error, (c) => "code" in c && c.code === "SQLITE_BUSY");
 }
 
 /** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
@@ -221,9 +230,38 @@ export function createDrizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
         return blocks;
       }
 
-      /** One unit in its own transaction: `BEGIN IMMEDIATE` takes SQLite's writer slot up front, `deferred` only on first write. */
-      async function unit<T>(
+      /**
+       * One unit, waiting for another process's writer: a busy `BEGIN IMMEDIATE` (libsql's busy timeout is 0)
+       * is retried after a capped async back-off, with no limit. `work` was never entered, so it runs once (I-no-rerun-on-wait).
+       */
+      async function immediate<T>(
         work: (locked: LockedAdapter<S, TxOf<DB>, "blocks">) => Promise<T>
+      ): Promise<T> {
+        for (let delay = 5; ; delay = Math.min(delay * 2, 100)) {
+          let entered = false;
+
+          try {
+            // oxlint-disable-next-line no-await-in-loop -- each attempt waits for the last.
+            return await unit(async (locked) => {
+              entered = true;
+
+              return await work(locked);
+            }, "immediate");
+          } catch (error) {
+            if (entered || !isBusy(error)) {
+              throw error;
+            }
+
+            // oxlint-disable-next-line no-await-in-loop -- back off before the next BEGIN.
+            await setTimeout(delay);
+          }
+        }
+      }
+
+      /** One unit in its own transaction: `immediate` takes SQLite's writer slot up front, `deferred` only on first write. */
+      async function unit<T>(
+        work: (locked: LockedAdapter<S, TxOf<DB>, "blocks">) => Promise<T>,
+        behavior: "immediate" | "deferred"
       ): Promise<T> {
         return await db.transaction(
           async (tx) => {
@@ -327,7 +365,7 @@ export function createDrizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
               },
             });
           },
-          { behavior: lock ? "immediate" : "deferred" }
+          { behavior }
         );
       }
 
@@ -335,11 +373,14 @@ export function createDrizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
         ...reads(db),
         // The Resource Lock (I2), two layers: units on one `db` in this process wait in line,
         // and `BEGIN IMMEDIATE` makes another process's writer wait. Units on any Resource share the line,
-        // as SQLite's single writer slot makes them anyway.
+        // as SQLite's single writer slot makes them anyway. A busy `COMMIT` reruns the whole unit (I-transient).
         withResourceLock: async (_resourceId, work) =>
           lock
-            ? await queueOf(db)(async () => await unit(work))
-            : await unit(work),
+            ? await queueOf(db)(
+                async () =>
+                  await retryTransient(async () => await immediate(work), isBusy)
+              )
+            : await unit(work, "deferred"),
       };
     }
   );

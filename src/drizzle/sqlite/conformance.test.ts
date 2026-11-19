@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
@@ -181,6 +182,44 @@ describe("drizzleAdapter on SQLite (libsql)", () => {
       .from(tables.textBooking);
 
     expect(row?.n).toBe(units);
+  });
+
+  it("waits for another process's write transaction without freezing Node, entering work once", async () => {
+    const other = createClient({ url: database.url });
+    const holder = await other.transaction("write");
+    let ticks = 0;
+
+    const ticker = setInterval(() => {
+      ticks += 1;
+    }, 5);
+
+    let entered = 0;
+    let done = false;
+
+    try {
+      const unit = drizzleAdapter(database.db)(textIdSchema)
+        .withResourceLock("staff-a", async () => {
+          entered += 1;
+        })
+        .then(() => {
+          done = true;
+        });
+
+      await setTimeout(200, 0);
+
+      expect(done).toBe(false);
+      expect(entered).toBe(0);
+      expect(ticks).toBeGreaterThan(5);
+
+      await holder.commit();
+      await unit;
+
+      expect(entered).toBe(1);
+    } finally {
+      clearInterval(ticker);
+      holder.close();
+      other.close();
+    }
   });
 
   it("does not type-check with a sync driver (type test: the @ts-expect-error line is the assertion)", () => {
