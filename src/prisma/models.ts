@@ -68,6 +68,7 @@ type ResourceIdCodec<S extends AnySchema> =
 /**
  * Options of {@link prismaModels}.
  *
+ * @typeParam S - The schema whose Resource id the target must hold.
  * @typeParam M - Your Resource model.
  * @typeParam F - The referenced field of `M`.
  */
@@ -79,7 +80,7 @@ export interface PrismaModelsOptions<
   /**
    * Your Resource model and its key field, e.g. `{ model: staff, field: "id" }`, for a foreign key
    * with `ON DELETE RESTRICT` from every fasti table's Resource id. The field's column must have the
-   * Resource id column's type, as Postgres needs for a foreign key. Without it there is no foreign key.
+   * Resource id column's type exactly (an `int8` target for an `integer` id is refused too). Without it there is no foreign key.
    */
   readonly references?: { readonly field: F; readonly model: M } & Accepts<
     CodecOf<M["__fields"][F]>,
@@ -317,20 +318,23 @@ export function prismaModels<
 ): PrismaModels<S> {
   const { tables } = schema.names;
 
-  const ref =
+  const resourceIdTarget =
     options.references === undefined
       ? undefined
       : options.references.model.refs[options.references.field];
 
   const models: [string, PrismaModel][] = [
-    [tables.booking, bookingModel(schema, helpers, ref)],
-    [tables.availabilityRule, availabilityRuleModel(schema, helpers, ref)],
+    [tables.booking, bookingModel(schema, helpers, resourceIdTarget)],
+    [
+      tables.availabilityRule,
+      availabilityRuleModel(schema, helpers, resourceIdTarget),
+    ],
   ];
 
   if (schema.block !== null) {
     models.push([
       tables.block,
-      blockModel(schema, schema.block.fields, helpers, ref),
+      blockModel(schema, schema.block.fields, helpers, resourceIdTarget),
     ]);
   }
 

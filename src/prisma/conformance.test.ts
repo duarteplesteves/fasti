@@ -325,7 +325,7 @@ function adapterTests(): void {
             database.pool.query("delete from test_staff where id = $1", [
               integerIdResources[0],
             ])
-          ).rejects.toMatchObject({ code: "23001" });
+          ).rejects.toMatchObject({ code: "23503" });
         } finally {
           await truncate(integerIdSchema);
         }
