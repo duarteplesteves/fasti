@@ -1,5 +1,6 @@
 import { check, sql } from "@prisma/orm-postgres/contract-builder";
 import type {
+  ContractModelBuilder,
   ScalarFieldBuilder,
   defineContract,
 } from "@prisma/orm-postgres/contract-builder";
@@ -14,6 +15,7 @@ import type {
   Fields,
   HasBlocks,
 } from "../schema/define-schema.js";
+import type { Accepts } from "../schema/references.js";
 import { statusCodec } from "../schema/status-codec.js";
 
 /** The helpers `defineContract`'s callback receives. */
@@ -29,14 +31,86 @@ function sqlText(text: string) {
   return sql(Object.assign([text], { raw: [text] }));
 }
 
+/** A field of a model, as the model's `refs` give it; local or from another contract space. */
+type TargetFieldRef = ContractModelBuilder<
+  string,
+  Record<string, ScalarFieldBuilder>,
+  Record<string, never>,
+  undefined,
+  undefined,
+  Record<string, never>,
+  string
+>["refs"][string];
+
+/** A model of yours, e.g. `helpers.model("Staff", …)`. */
+interface ResourceModel {
+  readonly __fields: Readonly<Record<string, ScalarFieldBuilder>>;
+  readonly refs: Readonly<Record<string, TargetFieldRef>>;
+}
+
+/** The codec id of a field's column. */
+type CodecOf<F> =
+  F extends ScalarFieldBuilder<infer State>
+    ? NonNullable<State["descriptor"]>["codecId"]
+    : never;
+
+/** The codec of the Resource id column, by schema column kind, as {@link columnType} builds it. */
+interface ResourceIdCodecs {
+  readonly integer: "pg/int4@1";
+  readonly text: "pg/text@1";
+  readonly uuid: "pg/uuid@1";
+}
+
+/** The codec of `S`'s Resource id column. */
+type ResourceIdCodec<S extends AnySchema> =
+  ResourceIdCodecs[S["resource"]["idType"]["kind"]];
+
+/**
+ * Options of {@link prismaModels}.
+ *
+ * @typeParam M - Your Resource model.
+ * @typeParam F - The referenced field of `M`.
+ */
+export interface PrismaModelsOptions<
+  S extends AnySchema,
+  M extends ResourceModel,
+  F extends keyof M["__fields"] & keyof M["refs"] & string,
+> {
+  /**
+   * Your Resource model and its key field, e.g. `{ model: staff, field: "id" }`, for a foreign key
+   * with `ON DELETE RESTRICT` from every fasti table's Resource id. The field's column must have the
+   * Resource id column's type, as Postgres needs for a foreign key. Without it there is no foreign key.
+   */
+  readonly references?: { readonly field: F; readonly model: M } & Accepts<
+    CodecOf<M["__fields"][F]>,
+    ResourceIdCodec<S>
+  >;
+}
+
 /** The model of one physical table; its fields are widened so every fasti table has one model type. */
 function tableModel(
   { model }: ContractHelpers,
   table: string,
-  fields: Readonly<Record<string, ScalarFieldBuilder>>,
-  checks: readonly ReturnType<typeof check>[]
+  fields: Readonly<
+    Record<string, ScalarFieldBuilder> & { resourceId: ScalarFieldBuilder }
+  >,
+  checks: readonly ReturnType<typeof check>[],
+  references: TargetFieldRef | undefined
 ) {
-  return model(table, { fields }).sql({ checks: [...checks], table });
+  return model(table, { fields }).sql(({ cols, constraints }) => ({
+    checks: [...checks],
+    // No backing index, as on Drizzle Postgres: the tables stay the same when you switch ORM.
+    foreignKeys:
+      references === undefined
+        ? []
+        : [
+            constraints.foreignKey(cols.resourceId, references, {
+              index: false,
+              onDelete: "restrict",
+            }),
+          ],
+    table,
+  }));
 }
 
 /** A contract model of any fasti table. */
@@ -105,7 +179,11 @@ function fieldColumns(
 }
 
 /** The Booking model. Status is `text` with a `CHECK` over its stored values, as on Drizzle Postgres. */
-function bookingModel(schema: AnySchema, helpers: ContractHelpers) {
+function bookingModel(
+  schema: AnySchema,
+  helpers: ContractHelpers,
+  references: TargetFieldRef | undefined
+) {
   // SAFETY: defineSchema names every Booking column and Developer Field; a generic S only widens the keys to string.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
   const names = schema.names.columns.booking as Readonly<
@@ -136,7 +214,8 @@ function bookingModel(schema: AnySchema, helpers: ContractHelpers) {
         expression: sqlText(`${status} in (${stored})`),
         name: `${table}_status_check`,
       }),
-    ]
+    ],
+    references
   );
 }
 
@@ -144,7 +223,8 @@ function bookingModel(schema: AnySchema, helpers: ContractHelpers) {
 function blockModel(
   schema: AnySchema,
   fields: Fields,
-  helpers: ContractHelpers
+  helpers: ContractHelpers,
+  references: TargetFieldRef | undefined
 ) {
   // SAFETY: defineSchema names every Block column and Developer Field; a generic S only widens the keys to string.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
@@ -166,12 +246,17 @@ function blockModel(
       end: column(helpers, "instant", names.end),
       ...fieldColumns(helpers, fields, names),
     },
-    []
+    [],
+    references
   );
 }
 
 /** The AvailabilityRule model. Its primary key is generated and private; dates are `date` strings, the window `time`. */
-function availabilityRuleModel(schema: AnySchema, helpers: ContractHelpers) {
+function availabilityRuleModel(
+  schema: AnySchema,
+  helpers: ContractHelpers,
+  references: TargetFieldRef | undefined
+) {
   const { field, type } = helpers;
 
   const names: Readonly<Record<AvailabilityRuleColumn, string>> =
@@ -208,7 +293,8 @@ function availabilityRuleModel(schema: AnySchema, helpers: ContractHelpers) {
         .many({ elementsNullable: true })
         .column(names.exceptions),
     },
-    []
+    [],
+    references
   );
 }
 
@@ -216,24 +302,35 @@ function availabilityRuleModel(schema: AnySchema, helpers: ContractHelpers) {
  * The fasti tables of `schema` as Prisma 8 contract models, keyed and named by your physical
  * table names, with your physical column names. Spread it into your `defineContract` models:
  * `defineContract({}, (helpers) => ({ models: { ...mine, ...prismaModels(schema, helpers) } }))`.
+ * Pass `{ references: { model: staff, field: "id" } }` for a foreign key to your Resource model.
  *
  * @experimental While Prisma 8 is a release candidate.
  */
-export function prismaModels<S extends AnySchema>(
+export function prismaModels<
+  S extends AnySchema,
+  M extends ResourceModel = ResourceModel,
+  F extends keyof M["__fields"] & keyof M["refs"] & string = string,
+>(
   schema: S,
-  helpers: ContractHelpers
+  helpers: ContractHelpers,
+  options: PrismaModelsOptions<S, M, F> = {}
 ): PrismaModels<S> {
   const { tables } = schema.names;
 
+  const ref =
+    options.references === undefined
+      ? undefined
+      : options.references.model.refs[options.references.field];
+
   const models: [string, PrismaModel][] = [
-    [tables.booking, bookingModel(schema, helpers)],
-    [tables.availabilityRule, availabilityRuleModel(schema, helpers)],
+    [tables.booking, bookingModel(schema, helpers, ref)],
+    [tables.availabilityRule, availabilityRuleModel(schema, helpers, ref)],
   ];
 
   if (schema.block !== null) {
     models.push([
       tables.block,
-      blockModel(schema, schema.block.fields, helpers),
+      blockModel(schema, schema.block.fields, helpers, ref),
     ]);
   }
 

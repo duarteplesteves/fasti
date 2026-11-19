@@ -25,21 +25,37 @@ import { createPrismaAdapter, prismaAdapter } from "./prisma-adapter.js";
 
 const url = postgresUrl();
 
-/** The three Conformance schemas' tables, and a scratch table of the developer's own for the `tx` probe. */
-const contract = defineContract({}, (helpers) => ({
-  models: {
-    ...prismaModels(textIdSchema, helpers),
-    ...prismaModels(uuidIdSchema, helpers),
-    ...prismaModels(integerIdSchema, helpers),
-    test_probe: helpers
-      .model("test_probe", {
-        fields: {
-          id: helpers.field.column(helpers.type.Uuid()).id().column("id"),
-        },
-      })
-      .sql({ table: "test_probe" }),
-  },
-}));
+/**
+ * The three Conformance schemas' tables, a scratch table of the developer's own for the `tx` probe,
+ * and the developer's own Resource table, which the integer-id schema references.
+ */
+const contract = defineContract({}, (helpers) => {
+  const testStaff = helpers
+    .model("test_staff", {
+      fields: {
+        id: helpers.field.column(helpers.type.Int()).id().column("id"),
+      },
+    })
+    .sql({ table: "test_staff" });
+
+  return {
+    models: {
+      ...prismaModels(textIdSchema, helpers),
+      ...prismaModels(uuidIdSchema, helpers),
+      ...prismaModels(integerIdSchema, helpers, {
+        references: { field: "id", model: testStaff },
+      }),
+      test_staff: testStaff,
+      test_probe: helpers
+        .model("test_probe", {
+          fields: {
+            id: helpers.field.column(helpers.type.Uuid()).id().column("id"),
+          },
+        })
+        .sql({ table: "test_probe" }),
+    },
+  };
+});
 
 let database: Awaited<ReturnType<typeof prismaTestDatabase<typeof contract>>>;
 
@@ -279,6 +295,43 @@ function adapterTests(): void {
       }
     });
 
+    describe("references: the foreign key to the developer's Resource table", () => {
+      const visits = integerIdSchema.names.tables.booking;
+      const c = integerIdSchema.names.columns.booking;
+
+      /** Insert a Booking for `staffId` straight into the table, past the Adapter. */
+      async function insertVisit(staffId: number): Promise<void> {
+        await database.pool.query(
+          `insert into ${visits} (${c.id}, ${c.resourceId}, ${c.start}, ${c.end}, ${c.status})
+           values (gen_random_uuid(), $1, now(), now() + interval '1 hour', '1')`,
+          [staffId]
+        );
+      }
+
+      it("rejects a Booking for a Resource that doesn't exist", async () => {
+        await truncate(integerIdSchema);
+
+        await expect(insertVisit(999)).rejects.toMatchObject({
+          code: "23503",
+        });
+      });
+
+      it("rejects deleting a Resource that still has Bookings: ON DELETE RESTRICT", async () => {
+        await truncate(integerIdSchema);
+        await insertVisit(integerIdResources[0]);
+
+        try {
+          await expect(
+            database.pool.query("delete from test_staff where id = $1", [
+              integerIdResources[0],
+            ])
+          ).rejects.toMatchObject({ code: "23001" });
+        } finally {
+          await truncate(integerIdSchema);
+        }
+      });
+    });
+
     it("units through the Drizzle Postgres Adapter and the Prisma Adapter on one Resource never interleave", async () => {
       const [resource] = textIdResources;
 
@@ -322,6 +375,9 @@ describe.skipIf(url === undefined)("Prisma on Postgres", () => {
   beforeAll(async () => {
     // SAFETY: skipIf leaves this block unrun when url is undefined.
     database = await prismaTestDatabase(url ?? "", contract);
+    await database.pool.query(
+      `insert into test_staff (id) values ${integerIdResources.map((id) => `(${id})`).join(", ")}`
+    );
   });
 
   afterAll(async () => {

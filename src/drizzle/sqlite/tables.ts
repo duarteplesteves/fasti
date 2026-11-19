@@ -16,8 +16,8 @@ import type {
   BookingColumn,
   Fields,
 } from "../../schema/define-schema.js";
+import type { Accepts } from "../../schema/references.js";
 import { statusCodec } from "../../schema/status-codec.js";
-import type { Accepts } from "../references.js";
 
 /**
  * Options of {@link bookingTable}.
