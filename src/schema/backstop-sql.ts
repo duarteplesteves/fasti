@@ -19,7 +19,8 @@ export function noOverlapConstraint(schema: AnySchema): string {
 /**
  * The backstop (ADR 008): an `EXCLUDE` constraint so no two Bookings in blocking Statuses overlap on
  * one Resource, even when a write skips fasti's check. drizzle 1.0 can't express `EXCLUDE`, so add these
- * statements to a custom migration (`drizzle-kit generate --custom`). A clash it catches makes
+ * statements to a custom migration (`drizzle-kit generate --custom`); with Prisma, to the raw SQL of
+ * `prisma migration new`. A clash it catches makes
  * `insertBooking` / `updateBooking` return `conflict`.
  *
  * Correct for capacity 1 only: it forbids any overlap of blocking Bookings on a Resource.

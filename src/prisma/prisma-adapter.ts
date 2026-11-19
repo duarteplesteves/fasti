@@ -9,7 +9,9 @@ import type {
   ListBookingsQuery,
   SchemaAdapter,
 } from "../adapter/contract.js";
-import { LOCK_NAMESPACE } from "../adapter/postgres-lock.js";
+import { LOCK_NAMESPACE, isPgTransient } from "../adapter/postgres-lock.js";
+import { retryTransient } from "../adapter/retry.js";
+import { noOverlapConstraint } from "../schema/backstop-sql.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { statusCodec } from "../schema/status-codec.js";
 import {
@@ -228,6 +230,7 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
     ): SchemaAdapter<S, PrismaTxOf<DB>, "blocks"> => {
       const { columns, tables } = schema.names;
       const codec = statusCodec(schema);
+      const noOverlap = noOverlapConstraint(schema);
 
       const bookings: PhysicalTable = {
         name: tables.booking,
@@ -321,7 +324,7 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
         };
       }
 
-      return {
+      const singleAttempt: SchemaAdapter<S, PrismaTxOf<DB>, "blocks"> = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
           await db.transaction(async (tx: Queryable) => {
@@ -334,6 +337,50 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
                     .affectedCount()
                     .build()
                 );
+              });
+            }
+
+            /** Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable. */
+            async function backstopped<T>(
+              verb: string,
+              write: () => Promise<T>
+            ): Promise<T | "conflict"> {
+              return await query(verb, async () => {
+                // Prisma's `tx` has no nested transaction, so the savepoint is raw.
+                await tx.execute(
+                  tx.raw.sql`savepoint fasti_backstop`.affectedCount().build()
+                );
+
+                try {
+                  const result = await write();
+
+                  await tx.execute(
+                    tx.raw.sql`release savepoint fasti_backstop`
+                      .affectedCount()
+                      .build()
+                  );
+
+                  return result;
+                } catch (error) {
+                  // The backstop (I8) refusing an overlap: exclusion_violation on fasti's constraint, which Prisma's SqlQueryError names.
+                  if (
+                    error instanceof Object &&
+                    "sqlState" in error &&
+                    error.sqlState === "23P01" &&
+                    "constraint" in error &&
+                    error.constraint === noOverlap
+                  ) {
+                    await tx.execute(
+                      tx.raw.sql`rollback to savepoint fasti_backstop`
+                        .affectedCount()
+                        .build()
+                    );
+
+                    return "conflict";
+                  }
+
+                  throw error;
+                }
               });
             }
 
@@ -392,16 +439,20 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
               ...reads(tx),
               ...blockWrites,
               insertBooking: async (booking) => {
-                await query("insertBooking", async () => {
-                  await tx.execute(
-                    tableOf(tx, bookings.name)
-                      .insert([encodeBooking(codec, bookings.names, booking)])
-                      .build()
-                  );
-                });
+                const inserted = await backstopped(
+                  "insertBooking",
+                  async () => {
+                    await tx.execute(
+                      tableOf(tx, bookings.name)
+                        .insert([encodeBooking(codec, bookings.names, booking)])
+                        .build()
+                    );
+                  }
+                );
 
-                // No overlap guard yet, so the database never refuses an overlap here.
-                return { ok: true };
+                return inserted === "conflict"
+                  ? { ok: false, reason: "conflict" }
+                  : { ok: true };
               },
               replaceRules: async ({ resourceId, rules: next }) => {
                 await query("replaceRules", async () => {
@@ -433,7 +484,7 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
               // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve PrismaTxOf<DB> for a generic DB.
               tx: tx as PrismaTxOf<DB>,
               updateBooking: async ({ changes, expected }) => {
-                const updated = await query(
+                const updated = await backstopped(
                   "updateBooking",
                   async () =>
                     await compareAndSet(
@@ -444,12 +495,26 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
                     )
                 );
 
+                if (updated === "conflict") {
+                  return { ok: false, reason: "conflict" };
+                }
+
                 return updated
                   ? { ok: true }
                   : { ok: false, reason: "changed" };
               },
             });
           }),
+      };
+
+      return {
+        ...singleAttempt,
+        // The whole unit reruns on a transient error, `work` and the developer's writes in `tx` included.
+        withResourceLock: async (lockedId, work) =>
+          await retryTransient(
+            async () => await singleAttempt.withResourceLock(lockedId, work),
+            isPgTransient
+          ),
       };
     }
   );
