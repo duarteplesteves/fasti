@@ -118,17 +118,39 @@ Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, th
 
 **Done** in `0.5.0`. **Follow-up:** writes to one SQLite file from several processes ([#142](https://github.com/duarteplesteves/fasti/issues/142)). Blocked on a libsql bug; until it's fixed, write from one process only.
 
-## 9. Plugin system — `0.6` (public)
+## 9a. Hooks — `0.6` (public)
 
-**Goal:** extend the Framework without forking it.
+**Goal:** code that runs on every write, from any call site ([ADR 017](./docs/adr/017-hooks-observe-write-actions.md)).
+
+**Scope:**
+
+- `defineHook(schema, { when: "inTransaction" | "afterCommit", appliesTo, run })`, passed as an optional `hooks` on `createScheduler` and `Scheduler.layer`, in both forms.
+- Hooks observe and never change params, values or errors, and add nothing to the `Scheduler` types.
+- `appliesTo`: write Action names (`availability.set` and `blocks.*` included), Transition edges, or `"*"` for every write Action. Reads run no Hooks.
+- `run` gets `also`'s context plus `action`. After-commit Hooks get no `tx`.
+- In-transaction Hooks run after `also`: a throw rolls everything back and rejects. After-commit Hooks run once, after the final commit, awaited; a failure is logged and never changes the result.
+- `policies` becomes optional, and the Effect form's `P` defaults to `readonly []` (ADR 014 amendment). Nothing breaks.
+
+**Test of done:** the Conformance Suite checks that a throwing in-transaction Hook leaves nothing behind, and that after-commit Hooks run once even when the unit is retried.
+
+## 9b. Plugins — `0.7` (public)
+
+**Goal:** extend the Framework without forking it ([ADR 018](./docs/adr/018-plugins-are-modules-with-generic-storage.md)).
+
+**Scope:**
+
+- A Plugin is a named module with five optional parts: storage, Actions under `scheduler.<name>`, Policies, free or busy time for slot finding, and Hooks. It's declared in `defineSchema({ plugins })`.
+- Storage is one generic verb group in the Adapter contract, for records that each belong to one Resource. Tables are declared with the `column` helpers and built by the existing table helpers. The Conformance Suite gets a group for it.
+- Plugin Actions get `lock` and `records` from fasti. Plugin write Actions join `appliesTo` and `"*"`.
+- Availability and Blocks rebuilt as first-party Plugins. Availability is off until installed; `defineSchema({ block })` becomes `blocks({ fields })`. Both are breaking changes, flagged in the changeset.
 
 **Open:**
 
-- Hooks or an ordered pipeline.
-- How plugins extend types.
-- After-commit effects of Actions and Transitions (emails, calendar sync): best effort, never rolled back.
-- Hooks that run on every call, such as an audit log.
-- Whether availability (its rules, its Actions and its `availability` Policy) becomes a plugin the developer turns on, and whether Blocks, opt-in through the schema since `0.2`, move to the same mechanism. Without availability, everything outside Blocks and Bookings is bookable.
+- The generic record's shape: whether every table has a time range.
+- How Plugins contribute free windows and busy time to slot finding and the overlap Invariant.
+- Name clashes between Plugin Policies, and between a Plugin's and the app's.
+- The migration from `defineSchema({ block })` and from always-on availability.
+- How custom Adapters opt into generic storage.
 
 ## 10. Finished Framework — `1.0.0` (public)
 
@@ -162,7 +184,7 @@ Deferred past `1.0`, in no order.
 - **Continuous slots**: free intervals instead of a grid.
 - **Performance benchmarks.**
 - **First-party integration plugins** (email, SMS, payments, calendar sync).
-- **Waitlists**, as an after-commit effect of `cancel`.
+- **Waitlists**, as a Plugin whose after-commit Hook on `cancel` notifies the first in line.
 - **Date overrides**: one date's hours changed, adding or removing time, as part of AvailabilityRule and so relaxable through the `availability` Policy. Today's whole-day `exceptions` are the crude form.
 - **Block writes that cancel overlapping Bookings**: opt-in per call, in the same unit of work, instead of being refused. Deferred from milestone 6. Workaround: `cancel` the Bookings, then create the Block; a Booking made in between gets the Block refused, which fails safe.
-- **Recurring Blocks**, using AvailabilityRule's `frequency`-discriminated recurrence. They matter once availability can be turned off (milestone 9); until then, recurring busy time can be left out of the rules. Guard: `SlotConflict`'s `kind: "block"` doesn't assume a Block is one stored row.
+- **Recurring Blocks**, using AvailabilityRule's `frequency`-discriminated recurrence. They matter once availability can be turned off (milestone 9b); until then, recurring busy time can be left out of the rules. Guard: `SlotConflict`'s `kind: "block"` doesn't assume a Block is one stored row.

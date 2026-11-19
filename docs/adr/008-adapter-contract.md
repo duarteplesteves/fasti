@@ -58,3 +58,7 @@ The contract now exists as types in `@fastijs/scheduler/adapter`. Building it se
 - **One writer process per file, for now.** Waiting for another process's writer (retrying a busy `BEGIN` without rerunning `work`) and rerunning a unit whose `COMMIT` is busy are designed but not shipped: libsql 0.5.29 never resets a statement that failed with `SQLITE_BUSY`, so every later `COMMIT` on that connection fails (#142). Until a libsql release fixes it, another process writing to the file makes units fail with `SQLITE_BUSY`, and the README says to write from one process only.
 - **No SQLite backstop.** SQLite has no `EXCLUDE`, so `insertBooking` never returns `conflict` from the database.
 - **Prisma on Postgres** takes the same advisory lock and retries the same transient errors as the Drizzle Postgres Adapter, from one shared module, so units through either Adapter on one Resource exclude each other.
+
+## Amendment (2026-11-19): Plugin data uses one generic verb group
+
+ADR 018 adds one generic verb group for Plugin data, in records that each belong to one Resource, so "domain verbs only" no longer holds for Plugin data. Bookings keep their domain verbs. Availability rules and Blocks move to the generic group when they become first-party Plugins in checkpoint 9b.

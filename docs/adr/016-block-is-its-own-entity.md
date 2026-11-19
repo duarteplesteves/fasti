@@ -37,3 +37,7 @@ We choose option 3.
 ## Amendment (2026-11-16): `getBlock` joins the verb group
 
 The Block verb group also has `getBlock(id)` on reads. `update` and `delete` are addressed by id, so they read the Block first to learn which Resource to lock, as `cancel` does with `getBooking`.
+
+## Amendment (2026-11-19): Blocks become a first-party Plugin
+
+From checkpoint 9b (ADR 018), Blocks are a first-party Plugin, `blocks({ fields })` in `defineSchema({ plugins })`, instead of `defineSchema({ block })`. Their overlap stays part of the overlap Invariant and still can't be relaxed.

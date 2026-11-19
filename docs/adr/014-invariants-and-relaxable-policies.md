@@ -80,3 +80,7 @@ Checkpoint 7 (`0.4`) ships `definePolicy`, `policies`, `relax`, `waived` and `no
 - **`relax` is checked before any Adapter call.** An unknown or non-applicable name is `InvalidParams` at `["relax", i]`. `CancelError` gains `InvalidParams` for it.
 - **The types carry the Policies.** `PolicyViolation<V>` is generic, and is in an Action's error type only when an unrelaxed Policy applies to it, so `BookError` and `RescheduleError` no longer list it. The plain `Scheduler<S, Tx, P>` takes the Policies tuple, and the Effect form's `Scheduler<Self, S, Tx, P>` takes it as a required fourth type parameter, with no default, as `Tx`: `readonly []` for none.
 - **Names.** `availability` is fasti's own, and two Policies with one name are a type error and throw in `createScheduler`. A Policy from another schema is refused by the types only.
+
+## Amendment (2026-11-19): `policies` is optional
+
+From checkpoint 9a (`0.6`), `policies` can be left out of `createScheduler` and `Scheduler.layer`, and the Effect form's `P` defaults to `readonly []`. Requiring `[]` didn't make leaving out `notice` a conscious choice: a developer who doesn't know about `notice` types `[]` to silence the compiler. The docs carry that warning instead. `policies` and the new optional `hooks` (ADR 017) are treated alike. Past starts are still bookable unless `notice` is registered.

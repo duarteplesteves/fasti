@@ -28,6 +28,8 @@ Developers building scheduling tools (appointments, reservations, bookings) curr
 | **Logical Model** | The entities and fields the Framework stores through an Adapter: Booking, AvailabilityRule and Block. | Named independently of the developer's physical tables and columns, which can be renamed. Resources are not part of it; they stay in the developer's own tables. |
 | **Developer Field** | A field the developer declares on a Booking or a Block (e.g. a customer id, a block's title), which the Framework stores and types but never interprets. | _Avoid_: metadata, custom data. |
 | **Action** | A server-side operation exposed by a Framework instance (e.g. booking, cancelling). | Called directly from the developer's backend. _Avoid_: endpoint (HTTP exposure is a separate, later concern). |
+| **Plugin** | A named module installed on a Framework instance that extends it without forking it. | It can bring any of five parts: its own stored data, its own Actions, Policies, free or busy time that slot finding respects, and Hooks. Every part is optional (a waitlist, a calendar sync, an audit log). Availability and Blocks are first-party Plugins. _Avoid_: extension, add-on, middleware. |
+| **Hook** | Code the Framework runs whenever a write Action saves a change, either inside its transaction or after its commit. | It observes and never changes the Action's params or result. An **in-transaction Hook** commits or rolls back with the Action; an **after-commit Hook** runs once the change is saved, best effort, and is never rolled back. The developer registers their own directly; a Plugin can bring some. _Avoid_: middleware, listener, reaction. |
 
 ### Scheduling
 
@@ -159,4 +161,6 @@ These concerns belong to the caller, the framework layer, or future versions:
 | [ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md) | Four Invariants, everything else a Policy the caller can relax | Accepted |
 | [ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md) | The developer's own writes run inside the Action's transaction | Accepted |
 | [ADR 016](./docs/adr/016-block-is-its-own-entity.md) | A Block is its own entity, not a kind of Booking | Accepted |
+| [ADR 017](./docs/adr/017-hooks-observe-write-actions.md) | Hooks observe write Actions, inside the transaction or after the commit | Accepted |
+| [ADR 018](./docs/adr/018-plugins-are-modules-with-generic-storage.md) | Plugins are modules with generic storage; availability and Blocks become Plugins | Accepted |
 
