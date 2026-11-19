@@ -51,6 +51,10 @@
       "types": "./dist/memory/index.d.ts",
       "default": "./dist/memory/index.js"
     },
+    "./prisma": {
+      "types": "./dist/prisma/index.d.ts",
+      "default": "./dist/prisma/index.js"
+    },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
@@ -101,10 +105,14 @@
     "vitest": "^5.1.0"
   },
   "peerDependencies": {
+    "@prisma/orm-postgres": ">=8.0.0-rc.24 <9",
     "drizzle-orm": ">=1.0.0-rc.5 <2",
     "vitest": "^5.1.0"
   },
   "peerDependenciesMeta": {
+    "@prisma/orm-postgres": {
+      "optional": true
+    },
     "drizzle-orm": {
       "optional": true
     },
