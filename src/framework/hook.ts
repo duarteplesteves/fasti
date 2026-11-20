@@ -49,37 +49,37 @@ type TargetsOf<S extends AnySchema, A extends HookTargets<S>> = A extends "*"
     ? T
     : never;
 
+/** When a Hook runs: in the Action's transaction, or once after the commit. */
+type HookWhen = "inTransaction" | "afterCommit";
+
 /** Params of {@link defineHook}; `when` picks the event `run` gets. */
-export type DefineHookParams<
+export interface DefineHookParams<
   S extends AnySchema,
   Tx,
   A extends HookTargets<S>,
-> =
-  | {
-      /** On the Action's transaction, after `also`: a throw rolls the whole write back, and the Action rejects with it. */
-      readonly when: "inTransaction";
-      /** Write Action names, Transition edges, or `"*"` for every write Action. Reads never run Hooks. */
-      readonly appliesTo: A;
-      readonly run: (
-        event: EventFor<S, Tx, TargetsOf<S, A>>
-      ) => void | Promise<void>;
-    }
-  | {
-      /** Once, after the commit, awaited: a failure is logged and never changes the result. */
-      readonly when: "afterCommit";
-      /** Write Action names, Transition edges, or `"*"` for every write Action. Reads never run Hooks. */
-      readonly appliesTo: A;
-      readonly run: (
-        event: Committed<EventFor<S, Tx, TargetsOf<S, A>>>
-      ) => void | Promise<void>;
-    };
+  W extends HookWhen,
+> {
+  /**
+   * `"inTransaction"`: on the Action's transaction, after `also`; a throw rolls the whole write back, and the Action rejects with it.
+   * `"afterCommit"`: once, after the commit, awaited; a failure is logged and never changes the result.
+   */
+  readonly when: W;
+  /** Write Action names, Transition edges, or `"*"` for every write Action. Reads never run Hooks. */
+  readonly appliesTo: A;
+  readonly run: (
+    event: W extends "inTransaction"
+      ? EventFor<S, Tx, TargetsOf<S, A>>
+      : Committed<EventFor<S, Tx, TargetsOf<S, A>>>
+  ) => void | Promise<void>;
+}
 
-/** A Hook from {@link defineHook}, over a schema `S` and an Adapter whose transaction handle is `Tx`, with `appliesTo` `A`. */
+/** A Hook from {@link defineHook}, over a schema `S` and an Adapter whose transaction handle is `Tx`, with `appliesTo` `A`, run `W`. An after-commit one never mentions `Tx`, so it fits a scheduler over any Adapter. */
 export type Hook<
   S extends AnySchema,
   Tx,
   A extends HookTargets<S>,
-> = DefineHookParams<S, Tx, A>;
+  W extends HookWhen,
+> = DefineHookParams<S, Tx, A, W>;
 
 /** Any Hook over `S` and `Tx`: what `hooks` takes. `run` is a method so a Hook narrowed by `appliesTo` fits. */
 export type AnyHookOf<S extends AnySchema, Tx> =
@@ -114,11 +114,12 @@ export function defineHook<
   S extends AnySchema,
   Tx,
   const A extends HookTargets<S>,
+  const W extends HookWhen,
 >(
   _schema: S,
   _adapter: Adapter<Tx, GroupsOf<S>>,
-  params: DefineHookParams<S, Tx, A>
-): Hook<S, Tx, A> {
+  params: DefineHookParams<S, Tx, A, W>
+): Hook<S, Tx, A, W> {
   return params;
 }
 

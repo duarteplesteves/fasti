@@ -170,15 +170,22 @@ describe("Hook order", () => {
   it("runs Hooks with no `also`, and the value has no `also` key", async () => {
     const log: string[] = [];
 
-    const hooks = (["inTransaction", "afterCommit"] as const).map((when) =>
+    const hooks = [
       defineHook(schema, adapter, {
         appliesTo: ["book"],
         run: () => {
-          log.push(when);
+          log.push("inTransaction");
         },
-        when,
-      })
-    );
+        when: "inTransaction",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: () => {
+          log.push("afterCommit");
+        },
+        when: "afterCommit",
+      }),
+    ];
 
     const { scheduler } = await setup(hooks);
 
