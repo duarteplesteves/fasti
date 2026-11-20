@@ -126,7 +126,7 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
           start,
         };
 
-        yield* checkOverlap(locked, ctx.codec, placement);
+        yield* checkOverlap(ctx, locked, placement);
 
         const waived = yield* enforcePolicies(
           locked,
@@ -162,7 +162,7 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
             ? Effect.fail(retry)
             : Effect.fail<SlotConflict>({
                 _tag: "SlotConflict",
-                conflicts: yield* conflictsAt(locked, ctx.codec, {
+                conflicts: yield* conflictsAt(ctx, locked, {
                   ...placement,
                   kind: "booking",
                 }),

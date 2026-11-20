@@ -197,7 +197,7 @@ export function transition<S extends AnySchema, Tx, R = never>(
 
         // A blocking Booking already holds its slot; only one coming back from a non-blocking Status must re-check it.
         if (!ctx.codec.isBlocking(from) && ctx.codec.isBlocking(to)) {
-          yield* checkOverlap(locked, ctx.codec, range);
+          yield* checkOverlap(ctx, locked, range);
         }
 
         const waived = yield* enforcePolicies(
@@ -226,7 +226,7 @@ export function transition<S extends AnySchema, Tx, R = never>(
             ? Effect.fail(retry)
             : Effect.fail<SlotConflict>({
                 _tag: "SlotConflict",
-                conflicts: yield* conflictsAt(locked, ctx.codec, range),
+                conflicts: yield* conflictsAt(ctx, locked, range),
               });
         }
 

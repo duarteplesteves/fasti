@@ -60,12 +60,12 @@ function label(target: CalledTarget): string {
   return isActionName(target) ? target : `${target.from} → ${target.to}`;
 }
 
-/** The Policies `target` runs: `availability` first where it applies, then the developer's, in registration order. */
+/** The Policies `target` runs: fasti's own first (`availability`), then the developer's, in registration order. */
 export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
   target: CalledTarget
 ): readonly AnyPolicyOf<S>[] {
-  return [availabilityPolicy<S>(), ...ctx.policies].filter((policy) =>
+  return [...ctx.pluginPolicies, ...ctx.policies].filter((policy) =>
     policy.appliesTo.some((t) => matchesTarget(t, target))
   );
 }

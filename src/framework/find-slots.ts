@@ -87,7 +87,7 @@ export function findSlots<S extends AnySchema, Tx>(
   readonly Slot<S, Violation<string, unknown>>[],
   FindSlotsError
 > {
-  const { adapter, codec } = ctx;
+  const { adapter } = ctx;
   const { duration, excludeBookingId, interval, resourceId, timezone } = params;
 
   const from = floorMs(params.from);
@@ -133,8 +133,8 @@ export function findSlots<S extends AnySchema, Tx>(
     const range = { from, to: to.add({ minutes: duration }) };
 
     const { bookings } = yield* occupants(
+      ctx,
       adapter,
-      codec,
       "booking",
       resourceId,
       range

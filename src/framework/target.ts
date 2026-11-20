@@ -27,26 +27,30 @@ export type WriteActionName<S extends AnySchema> =
   | "availability.set"
   | (HasBlocks<S> extends true ? (typeof blockActions)[number] : never);
 
-/** Every write Action named by name, whatever the schema. */
-const writeActions = [
-  ...bookingActions,
-  "availability.set",
-  ...blockActions,
-] as const;
+/** The write Actions `schema` has, by name: the runtime twin of {@link WriteActionName}. `transition` is named by its edges. */
+export function writeActionNames<S extends AnySchema>(
+  schema: S
+): readonly WriteActionName<S>[] {
+  const names: readonly string[] = [
+    ...bookingActions,
+    "availability.set",
+    ...(schema.block === null ? [] : blockActions),
+  ];
 
-/** A write Action's name, whatever the schema. */
-type AnyActionName = (typeof writeActions)[number];
+  // SAFETY: `blocks.*` is listed exactly when HasBlocks<S> is true.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't be narrowed from `schema.block`.
+  return names as readonly WriteActionName<S>[];
+}
 
 /** A target as stored, its schema erased. */
-type AnyTarget =
-  | AnyActionName
-  | { readonly from?: string; readonly to: string };
+type AnyTarget = string | { readonly from?: string; readonly to: string };
 
 /** Whether `target` names a write Action rather than a Transition edge. */
 export function isActionName(
   target: string | { readonly to: string }
-): target is AnyActionName {
-  return writeActions.some((a) => a === target);
+): target is string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- names are strings, edges objects.
+  return typeof target === "string";
 }
 
 /** Whether `target` names an Action that changes a Booking. */
@@ -54,11 +58,6 @@ export function isBookingActionName(
   target: AnyTarget
 ): target is BookingActionName {
   return bookingActions.some((a) => a === target);
-}
-
-/** Whether `target` names an Action that writes a Block. */
-export function isBlockActionName(target: AnyTarget): boolean {
-  return blockActions.some((a) => a === target);
 }
 
 /** A Transition edge: `{ to }` is every declared edge into `to`, `{ from, to }` one edge. Edges into `cancelled` belong to `cancel`. */
@@ -78,7 +77,7 @@ export type HookTarget<S extends AnySchema> =
 
 /** What one call is: an Action by name, or the one edge a `transition` moves along. */
 export type CalledTarget =
-  | AnyActionName
+  | string
   | { readonly from: string; readonly to: string };
 
 /** Whether target `t` names `called`: an Action by name, an edge by `{ to }` or by `{ from, to }`. */

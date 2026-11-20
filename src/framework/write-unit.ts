@@ -1,14 +1,14 @@
 import { Cause, Clock, Effect, pipe } from "effect";
 
 import type { ResourceIdOf } from "../adapter/records.js";
-import type { AnySchema, BlockSchema } from "../schema/define-schema.js";
+import type { AnySchema } from "../schema/define-schema.js";
 import type { ChangeAlso } from "./booking.js";
 import type { EffectLocked } from "./effect-adapter.js";
 import type { AdapterError, Vetoed } from "./errors.js";
 import { hookApplies } from "./hook.js";
 import type { Committed, HookEvent } from "./hook.js";
 import type { ActionContext } from "./scheduler-service.js";
-import type { CalledTarget, WriteActionName } from "./target.js";
+import type { CalledTarget } from "./target.js";
 
 /** What a write unit did. Done: run `also` with `context`. NoOp: skip `also` (a repeat cancel; a no-op `blocks.update` still returns Done, by ADR 015). */
 export type Outcome<V, C> =
@@ -35,9 +35,9 @@ export type WriteEffect<V, E, R> = Effect.Effect<
   R
 >;
 
-/** Which write Action a unit runs, and the Resource it locks. Every name, whatever the schema: only a schema with `block` reaches `blocks.*`. */
+/** Which write Action a unit runs, and the Resource it locks. `action` is a name from `writeActionNames`, or `transition`. */
 export interface WriteSite<S extends AnySchema> {
-  readonly action: WriteActionName<BlockSchema> | "transition";
+  readonly action: string;
   readonly resourceId: ResourceIdOf<S>;
 }
 
