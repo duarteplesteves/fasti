@@ -21,7 +21,7 @@ One package, several entry points:
 
 | Import                          | What it holds                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------- |
-| `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, the `column` helpers and the error types.            |
+| `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, `definePolicy`, `notice`, `defineHook`, the `column` helpers and the error types. |
 | `@fastijs/scheduler/effect`     | `Scheduler`, the Effect form of the Actions.                                            |
 | `@fastijs/scheduler/drizzle/pg` | `drizzleAdapter`, the table builders and `backstopSql` (needs `drizzle-orm` 1.0 RC.5+). |
 | `@fastijs/scheduler/drizzle/sqlite` | The same names as `drizzle/pg`, for libsql file databases (needs `drizzle-orm` 1.0 RC.5+ and `@libsql/client`). |
@@ -292,11 +292,77 @@ const result = await scheduler.book({
 - Returning `{ ok: false, error }` vetoes: everything rolls back, fasti's write included, and the Action fails with `{ _tag: "Vetoed", reason: error }`. A throw also rolls back, and the promise rejects with what was thrown.
 - Write only through `tx`: anything else isn't part of the unit and won't roll back. On the memory Adapter `tx` is `undefined`.
 - `also` may run more than once. The Drizzle Adapter reruns the whole unit, `also` included, when it fails with a deadlock or a serialization failure (`40P01`, `40001`), up to 3 attempts. When they run out, it fails as on the last attempt: an `AdapterError` if fasti's write failed, a rejection if `also` threw. So a deadlock hit by a query inside a plain `also` rejects the promise rather than returning `AdapterError`. Another reason to write only through `tx`.
-- Side effects that can't roll back, such as an email or a webhook, don't belong in `also`: send them after the call returns `ok`. If one must never be lost, insert an outbox row through `tx` and send it from a background job.
+- Side effects that can't roll back, such as an email or a webhook, don't belong in `also`: send them from an after-commit [Hook](#hooks), or after the call returns `ok`. If one must never be lost, insert an outbox row through `tx` and send it from a background job.
 - `also` runs under the Resource Lock, so a slow `also` delays every other write to that Resource. Don't call an Action from inside it: that's unsupported, and on the same Resource it deadlocks.
 - What each Action passes, besides `tx` and `now`: `book` gets `booking`; `reschedule`, `cancel` and `transition` get `booking` and `previous`; `availability.set` gets `resourceId`, `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
 - `also` is a reserved name: a Booking or Block Developer Field can't be called `also`.
+
+## Hooks
+
+`also` runs at one call site. A Hook is registered once and runs on every write it applies to, wherever it's called from: a confirmation email for every new Booking, an audit row for every change ([ADR 017](./docs/adr/017-hooks-observe-write-actions.md)). Put side effects in Hooks rather than at your call sites, so a new call site can't forget them.
+
+A Hook observes: it can't change an Action's params, value or errors, and it can't refuse one. A refusal belongs in a [Policy](#policies) or in `also`.
+
+**In the transaction.** `when: "inTransaction"` runs on the Action's `tx`, after `also`, under the Resource Lock:
+
+```typescript
+import { createScheduler, defineHook } from "@fastijs/scheduler";
+
+const adapter = drizzleAdapter(db);
+
+// Every change to a Booking leaves a row in an audit table of your own.
+const audit = defineHook(schema, adapter, {
+  when: "inTransaction",
+  appliesTo: ["book", "reschedule", "cancel"],
+  run: async ({ action, booking, now, tx }) => {
+    await tx.insert(auditLog).values({
+      action,
+      at: new Date(now.epochMilliseconds),
+      bookingId: booking.id,
+    });
+  },
+});
+```
+
+- A throw rolls the whole write back (fasti's write, `also`, and the Hooks before it), and the Action rejects with what was thrown (a defect in the Effect form).
+- Like `also`, it may run more than once when the Adapter retries the unit, so write only through `tx`.
+- It runs under the Resource Lock: a slow one delays every other write to that Resource.
+
+**After the commit.** `when: "afterCommit"` runs once, after the final commit, and the Action waits for it before returning. It gets no `tx`: the transaction is gone.
+
+```typescript
+const confirm = defineHook(schema, adapter, {
+  when: "afterCommit",
+  appliesTo: ["book"],
+  run: async ({ booking }) => {
+    await sendConfirmation(booking);
+  },
+});
+
+const scheduler = createScheduler({ adapter, hooks: [audit, confirm], schema });
+```
+
+- A failure never changes the result: the write is already saved. It's logged at error level through Effect's logger (the console, or your own `Logger` in the Effect form), annotated with `action`, and the next Hook still runs.
+- Since the Action waits for it, its time adds to the write's latency: a slow email provider slows `book`. In return, on a serverless platform it has finished before you respond, and a test knows when it's done.
+
+> **An after-commit Hook can be lost.** It isn't retried, and if the process dies between the commit and the Hook, the email is never sent, though the Booking is saved. If it must never be lost, insert an outbox row from an in-transaction Hook and send it from a background job.
+
+**`appliesTo`.** At least one target, or `"*"`:
+
+- Write Action names: `"book"`, `"reschedule"`, `"cancel"`, `"transition"`, `"availability.set"`, and `"blocks.create"`, `"blocks.update"`, `"blocks.delete"` when the schema has `block`.
+- Transition edges, as a Policy takes them: `{ to }` for every declared edge into `to`, or `{ from, to }` for one. Edges into `cancelled` belong to `"cancel"`.
+- `"*"` for every write Action, including ones a later schema change adds. Unlike Policies, Hooks allow it: an audit log that picks up a new edge is what you want.
+
+The event `run` gets is what that Action's `also` gets (see [`also`](#your-writes-in-the-same-transaction-also)), plus `action`, narrowed by `appliesTo`: an edge's event has `action: "transition"`. An unknown name, `blocks.*` on a schema without `block`, an undeclared edge or an edge into `cancelled` is a type error, and `defineHook` throws on it, as on an empty `appliesTo`.
+
+**When Hooks run, and in what order.**
+
+- `also` → in-transaction Hooks → commit → after-commit Hooks, each kind in `hooks` order. Each in-transaction Hook sees the earlier ones' writes on `tx`.
+- A Hook runs only when something was saved: never on a Veto, a typed failure such as `SlotConflict` or `PolicyViolation`, or a repeat `cancel`. A `blocks.update` that changes nothing still runs them, as it runs `also`. Reads run no Hooks.
+- Hooks run whether or not the call passed `also`, and add nothing to the Action's value or types.
+
+**`adapter`.** `defineHook` takes the Adapter only to type `tx`; it never calls it. An in-transaction Hook fits only a scheduler over an Adapter with the same `tx`, while an after-commit one fits any. In the Effect form, pass `hooks` to `layer`: `AppScheduler.layer({ adapter, hooks: [audit, confirm], schema })`. `run` stays a plain function there.
 
 ## Policies
 

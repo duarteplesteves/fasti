@@ -35,3 +35,9 @@ We choose option 3.
 - **Negative:** Awaited after-commit Hooks add their time to every write's latency. A slow email provider slows `book`.
 - **Negative:** After-commit Hooks are best effort. A crash between the commit and the Hook loses it. A Hook that must never be lost writes an outbox row from an in-transaction Hook instead.
 - **Negative:** In-transaction Hooks run under the Resource Lock, so a slow one delays every other write to that Resource, as a slow `also` does.
+
+## Amendment (2026-11-20): Hooks as built in checkpoint 9a
+
+- **`defineHook(schema, adapter, { when, appliesTo, run })`.** The `adapter` argument only types an in-transaction Hook's `tx`: it is never called. Without it, `tx` could only be typed by a cast or a type argument the developer writes by hand (ADR 010's amendment rules out the cast). A Hook is typed by its `when`, so an after-commit Hook, which gets no `tx`, fits a scheduler over any Adapter, while an in-transaction one fits only a scheduler over an Adapter with the same `Tx`.
+- **An after-commit failure is logged, and the next Hook still runs.** It goes to Effect's logger at error level (`"fasti: an after-commit Hook failed"`, annotated with `action`): the default console logger in the plain form, the caller's own `Logger` in the Effect form. One failing Hook, such as an email provider being down, must not stop an unrelated audit Hook after it. An interrupt isn't a Hook failure, and stops the rest.
+- **Hooks are matched per call.** Each saved write filters `hooks` by `appliesTo` against the Action it ran, or the edge it took for a `transition`. Edge Hooks can't be matched ahead of the call, since the edge depends on the stored Status, and the list is small. No behaviour can tell this from matching once in `createScheduler`.
