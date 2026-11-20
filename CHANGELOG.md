@@ -1,5 +1,25 @@
 # @fastijs/scheduler
 
+## 0.6.0
+
+### Minor Changes
+
+- 3c5f318: The Conformance Suite now proves Hooks are atomic with the write: a throwing in-transaction Hook leaves no Booking (and, with a `tx` probe, no probe row), and a transient retry stores the Booking once and runs after-commit Hooks once. `@fastijs/scheduler/testing` exports `RetryProbe`, `"retry"` is a case tag, and `CaseContext` gains `unbound` and `retry`.
+  
+  **Custom Adapter authors:** `testAdapter`'s `groups` now requires `retry`. Pass `{ transient: () => <a value your Adapter retries> }` (the Postgres Adapters use `{ code: "40001" }`), or `retry: null` if your Adapter never retries.
+- 616dbb3: Hooks in the Effect form: pass `hooks` to `Scheduler.layer`. An in-transaction throw fails the Action with a defect carrying the thrown value, and an after-commit failure is logged at error level to your own `Logger`, annotated with `action`. `defineHook` now types a Hook by its `when` (`Hook<S, Tx, A, W>`), so an after-commit Hook fits a scheduler over any Adapter, while an in-transaction one still needs that Adapter's `tx`.
+- 2a8b88c: Export the target-name types Hooks will use: `BookingActionName` (`book`, `reschedule`, `cancel`: what a Policy can name), `WriteActionName<S>` (every write Action, with `blocks.*` only when the schema has `block`) and `HookTarget<S>`. `ActionTarget` is now a deprecated alias of `BookingActionName`.
+- 4932e69: Hooks now fire on every write Action: `reschedule`, `cancel`, `transition`, `availability.set` and `blocks.create`/`update`/`delete`, as well as `book`. `appliesTo` takes write Action names, Transition edges (`{ to }`, `{ from, to }`) or `"*"`, and `defineHook` throws on an empty `appliesTo`, an unknown name, `blocks.*` on a schema without `block`, an undeclared edge, or an edge into `cancelled`. No Hook runs on a Veto, a typed failure, a repeat `cancel` or a read.
+  
+  `availability.set`'s `also` context now carries `resourceId`. `SetAvailabilityAlso` takes the schema as its first type parameter: `SetAvailabilityAlso<S, Tx>`.
+- bc952f0: **Hooks.** Register cross-cutting work once with `defineHook(schema, adapter, { when, appliesTo, run })` and pass it as `hooks` on `createScheduler` or `Scheduler.layer`. Hooks only observe: they can't change an Action's params, value or errors, or refuse one.
+  
+  - `when: "inTransaction"` runs on the Action's `tx`, after `also`; a throw rolls the whole write back and the Action rejects with it.
+  - `when: "afterCommit"` runs once, after the final commit, and is awaited before the Action returns; a failure is logged and never changes the result. It isn't retried, and is lost if the process dies after the commit: write an outbox row from an in-transaction Hook for work that must never be lost.
+  
+  See the README's Hooks section and ADR 017.
+- 3ac0b93: `policies` is now optional on `createScheduler` and `Scheduler.layer`: `createScheduler({ schema, adapter })` behaves exactly like `policies: []`, and the Effect form's Policies type parameter defaults to `readonly []`. The Invariants and the built-in `availability` still apply, and past starts stay bookable unless you register `notice`.
+
 ## 0.5.0
 
 ### Minor Changes
