@@ -115,7 +115,11 @@ function suite<S extends AnySchema>(
   resources: TestAdapterParams<S, Tx>["resources"]
 ): void {
   const params: TestAdapterParams<S, Tx> = {
-    groups: { backstop: true, tx: probe },
+    groups: {
+      backstop: true,
+      retry: { transient: () => ({ code: "40001" }) },
+      tx: probe,
+    },
     makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       await database.db.execute(

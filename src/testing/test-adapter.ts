@@ -6,13 +6,18 @@ import type { AnySchema } from "../schema/define-schema.js";
 import { backstopCases } from "./cases/backstop.js";
 import { blockCases } from "./cases/blocks.js";
 import { changeCases } from "./cases/change.js";
+import { hookCases } from "./cases/hooks.js";
 import { lockCases } from "./cases/lock.js";
 import { rollbackCases } from "./cases/rollback.js";
 import { roundTripCases } from "./cases/round-trips.js";
 import { ruleCases } from "./cases/rules.js";
 import { searchCases } from "./cases/search.js";
 import { txCases } from "./cases/tx.js";
-import type { ConformanceCase, TxProbe } from "./conformance-case.js";
+import type {
+  ConformanceCase,
+  RetryProbe,
+  TxProbe,
+} from "./conformance-case.js";
 
 /** Params of {@link testAdapter} and {@link runCase}. */
 export interface TestAdapterParams<S extends AnySchema, Tx> {
@@ -25,12 +30,14 @@ export interface TestAdapterParams<S extends AnySchema, Tx> {
   /** Two existing Resource ids, so Bookings satisfy your foreign key. */
   readonly resources: readonly [ResourceIdOf<S>, ResourceIdOf<S>];
   /**
-   * Opt-in groups: `backstop` only if your Adapter ships a database constraint; `tx` a probe over a table of your own, or `null` if `tx` is no transaction (e.g. in memory).
+   * Opt-in groups: `backstop` only if your Adapter ships a database constraint; `tx` a probe over a table of your own, or `null` if `tx` is no transaction (e.g. in memory);
+   * `retry` a value your Adapter retries as transient, or `null` if it never retries.
    * The `blocks` cases run iff `schema` declares `block`.
    */
   readonly groups: {
     readonly backstop: boolean;
     readonly tx: TxProbe<Tx> | null;
+    readonly retry: RetryProbe | null;
   };
 }
 
@@ -45,6 +52,7 @@ export const conformanceCases: readonly ConformanceCase[] = [
   ...backstopCases,
   ...blockCases,
   ...txCases,
+  ...hookCases,
 ];
 
 /** Run one case: reset, make a fresh Adapter for the schema, run it. Rejects when the case fails. */
@@ -53,17 +61,22 @@ export async function runCase<S extends AnySchema, Tx>(
   params: TestAdapterParams<S, Tx>
 ): Promise<void> {
   await params.reset();
+
+  const unbound = params.makeAdapter();
+
   await c.run({
-    adapter: params.makeAdapter()(params.schema),
+    adapter: unbound(params.schema),
     probe: params.groups.tx,
     resources: params.resources,
+    retry: params.groups.retry,
     schema: params.schema,
+    unbound,
   });
 }
 
 /**
  * Register the Conformance Suite as Vitest tests: one `it` per case.
- * Cases of a group you didn't opt into (`backstop: false`, `tx: null`), or `blocks` cases for a schema without `block`, are registered as skipped.
+ * Cases of a group you didn't opt into (`backstop: false`, `tx: null`, `retry: null`), or `blocks` cases for a schema without `block`, are registered as skipped.
  */
 export function testAdapter<S extends AnySchema, Tx>(
   params: TestAdapterParams<S, Tx>
@@ -73,7 +86,8 @@ export function testAdapter<S extends AnySchema, Tx>(
       const skipped =
         (c.tags.includes("backstop") && !params.groups.backstop) ||
         (c.tags.includes("blocks") && params.schema.block === null) ||
-        (c.tags.includes("tx") && params.groups.tx === null);
+        (c.tags.includes("tx") && params.groups.tx === null) ||
+        (c.tags.includes("retry") && params.groups.retry === null);
 
       it.skipIf(skipped)(c.name, async () => {
         await runCase(c, params);

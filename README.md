@@ -695,11 +695,13 @@ testAdapter({
       write: async (tx) => { /* insert one row in a table of your own through tx */ },
       count: async () => { /* count those rows, outside any transaction */ },
     },
+    // A value your Adapter retries as transient, e.g. a serialization failure; null if it never retries.
+    retry: { transient: () => ({ code: "40001" }) },
   },
 });
 ```
 
-It registers one test per case, including the concurrency cases that catch a missing or broken lock. To run a subset, filter `conformanceCases` by `tags` and call `runCase` yourself.
+It registers one test per case, including the concurrency cases that catch a missing or broken lock, and the Hook cases that prove an in-transaction Hook's throw rolls the write back and a transient retry runs after-commit Hooks once. To run a subset, filter `conformanceCases` by `tags` and call `runCase` yourself.
 
 ## Architecture Decisions
 
