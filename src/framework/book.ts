@@ -121,7 +121,7 @@ export function book<S extends AnySchema, Tx, R = never>(
       Effect.gen(function* bookUnit() {
         // A non-blocking Booking can't conflict.
         if (ctx.codec.isBlocking(status)) {
-          yield* checkOverlap(locked, ctx.codec, range);
+          yield* checkOverlap(ctx, locked, range);
         }
 
         const waived = yield* enforcePolicies(
@@ -151,7 +151,7 @@ export function book<S extends AnySchema, Tx, R = never>(
           // The backstop caught an outside write the lock can't see: report what is there now.
           return yield* Effect.fail<SlotConflict>({
             _tag: "SlotConflict",
-            conflicts: yield* conflictsAt(locked, ctx.codec, range),
+            conflicts: yield* conflictsAt(ctx, locked, range),
           });
         }
 

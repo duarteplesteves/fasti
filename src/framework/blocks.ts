@@ -161,7 +161,7 @@ export function createBlock<S extends AnySchema, Tx, R = never>(
   params: CreateBlockParams<S> &
     AlsoParam<AlsoContext<CreateBlockAlso<S, Tx>>, Tx, R>
 ): WriteEffect<Block<S>, CreateBlockError, R> {
-  const { codec, schema } = ctx;
+  const { schema } = ctx;
   const { resourceId } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
@@ -182,7 +182,7 @@ export function createBlock<S extends AnySchema, Tx, R = never>(
         SlotConflict | AdapterError
       > {
         // Only blocking Bookings conflict with a Block: Blocks may overlap each other (ADR 016).
-        const conflicts = yield* conflictsAt(locked, codec, {
+        const conflicts = yield* conflictsAt(ctx, locked, {
           end,
           excludeBookingId: null,
           kind: "block",
@@ -271,7 +271,7 @@ export function updateBlock<S extends AnySchema, Tx, R = never>(
       > {
         // Only a new range can meet a Booking; a fields-only change keeps the time it had (ADR 016).
         if (range !== null) {
-          const conflicts = yield* conflictsAt(locked, ctx.codec, {
+          const conflicts = yield* conflictsAt(ctx, locked, {
             ...range,
             excludeBookingId: null,
             kind: "block",
