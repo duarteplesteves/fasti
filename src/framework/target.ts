@@ -21,6 +21,12 @@ export type BookingActionName = (typeof bookingActions)[number];
 /** @deprecated Use {@link BookingActionName}. */
 export type ActionTarget = BookingActionName;
 
+/** Every write Action name a schema can have: what a write unit runs. */
+export type AnyActionName =
+  | BookingActionName
+  | "availability.set"
+  | (typeof blockActions)[number];
+
 /** The write Actions named by name, what a Hook can name: `blocks.*` only when the schema has `block`. `transition` is named by its edges. */
 export type WriteActionName<S extends AnySchema> =
   | BookingActionName
@@ -31,7 +37,7 @@ export type WriteActionName<S extends AnySchema> =
 export function writeActionNames<S extends AnySchema>(
   schema: S
 ): readonly WriteActionName<S>[] {
-  const names: readonly string[] = [
+  const names: readonly AnyActionName[] = [
     ...bookingActions,
     "availability.set",
     ...(schema.block === null ? [] : blockActions),
@@ -43,12 +49,14 @@ export function writeActionNames<S extends AnySchema>(
 }
 
 /** A target as stored, its schema erased. */
-type AnyTarget = string | { readonly from?: string; readonly to: string };
+type AnyTarget =
+  | AnyActionName
+  | { readonly from?: string; readonly to: string };
 
-/** Whether `target` is named (an Action) rather than a Transition edge; it doesn't check the name exists. */
-export function isNamedTarget(
-  target: string | { readonly to: string }
-): target is string {
+/** Whether `target` is an Action name rather than a Transition edge. */
+export function isNamedTarget<N extends string>(
+  target: N | { readonly to: string }
+): target is N {
   // oxlint-disable-next-line anti-slop/no-runtime-typeof -- names are strings, edges objects.
   return typeof target === "string";
 }
@@ -77,7 +85,7 @@ export type HookTarget<S extends AnySchema> =
 
 /** What one call is: an Action by name, or the one edge a `transition` moves along. */
 export type CalledTarget =
-  | string
+  | AnyActionName
   | { readonly from: string; readonly to: string };
 
 /** Whether target `t` names `called`: an Action by name, an edge by `{ to }` or by `{ from, to }`. */
