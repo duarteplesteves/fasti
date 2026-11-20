@@ -97,6 +97,7 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
   const notFound: BookingNotFound = { _tag: "BookingNotFound", id };
 
   return lockedById(ctx, {
+    action: "reschedule",
     also: params.also,
     destination: params.resourceId ?? null,
     notFound,

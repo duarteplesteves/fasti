@@ -98,18 +98,25 @@ export { notice } from "./framework/notice.js";
 export type { NoticeDetail, NoticeParams } from "./framework/notice.js";
 
 export type {
+  // oxlint-disable-next-line typescript/no-deprecated -- kept as a public export.
   ActionTarget,
+  BookingActionName,
+  EdgeTarget,
+  HookTarget,
+  PolicyTarget,
+  WriteActionName,
+} from "./framework/target.js";
+
+export type {
   AnyPolicyOf,
   BookCandidate,
   CancelCandidate,
   Candidate,
   CandidateFor,
   DefinePolicyParams,
-  EdgeTarget,
   LoadContext,
   Policy,
   PolicyReads,
-  PolicyTarget,
   RescheduleCandidate,
   TransitionCandidate,
   Violation,

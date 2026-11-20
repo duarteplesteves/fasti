@@ -116,7 +116,7 @@ export function book<S extends AnySchema, Tx, R = never>(
 
   return writeUnit(
     ctx,
-    resourceId,
+    { action: "book", resourceId },
     (locked, now) =>
       Effect.gen(function* bookUnit() {
         // A non-blocking Booking can't conflict.

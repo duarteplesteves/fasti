@@ -1,6 +1,7 @@
 import type { AnySchema } from "../schema/define-schema.js";
 import { definePolicy } from "./policy.js";
-import type { Policy, PolicyTarget } from "./policy.js";
+import type { Policy } from "./policy.js";
+import type { PolicyTarget } from "./target.js";
 
 /** Params of {@link notice}. */
 export interface NoticeParams<
