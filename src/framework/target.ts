@@ -56,6 +56,11 @@ export function isBookingActionName(
   return bookingActions.some((a) => a === target);
 }
 
+/** Whether `target` names an Action that writes a Block. */
+export function isBlockActionName(target: AnyTarget): boolean {
+  return blockActions.some((a) => a === target);
+}
+
 /** A Transition edge: `{ to }` is every declared edge into `to`, `{ from, to }` one edge. Edges into `cancelled` belong to `cancel`. */
 export type EdgeTarget<S extends AnySchema> =
   | { readonly to: TransitionEdge<S>["to"]; readonly from?: never }

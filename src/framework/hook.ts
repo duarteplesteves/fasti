@@ -8,7 +8,12 @@ import type {
 } from "./blocks.js";
 import type { BookAlso } from "./book.js";
 import type { ChangeAlso } from "./booking.js";
-import { checkEdgeTargets, isActionName, matchesTarget } from "./target.js";
+import {
+  checkEdgeTargets,
+  isActionName,
+  isBlockActionName,
+  matchesTarget,
+} from "./target.js";
 import type { CalledTarget, HookTarget } from "./target.js";
 
 /** What one saved write tells its Hooks: `also`'s context plus `action`. One variant per write Action. */
@@ -135,7 +140,7 @@ export function defineHook<
   }
 
   for (const target of appliesTo) {
-    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- names are strings, edges objects; checkEdgeTargets checks the edges.
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- an unknown name is a string too, so isActionName can't tell it from an edge; checkEdgeTargets checks the edges.
     if (typeof target !== "string") {
       continue;
     }
@@ -146,7 +151,7 @@ export function defineHook<
       );
     }
 
-    if (target.startsWith("blocks.") && schema.block === null) {
+    if (isBlockActionName(target) && schema.block === null) {
       throw new Error(
         `fasti: a Hook applies to ${target}, but the schema has no block`
       );
