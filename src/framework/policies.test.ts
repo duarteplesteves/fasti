@@ -78,6 +78,47 @@ const closed = definePolicy(schema, {
   name: "closed",
 });
 
+describe("without policies", () => {
+  it("books, reschedules and cancels as with policies: [], the Invariants and availability still applying", async () => {
+    const adapter = await seeded();
+    const scheduler = createScheduler({ adapter, schema });
+
+    const booking = unwrap(
+      await scheduler.book({ end, resourceId: room, start })
+    );
+
+    await expect(
+      scheduler.book({
+        end: end.add({ hours: 120 }),
+        resourceId: room,
+        start: start.add({ hours: 120 }),
+      })
+    ).resolves.toStrictEqual({
+      error: {
+        _tag: "PolicyViolation",
+        violations: [{ detail: {}, policy: "availability" }],
+      },
+      ok: false,
+    });
+    await expect(
+      scheduler.book({ end, resourceId: room, start })
+    ).resolves.toMatchObject({ error: { _tag: "SlotConflict" }, ok: false });
+
+    const moved = unwrap(
+      await scheduler.reschedule({
+        end: end.add({ hours: 1 }),
+        id: booking.id,
+        start: start.add({ hours: 1 }),
+      })
+    );
+
+    const cancelled = unwrap(await scheduler.cancel({ id: booking.id }));
+
+    expect(moved.start).toStrictEqual(start.add({ hours: 1 }));
+    expect(cancelled.alreadyCancelled).toBeFalsy();
+  });
+});
+
 describe("Policies on book", () => {
   it("refuses with PolicyViolation carrying the broken Policy's detail, and stores nothing", async () => {
     const adapter = await seeded();

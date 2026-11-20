@@ -33,12 +33,9 @@ const [room] = uuidIdResources;
 
 type Tx = TxOf<ReturnType<typeof memoryAdapter>>;
 
-class AppScheduler extends Scheduler<
-  AppScheduler,
-  typeof schema,
-  Tx,
-  readonly []
->()("test/AppScheduler") {}
+class AppScheduler extends Scheduler<AppScheduler, typeof schema, Tx>()(
+  "test/AppScheduler"
+) {}
 
 type Service = SchedulerService<typeof schema, Tx, readonly []>;
 
@@ -412,8 +409,7 @@ const lifecycleSchema = defineSchema({
 class LifecycleScheduler extends Scheduler<
   LifecycleScheduler,
   typeof lifecycleSchema,
-  Tx,
-  readonly []
+  Tx
 >()("test/LifecycleScheduler") {}
 
 describe("Effect form transition", () => {
@@ -637,11 +633,60 @@ describe("Effect form Policies", () => {
     );
   });
 
-  it("requires policies on layer", () => {
-    // @ts-expect-error -- policies is required.
-    expectTypeOf(PolicyScheduler.layer).toBeCallableWith({
-      adapter: memoryAdapter(),
-      schema,
-    });
+  it("books, reschedules and cancels without policies, as with policies: []", async () => {
+    class BareScheduler extends Scheduler<BareScheduler, typeof schema, Tx>()(
+      "test/BareScheduler"
+    ) {}
+
+    const { adapter, booking } = await seeded();
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookMoveCancel() {
+        const scheduler = yield* BareScheduler;
+
+        const outside = yield* Effect.flip(
+          scheduler.book({ end: at(-1), resourceId: room, start: at(-2) })
+        );
+
+        const overlap = yield* Effect.flip(
+          scheduler.book({ end: at(3), resourceId: room, start: at(1) })
+        );
+
+        const moved = yield* scheduler.reschedule({
+          end: at(4),
+          id: booking.id,
+          start: at(3),
+        });
+
+        const cancelled = yield* scheduler.cancel({ id: booking.id });
+
+        return { cancelled, moved, outside, overlap };
+      }).pipe(Effect.provide(BareScheduler.layer({ adapter, schema })))
+    );
+
+    assert(Exit.isSuccess(exit), "expected the layer to provide the service");
+    expect(exit.value.outside._tag).toBe("PolicyViolation");
+    expect(exit.value.overlap._tag).toBe("SlotConflict");
+    expect(exit.value.moved.start).toStrictEqual(at(3));
+    expect(exit.value.cancelled.alreadyCancelled).toBeFalsy();
+    expectTypeOf(BareScheduler.layer).toBeCallableWith({ adapter, schema });
+  });
+
+  it("still refuses duplicate Policy names on layer", () => {
+    class TwiceScheduler extends Scheduler<
+      TwiceScheduler,
+      typeof schema,
+      Tx,
+      readonly [typeof closed, typeof closed]
+    >()("test/TwiceScheduler") {}
+
+    expect(() =>
+      TwiceScheduler.layer({
+        adapter: memoryAdapter(),
+        // @ts-expect-error -- names must be unique.
+        policies: [closed, closed],
+        schema,
+      })
+    ).toThrow("two Policies are named closed");
   });
 });

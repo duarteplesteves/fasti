@@ -832,8 +832,6 @@ describe("Policy types", () => {
   /** Never called: only the types are checked. */
   function refusedCalls() {
     return [
-      // @ts-expect-error -- policies is required.
-      createScheduler({ adapter: memoryAdapter(), schema: defaultSchema }),
       createScheduler({
         adapter: memoryAdapter(),
         // @ts-expect-error -- `closed` is over defaultSchema, with text ids.
@@ -843,13 +841,23 @@ describe("Policy types", () => {
     ];
   }
 
-  it("requires policies, and refuses a Policy from another schema", () => {
+  it("refuses a Policy from another schema", () => {
     expectTypeOf(refusedCalls).toBeFunction();
   });
 
-  it("gives the Effect-form Scheduler a required fourth type parameter", () => {
-    // @ts-expect-error -- the Policies tuple has no default.
-    EffectScheduler<unknown, typeof defaultSchema, undefined>();
+  it("lets policies be omitted, as readonly []", () => {
+    expectTypeOf(
+      createScheduler({ adapter: memoryAdapter(), schema: defaultSchema })
+    ).toEqualTypeOf<Scheduler<typeof defaultSchema, undefined, readonly []>>();
+  });
+
+  it("defaults the Effect-form Scheduler's fourth type parameter to readonly []", () => {
+    expectTypeOf(
+      EffectScheduler<unknown, typeof defaultSchema, undefined>()("test/Bare")
+    ).toEqualTypeOf(
+      // oxlint-disable-next-line typescript/no-unnecessary-type-arguments -- the explicit default is what's compared.
+      EffectScheduler<unknown, typeof defaultSchema, undefined>()("test/Bare")
+    );
     expectTypeOf(
       EffectScheduler<
         unknown,

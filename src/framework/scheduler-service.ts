@@ -141,9 +141,10 @@ export function makeScheduler<
   const P extends readonly AnyPolicyOf<S>[],
 >({
   adapter,
-  policies,
+  policies: given,
   schema,
 }: CreateSchedulerParams<S, Tx, P>): SchedulerActions<S, Tx, P, "effect"> {
+  const policies: readonly AnyPolicyOf<S>[] = given ?? [];
   const names = policies.map((p) => p.name);
   const duplicate = names.find((n, i) => names.indexOf(n) !== i);
 

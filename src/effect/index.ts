@@ -46,7 +46,7 @@ export function Scheduler<
   Self,
   S extends AnySchema,
   Tx,
-  P extends readonly AnyPolicyOf<S>[],
+  P extends readonly AnyPolicyOf<S>[] = readonly [],
 >(): <const Id extends string>(id: Id) => SchedulerClass<Self, Id, S, Tx, P> {
   return (id) => {
     const Tag = Context.Service<Self, SchedulerService<S, Tx, P>>()(id);

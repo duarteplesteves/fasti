@@ -17,8 +17,8 @@ export interface CreateSchedulerParams<
   readonly schema: S;
   /** The Adapter over the developer's database, e.g. `drizzleAdapter(db)`. A schema with `block` needs one that implements Blocks. */
   readonly adapter: Adapter<Tx, GroupsOf<S>>;
-  /** The Policies from `definePolicy`, names unique; `[]` for none. The built-in `availability` always runs. */
-  readonly policies: P & UniqueNames<P>;
+  /** The Policies from `definePolicy`, names unique; leave out for none. The built-in `availability` always runs; without `notice`, past starts are bookable. */
+  readonly policies?: P & UniqueNames<P>;
 }
 
 /** The Actions, plain form: no Effect in sight; expected failures are values, defects reject. */
@@ -127,14 +127,14 @@ function toPlain(service: object): PlainTree {
  *
  * @example
  * ```ts
- * const scheduler = createScheduler({ schema, adapter: drizzleAdapter(db), policies: [] });
+ * const scheduler = createScheduler({ schema, adapter: drizzleAdapter(db) });
  * const result = await scheduler.book({ resourceId, start, end });
  * ```
  */
 export function createScheduler<
   S extends AnySchema,
   Tx,
-  const P extends readonly AnyPolicyOf<S>[],
+  const P extends readonly AnyPolicyOf<S>[] = readonly [],
 >(params: CreateSchedulerParams<S, Tx, P>): Scheduler<S, Tx, P> {
   // SAFETY: SchedulerActions<S, Tx, "plain"> is the "effect" form with each Run mapped as this walk does.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the walk can't carry the form parameter.
