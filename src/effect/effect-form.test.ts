@@ -1,7 +1,16 @@
 // oxlint-disable max-classes-per-file -- one service class per schema under test.
-import { Cause, Context, Effect, Exit, Layer } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  References,
+} from "effect";
 import { TestClock } from "effect/testing";
-import { assert, describe, expect, expectTypeOf, it } from "vitest";
+import { assert, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import type { Adapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
@@ -9,6 +18,7 @@ import { mintBookingId } from "../framework/booking-id.js";
 import {
   column,
   createScheduler,
+  defineHook,
   definePolicy,
   defineSchema,
   notice,
@@ -688,5 +698,302 @@ describe("Effect form Policies", () => {
         schema,
       })
     ).toThrow("two Policies are named closed");
+  });
+});
+
+/** A log entry as {@link capturing} records it: the `action` annotation, the level and the cause. */
+interface LogEntry {
+  readonly action: unknown;
+  readonly logLevel: string;
+  readonly cause: Cause.Cause<unknown>;
+}
+
+/** A Logger layer, in place of the default one, that records each entry into `into`. */
+function capturing(into: LogEntry[]) {
+  return Logger.layer([
+    Logger.make(({ cause, fiber, logLevel }) => {
+      into.push({
+        action: fiber.getRef(References.CurrentLogAnnotations)["action"],
+        cause,
+        logLevel,
+      });
+    }),
+  ]);
+}
+
+describe("Effect form Hooks", () => {
+  const slot = { end: at(4), resourceId: room, start: at(3) };
+
+  it("run as in the plain form: `tx` in the transaction, after `also`, in order", async () => {
+    const { adapter } = await seeded();
+    const log: unknown[] = [];
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: ({ action }) => {
+          log.push(`after ${action}`);
+        },
+        when: "afterCommit",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: ({ action, tx }) => {
+          log.push(`in ${action}`, tx);
+        },
+        when: "inTransaction",
+      }),
+    ];
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookTwice() {
+        const s = yield* AppScheduler;
+
+        const withAlso = yield* s.book({
+          ...slot,
+          also: () => Effect.sync(() => log.push("also")),
+        });
+
+        const bare = yield* s.book({ ...slot, end: at(6), start: at(5) });
+
+        return { bare, withAlso };
+      }).pipe(Effect.provide(AppScheduler.layer({ adapter, hooks, schema })))
+    );
+
+    assert(Exit.isSuccess(exit), "expected both bookings to succeed");
+    expect(log).toStrictEqual([
+      "also",
+      "in book",
+      undefined,
+      "after book",
+      "in book",
+      undefined,
+      "after book",
+    ]);
+    expect(exit.value.bare).not.toHaveProperty("also");
+  });
+
+  it("run none on a SlotConflict or a Veto", async () => {
+    const { adapter } = await seeded();
+    const ran = vi.fn<() => void>();
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: "*",
+        run: ran,
+        when: "inTransaction",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: "*",
+        run: ran,
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookFailing() {
+        const s = yield* AppScheduler;
+
+        const conflict = yield* Effect.flip(
+          s.book({ end: at(2), resourceId: room, start: at(1) })
+        );
+
+        const vetoed = yield* Effect.flip(
+          s.book({ ...slot, also: () => Effect.fail("no") })
+        );
+
+        return [conflict._tag, vetoed._tag];
+      }).pipe(Effect.provide(AppScheduler.layer({ adapter, hooks, schema })))
+    );
+
+    expect(exit).toStrictEqual(Exit.succeed(["SlotConflict", "Vetoed"]));
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it("fail with a defect carrying an in-transaction throw, and store no Booking", async () => {
+    const { adapter } = await seeded();
+    const thrown = new Error("no");
+    const after = vi.fn<() => void>();
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: () => {
+          throw thrown;
+        },
+        when: "inTransaction",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: after,
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookThrowing() {
+        return yield* (yield* AppScheduler).book(slot);
+      }).pipe(Effect.provide(AppScheduler.layer({ adapter, hooks, schema })))
+    );
+
+    assert(Exit.isFailure(exit), "expected the booking to fail");
+    expect(Cause.hasDies(exit.cause)).toBeTruthy();
+    expect(Cause.squash(exit.cause)).toBe(thrown);
+    expect(after).not.toHaveBeenCalled();
+    await expect(
+      adapter(schema).listBookings({
+        overlapping: { from: slot.start, to: slot.end },
+        resourceId: room,
+      })
+    ).resolves.toStrictEqual([]);
+  });
+
+  it("log an after-commit failure to the caller's Logger at error level, annotated with the Action", async () => {
+    const { adapter } = await seeded();
+    const logs: LogEntry[] = [];
+    const second = vi.fn<() => void>();
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: () => {
+          throw new Error("mail server down");
+        },
+        when: "afterCommit",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: second,
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookLogged() {
+        return yield* (yield* AppScheduler).book(slot);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            AppScheduler.layer({ adapter, hooks, schema }),
+            capturing(logs)
+          )
+        )
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected the booking to succeed");
+    expect(exit.value).toMatchObject({ status: "booked" });
+    expect(second).toHaveBeenCalledOnce();
+    expect(logs).toMatchObject([{ action: "book", logLevel: "Error" }]);
+    expect(Cause.pretty(logs[0]?.cause ?? Cause.empty)).toContain(
+      "mail server down"
+    );
+  });
+
+  it("stay interrupted when the fiber is interrupted during an after-commit Hook", async () => {
+    const { adapter } = await seeded();
+    const logs: LogEntry[] = [];
+    const started = Promise.withResolvers<undefined>();
+    const second = vi.fn<() => void>();
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: async () => {
+          started.resolve(undefined);
+          // Never settles: only the interrupt ends it.
+          await Promise.withResolvers<undefined>().promise;
+        },
+        when: "afterCommit",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: second,
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromise(
+      Effect.gen(function* bookInterrupted() {
+        const s = yield* AppScheduler;
+        const fiber = yield* Effect.forkChild(s.book(slot));
+
+        yield* Effect.promise(async () => {
+          await started.promise;
+        });
+        yield* Fiber.interrupt(fiber);
+
+        return yield* Fiber.await(fiber);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            AppScheduler.layer({ adapter, hooks, schema }),
+            capturing(logs)
+          )
+        )
+      )
+    );
+
+    expect(Exit.hasInterrupts(exit)).toBeTruthy();
+    expect(second).not.toHaveBeenCalled();
+    expect(logs).toStrictEqual([]);
+  });
+
+  it("take after-commit Hooks over any Adapter, and in-transaction ones over this Adapter's `tx` only", () => {
+    interface DbTx {
+      readonly db: "tx";
+    }
+
+    /** Type-checked only: never called. */
+    function layersOver(dbAdapter: Adapter<DbTx, "blocks">) {
+      const adapter = memoryAdapter();
+      const elsewhere = { appliesTo: ["book"], run: () => {} } as const;
+
+      const afterCommit = defineHook(schema, dbAdapter, {
+        ...elsewhere,
+        when: "afterCommit",
+      });
+
+      const inTransaction = defineHook(schema, dbAdapter, {
+        ...elsewhere,
+        when: "inTransaction",
+      });
+
+      return [
+        AppScheduler.layer({ adapter, hooks: [afterCommit], schema }),
+        AppScheduler.layer({
+          adapter,
+          // @ts-expect-error -- its `tx` is another Adapter's.
+          hooks: [inTransaction],
+          schema,
+        }),
+      ];
+    }
+
+    expectTypeOf(layersOver).returns.items.toEqualTypeOf<
+      Layer.Layer<AppScheduler>
+    >();
+  });
+
+  it("leave the Action types as they are: a layer with `hooks` gives the same Service", async () => {
+    const adapter = memoryAdapter();
+
+    const hook = defineHook(schema, adapter, {
+      appliesTo: "*",
+      run: () => {},
+      when: "afterCommit",
+    });
+
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(
+        Effect.gen(function* withHooks() {
+          return yield* AppScheduler;
+        }),
+        AppScheduler.layer({ adapter, hooks: [hook], schema })
+      )
+    );
+
+    assert(Exit.isSuccess(exit), "expected the layer to provide the service");
+    expectTypeOf(exit.value).toEqualTypeOf<Service>();
   });
 });
