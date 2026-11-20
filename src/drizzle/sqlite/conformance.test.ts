@@ -58,7 +58,7 @@ function suite<S extends AnySchema>(
 ): void {
   const params: TestAdapterParams<S, Tx> = {
     // SQLite has no exclusion constraint, so no backstop.
-    groups: { backstop: false, tx: probe },
+    groups: { backstop: false, retry: null, tx: probe },
     makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       for (const t of [...fastiTables, tables.testProbe]) {

@@ -2,6 +2,7 @@ export type {
   CaseContext,
   CaseTag,
   ConformanceCase,
+  RetryProbe,
   TxProbe,
 } from "./conformance-case.js";
 
