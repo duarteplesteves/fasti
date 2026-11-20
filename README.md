@@ -68,7 +68,7 @@ export const tables = {
 
 ```typescript
 const db = drizzle({ client: new Pool({ connectionString: process.env.DATABASE_URL }) });
-const scheduler = createScheduler({ adapter: drizzleAdapter(db), policies: [], schema });
+const scheduler = createScheduler({ adapter: drizzleAdapter(db), schema });
 
 await scheduler.availability.set({
   resourceId: "room-1",
@@ -142,7 +142,7 @@ import { Effect } from "effect";
 
 const adapter = drizzleAdapter(db);
 
-class AppScheduler extends Scheduler<AppScheduler, typeof schema, TxOf<typeof adapter>, readonly []>()("app/Scheduler") {}
+class AppScheduler extends Scheduler<AppScheduler, typeof schema, TxOf<typeof adapter>>()("app/Scheduler") {}
 
 const program = Effect.gen(function* bookOne() {
   const scheduler = yield* AppScheduler;
@@ -153,11 +153,11 @@ const program = Effect.gen(function* bookOne() {
 });
 
 await Effect.runPromise(
-  program.pipe(Effect.provide(AppScheduler.layer({ adapter, policies: [], schema })))
+  program.pipe(Effect.provide(AppScheduler.layer({ adapter, schema })))
 );
 ```
 
-The third type parameter is your Adapter's transaction handle, the `tx` an `also` gets. The fourth, also required, is your [Policies](#policies) tuple: `readonly []` for none, or `typeof policies` for a `const policies = [...] as const` you pass to `layer`. In this form `also` returns an Effect: it may require your own services (they join the Action's requirements), and its `now` comes from Effect's `Clock`, so `TestClock` controls it.
+The third type parameter is your Adapter's transaction handle, the `tx` an `also` gets. The optional fourth is your [Policies](#policies) tuple, `typeof policies` for a `const policies = [...] as const` you pass to `layer`. Leave both out for none. In this form `also` returns an Effect: it may require your own services (they join the Action's requirements), and its `now` comes from Effect's `Clock`, so `TestClock` controls it.
 
 Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it finishes, then commits or rolls back.
 
@@ -379,7 +379,7 @@ Edges into `cancelled` belong to `"cancel"`. An undeclared edge, `{ to }` with n
 
 **`notice`.** The prebuilt Policy, written with `definePolicy`: `notice(schema, { minimum, appliesTo, name? })` breaks when the start is before `now + minimum`, with `detail: { earliest }`.
 
-- `minimum` is whole minutes, at least 0; anything else throws. `0` still refuses a start in the past, which fasti otherwise accepts: with `policies: []`, past starts are bookable.
+- `minimum` is whole minutes, at least 0; anything else throws. `0` still refuses a start in the past, which fasti otherwise accepts: without `notice`, past starts are bookable.
 - On `book` and `reschedule` it compares the candidate's start; on `cancel` and Transition edges, the stored Booking's.
 - `name` defaults to `"notice"`. Rename it to register more than one and relax each on its own:
 

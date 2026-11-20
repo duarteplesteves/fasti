@@ -832,8 +832,6 @@ describe("Policy types", () => {
   /** Never called: only the types are checked. */
   function refusedCalls() {
     return [
-      // @ts-expect-error -- policies is required.
-      createScheduler({ adapter: memoryAdapter(), schema: defaultSchema }),
       createScheduler({
         adapter: memoryAdapter(),
         // @ts-expect-error -- `closed` is over defaultSchema, with text ids.
@@ -843,28 +841,44 @@ describe("Policy types", () => {
     ];
   }
 
-  it("requires policies, and refuses a Policy from another schema", () => {
+  it("refuses a Policy from another schema", () => {
     expectTypeOf(refusedCalls).toBeFunction();
   });
 
-  it("gives the Effect-form Scheduler a required fourth type parameter", () => {
-    // @ts-expect-error -- the Policies tuple has no default.
-    EffectScheduler<unknown, typeof defaultSchema, undefined>();
+  it("lets policies be omitted, as readonly []", () => {
     expectTypeOf(
-      EffectScheduler<
-        unknown,
-        typeof defaultSchema,
-        undefined,
-        readonly [typeof closed]
-      >()("test/WithClosed").layer
+      createScheduler({ adapter: memoryAdapter(), schema: defaultSchema })
+    ).toEqualTypeOf<Scheduler<typeof defaultSchema, undefined, readonly []>>();
+  });
+
+  it("defaults the Effect-form Scheduler's fourth type parameter to readonly []", () => {
+    expectTypeOf(
+      EffectScheduler<unknown, typeof defaultSchema, undefined>()("test/Bare")
+        .layer
     )
       .parameter(0)
       .toEqualTypeOf<
-        CreateSchedulerParams<
-          typeof defaultSchema,
-          undefined,
-          readonly [typeof closed]
-        >
+        CreateSchedulerParams<typeof defaultSchema, undefined, readonly []>
       >();
+  });
+
+  it("requires policies on layer when the Effect-form Scheduler declares some", () => {
+    const WithClosed = EffectScheduler<
+      unknown,
+      typeof defaultSchema,
+      undefined,
+      readonly [typeof closed]
+    >()("test/WithClosed");
+
+    expectTypeOf(WithClosed.layer).toBeCallableWith({
+      adapter: memoryAdapter(),
+      policies: [closed],
+      schema: defaultSchema,
+    });
+    // @ts-expect-error -- the class declares `closed`, so `layer` must be given it.
+    expectTypeOf(WithClosed.layer).toBeCallableWith({
+      adapter: memoryAdapter(),
+      schema: defaultSchema,
+    });
   });
 });
