@@ -773,6 +773,43 @@ describe("Effect form Hooks", () => {
     expect(exit.value.bare).not.toHaveProperty("also");
   });
 
+  it("run none on a SlotConflict or a Veto", async () => {
+    const { adapter } = await seeded();
+    const ran = vi.fn<() => void>();
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: "*",
+        run: ran,
+        when: "inTransaction",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: "*",
+        run: ran,
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* bookFailing() {
+        const s = yield* AppScheduler;
+
+        const conflict = yield* Effect.flip(
+          s.book({ end: at(2), resourceId: room, start: at(1) })
+        );
+
+        const vetoed = yield* Effect.flip(
+          s.book({ ...slot, also: () => Effect.fail("no") })
+        );
+
+        return [conflict._tag, vetoed._tag];
+      }).pipe(Effect.provide(AppScheduler.layer({ adapter, hooks, schema })))
+    );
+
+    expect(exit).toStrictEqual(Exit.succeed(["SlotConflict", "Vetoed"]));
+    expect(ran).not.toHaveBeenCalled();
+  });
+
   it("fail with a defect carrying an in-transaction throw, and store no Booking", async () => {
     const { adapter } = await seeded();
     const thrown = new Error("no");
@@ -865,7 +902,7 @@ describe("Effect form Hooks", () => {
         run: async () => {
           started.resolve(undefined);
           // Never settles: only the interrupt ends it.
-          await Effect.runPromise(Effect.never);
+          await Promise.withResolvers<undefined>().promise;
         },
         when: "afterCommit",
       }),
@@ -938,7 +975,7 @@ describe("Effect form Hooks", () => {
     >();
   });
 
-  it("leave the Action types as they are without Hooks", async () => {
+  it("leave the Action types as they are: a layer with `hooks` gives the same Service", async () => {
     const adapter = memoryAdapter();
 
     const hook = defineHook(schema, adapter, {
