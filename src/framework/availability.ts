@@ -29,9 +29,11 @@ export interface SetAvailabilityValue {
 }
 
 /** What `availability.set`'s `also` gets: the rules after and before, `previous` read under the lock. */
-export interface SetAvailabilityAlso<Tx> {
+export interface SetAvailabilityAlso<S extends AnySchema, Tx> {
   /** The Adapter's transaction handle: write through it to share the unit. */
   readonly tx: Tx;
+  /** The Resource whose rules were replaced. */
+  readonly resourceId: ResourceIdOf<S>;
   /** The rules as just stored. */
   readonly rules: readonly RuleRecord[];
   /** The rules as they were. */
@@ -60,7 +62,7 @@ export function setAvailability<S extends AnySchema, Tx, R = never>(
     resourceId,
     rules,
   }: SetAvailabilityParams<S> &
-    AlsoParam<AlsoContext<SetAvailabilityAlso<Tx>>, Tx, R>
+    AlsoParam<AlsoContext<SetAvailabilityAlso<S, Tx>>, Tx, R>
 ): WriteEffect<SetAvailabilityValue, SetAvailabilityError, R> {
   const coreId = String(resourceId);
 
@@ -86,7 +88,7 @@ export function setAvailability<S extends AnySchema, Tx, R = never>(
 
         return {
           _tag: "Done",
-          context: { previous, rules: stored },
+          context: { previous, resourceId, rules: stored },
           value: { rules: stored },
         } as const;
       }),

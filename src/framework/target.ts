@@ -43,7 +43,9 @@ type AnyTarget =
   | { readonly from?: string; readonly to: string };
 
 /** Whether `target` names a write Action rather than a Transition edge. */
-export function isActionName(target: AnyTarget): target is AnyActionName {
+export function isActionName(
+  target: string | { readonly to: string }
+): target is AnyActionName {
   return writeActions.some((a) => a === target);
 }
 

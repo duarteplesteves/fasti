@@ -144,7 +144,9 @@ describe("package export surface", () => {
     expectTypeOf<root.CancelParams<S>>().toHaveProperty("id");
     expectTypeOf<root.BookAlso<S, "tx">["tx"]>().toEqualTypeOf<"tx">();
     expectTypeOf<root.ChangeAlso<S, "tx">>().toHaveProperty("previous");
-    expectTypeOf<root.SetAvailabilityAlso<"tx">>().toHaveProperty("rules");
+    expectTypeOf<
+      root.SetAvailabilityAlso<root.AnySchema, "tx">
+    >().toHaveProperty("rules");
     expectTypeOf<root.CreateBlockAlso<S, "tx">>().toHaveProperty("block");
     expectTypeOf<root.UpdateBlockAlso<S, "tx">>().toHaveProperty("previous");
     expectTypeOf<root.DeleteBlockAlso<S, "tx">>().toHaveProperty("previous");

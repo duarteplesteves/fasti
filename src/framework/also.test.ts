@@ -474,6 +474,7 @@ const cases: readonly AlsoCase[] = [
   {
     context: ({ rules }) => ({
       previous: rules,
+      resourceId: room,
       rules: [{ ...newRule, exceptions: [] }],
     }),
     name: "availability.set",
