@@ -21,13 +21,13 @@ export type BookingActionName = (typeof bookingActions)[number];
 /** @deprecated Use {@link BookingActionName}. */
 export type ActionTarget = BookingActionName;
 
-/** Every write Action, by name: what a Hook can name. `blocks.*` only when the schema has `block`. */
+/** The write Actions named by name, what a Hook can name: `blocks.*` only when the schema has `block`. `transition` is named by its edges. */
 export type WriteActionName<S extends AnySchema> =
   | BookingActionName
   | "availability.set"
   | (HasBlocks<S> extends true ? (typeof blockActions)[number] : never);
 
-/** Every write Action's name, whatever the schema. */
+/** Every write Action named by name, whatever the schema. */
 const writeActions = [
   ...bookingActions,
   "availability.set",
