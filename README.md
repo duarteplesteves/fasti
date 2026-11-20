@@ -21,7 +21,7 @@ One package, several entry points:
 
 | Import                          | What it holds                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------- |
-| `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, the `column` helpers and the error types.            |
+| `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, `definePolicy`, `notice`, `defineHook`, the `column` helpers and the error types. |
 | `@fastijs/scheduler/effect`     | `Scheduler`, the Effect form of the Actions.                                            |
 | `@fastijs/scheduler/drizzle/pg` | `drizzleAdapter`, the table builders and `backstopSql` (needs `drizzle-orm` 1.0 RC.5+). |
 | `@fastijs/scheduler/drizzle/sqlite` | The same names as `drizzle/pg`, for libsql file databases (needs `drizzle-orm` 1.0 RC.5+ and `@libsql/client`). |

@@ -9,4 +9,3 @@
 
 See the README's Hooks section and ADR 017.
 
-**Breaking, for custom Adapter authors only:** `testAdapter` now requires `groups.retry`: pass a `RetryProbe`, or `retry: null` if your Adapter never retries. **Deprecated:** `ActionTarget`, now an alias of `BookingActionName`.
