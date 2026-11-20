@@ -93,6 +93,10 @@ export type {
 
 export { definePolicy } from "./framework/policy.js";
 
+export { defineHook } from "./framework/hook.js";
+
+export type { DefineHookParams, Hook, HookEvent } from "./framework/hook.js";
+
 export { notice } from "./framework/notice.js";
 
 export type { NoticeDetail, NoticeParams } from "./framework/notice.js";

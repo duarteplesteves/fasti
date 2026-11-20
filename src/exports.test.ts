@@ -43,6 +43,7 @@ const surface = [
       "AdapterError",
       "column",
       "createScheduler",
+      "defineHook",
       "definePolicy",
       "defineSchema",
       "notice",

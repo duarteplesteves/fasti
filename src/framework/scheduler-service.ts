@@ -36,6 +36,7 @@ import type { EffectAdapter } from "./effect-adapter.js";
 import { findSlots } from "./find-slots.js";
 import type { FindSlotsAction, FindSlotsParams } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
+import type { AnyHookOf } from "./hook.js";
 import type { AnyPolicyOf, ViolationFor } from "./policy.js";
 import { reschedule } from "./reschedule.js";
 import type { RescheduleError, RescheduleParams } from "./reschedule.js";
@@ -49,6 +50,8 @@ export interface ActionContext<S extends AnySchema, Tx> {
   readonly adapter: EffectAdapter<S, Tx>;
   /** The developer's Policies, names unique. */
   readonly policies: readonly AnyPolicyOf<S>[];
+  /** The developer's Hooks, in order; `[]` when none. */
+  readonly hooks: readonly AnyHookOf<S, Tx>[];
 }
 
 /**
@@ -141,6 +144,7 @@ export function makeScheduler<
   const P extends readonly AnyPolicyOf<S>[],
 >({
   adapter,
+  hooks = [],
   policies: registered,
   schema,
 }: CreateSchedulerParams<S, Tx, P>): SchedulerActions<S, Tx, P, "effect"> {
@@ -156,6 +160,7 @@ export function makeScheduler<
   const ctx: ActionContext<S, Tx> = {
     adapter: liftAdapter(adapter(schema), schema),
     codec: statusCodec(schema),
+    hooks,
     policies,
     schema,
   };

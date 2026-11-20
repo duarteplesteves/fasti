@@ -28,7 +28,7 @@ export interface LockedByIdParams<
   Rec extends { readonly resourceId: ResourceIdOf<S> },
   NF,
   V,
-  C,
+  C extends object,
   E,
   R,
 > {
@@ -59,7 +59,7 @@ export function lockedById<
   Rec extends { readonly resourceId: ResourceIdOf<S> },
   NF,
   V,
-  C,
+  C extends object,
   E,
   R,
 >(
