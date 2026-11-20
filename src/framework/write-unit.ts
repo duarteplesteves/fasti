@@ -1,4 +1,4 @@
-import { Cause, Clock, Effect } from "effect";
+import { Cause, Clock, Effect, pipe } from "effect";
 
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema, BlockSchema } from "../schema/define-schema.js";
@@ -80,70 +80,76 @@ export function writeUnit<S extends AnySchema, Tx, V, C extends object, E, R>(
       const outcome = yield* work(locked, now);
 
       if (outcome._tag === "NoOp") {
-        return { done: null, value: outcome.value };
+        return { afterCommit: Effect.void, value: outcome.value };
       }
 
-      let value: V | { readonly also: unknown } = outcome.value;
-
-      if (also !== undefined) {
-        // A failure fails the unit, so the Adapter rolls fasti's write back.
-        const alsoValue = yield* Effect.mapError(
-          also({ ...outcome.context, now, tx: locked.tx }),
-          (reason): Vetoed<unknown> => ({ _tag: "Vetoed", reason })
-        );
-
-        value =
-          outcome.value === undefined
-            ? { also: alsoValue }
-            : { ...outcome.value, also: alsoValue };
-      }
+      const value =
+        also === undefined
+          ? outcome.value
+          : yield* also({ ...outcome.context, now, tx: locked.tx }).pipe(
+              // A failure fails the unit, so the Adapter rolls fasti's write back.
+              Effect.mapError((reason): Vetoed<unknown> => ({
+                _tag: "Vetoed",
+                reason,
+              })),
+              Effect.map((alsoValue) =>
+                outcome.value === undefined
+                  ? { also: alsoValue }
+                  : { ...outcome.value, also: alsoValue }
+              )
+            );
 
       const called = calledTarget(site.action, outcome.context);
+      const applying = ctx.hooks.filter((hook) => hookApplies(hook, called));
 
       // Each Action's Done context is its `also` context without `tx`/`now`: with these, its HookEvent minus `tx`.
       // oxlint-disable-next-line anti-slop/no-known-value-widening -- C can't be tied to the Action's name; the Hook calls below assert the event's type.
       const event: object = { ...outcome.context, action: site.action, now };
 
-      for (const hook of ctx.hooks) {
-        if (hook.when === "inTransaction" && hookApplies(hook, called)) {
-          // A throw is a defect: it rolls the unit back, and the Action rejects with it.
-          yield* Effect.promise(async () => {
-            // SAFETY: `event` with `tx` is the Action's HookEvent (see above); the generic C can't be tied to the Action's name.
-            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-            await hook.run({ ...event, tx: locked.tx } as HookEvent<S, Tx>);
-          });
-        }
-      }
+      // A throw is a defect: it rolls the unit back, and the Action rejects with it.
+      yield* pipe(
+        applying,
+        Effect.forEach((hook) =>
+          hook.when === "inTransaction"
+            ? Effect.promise(async () => {
+                // SAFETY: `event` with `tx` is the Action's HookEvent (see above); the generic C can't be tied to the Action's name.
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+                await hook.run({ ...event, tx: locked.tx } as HookEvent<S, Tx>);
+              })
+            : Effect.void
+        )
+      );
 
-      return { done: { called, event }, value };
+      // Built here, run once the unit has committed: a failure is logged, and the next Hook still runs.
+      const afterCommit = pipe(
+        applying,
+        Effect.forEach((hook) =>
+          hook.when === "afterCommit"
+            ? Effect.promise(async () => {
+                // SAFETY: `event` is the Action's HookEvent without `tx` (see above).
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+                await hook.run(event as Committed<HookEvent<S, Tx>>);
+              }).pipe(
+                Effect.catchCause((cause) =>
+                  // An interrupt isn't the Hook failing: let it stop the rest.
+                  Cause.hasInterrupts(cause)
+                    ? Effect.failCause(cause)
+                    : Effect.logError(
+                        "fasti: an after-commit Hook failed",
+                        cause
+                      )
+                )
+              )
+            : Effect.void
+        ),
+        Effect.annotateLogs({ action: site.action })
+      );
+
+      return { afterCommit, value };
     })
   );
 
-  return Effect.gen(function* writeUnitThenHooks() {
-    const { done, value } = yield* unit;
-
-    if (done === null) {
-      return value;
-    }
-
-    for (const hook of ctx.hooks) {
-      if (hook.when === "afterCommit" && hookApplies(hook, done.called)) {
-        yield* Effect.promise(async () => {
-          // SAFETY: `event` is the Action's HookEvent without `tx` (see writeUnitRun).
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-          await hook.run(done.event as Committed<HookEvent<S, Tx>>);
-        }).pipe(
-          Effect.catchCause((cause) =>
-            // An interrupt isn't the Hook failing: let it stop the rest.
-            Cause.hasInterrupts(cause)
-              ? Effect.failCause(cause)
-              : Effect.logError("fasti: an after-commit Hook failed", cause)
-          ),
-          Effect.annotateLogs({ action: site.action })
-        );
-      }
-    }
-
-    return value;
-  });
+  return unit.pipe(
+    Effect.flatMap(({ afterCommit, value }) => Effect.as(afterCommit, value))
+  );
 }

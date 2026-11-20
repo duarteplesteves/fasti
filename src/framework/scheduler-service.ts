@@ -142,13 +142,13 @@ export function makeScheduler<
   S extends AnySchema,
   Tx,
   const P extends readonly AnyPolicyOf<S>[],
->({
-  adapter,
-  hooks = [],
-  policies: registered,
-  schema,
-}: CreateSchedulerParams<S, Tx, P>): SchedulerActions<S, Tx, P, "effect"> {
-  const policies: readonly AnyPolicyOf<S>[] = registered ?? [];
+>(
+  registered: CreateSchedulerParams<S, Tx, P>
+): SchedulerActions<S, Tx, P, "effect"> {
+  const { adapter, schema } = registered;
+  // Widened from the caller's P: only the types need the tuple.
+  const policies: readonly AnyPolicyOf<S>[] = registered.policies ?? [];
+  const hooks: readonly AnyHookOf<S, Tx>[] = registered.hooks ?? [];
   const names = policies.map((p) => p.name);
   const duplicate = names.find((n, i) => names.indexOf(n) !== i);
 
