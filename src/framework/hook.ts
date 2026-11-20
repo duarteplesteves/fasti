@@ -26,7 +26,7 @@ export type HookEvent<S extends AnySchema, Tx> =
       : never);
 
 /** The events a Hook with targets `T` sees: names by `action`, edges as `"transition"`. */
-export type EventFor<
+type EventFor<
   S extends AnySchema,
   Tx,
   T extends HookTarget<S>,
@@ -38,7 +38,7 @@ export type EventFor<
 export type Committed<E> = E extends unknown ? Omit<E, "tx"> : never;
 
 /** What `appliesTo` takes: `"*"` for every write Action, or at least one target. */
-export type HookTargets<S extends AnySchema> =
+type HookTargets<S extends AnySchema> =
   | "*"
   | readonly [HookTarget<S>, ...HookTarget<S>[]];
 

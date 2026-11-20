@@ -190,6 +190,8 @@ describe("Hook order", () => {
 });
 
 describe("Hook failures", () => {
+  const thrown = new Error("no");
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -198,14 +200,14 @@ describe("Hook failures", () => {
     [
       "sync",
       () => {
-        throw new Error("no");
+        throw thrown;
       },
     ],
     [
       "async",
       async () => {
         await Promise.resolve();
-        throw new Error("no");
+        throw thrown;
       },
     ],
   ] as const)(
@@ -226,7 +228,7 @@ describe("Hook failures", () => {
         }),
       ]);
 
-      await expect(scheduler.book(slot)).rejects.toThrow("no");
+      await expect(scheduler.book(slot)).rejects.toBe(thrown);
 
       expect(after).not.toHaveBeenCalled();
       await expect(
