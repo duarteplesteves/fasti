@@ -854,25 +854,31 @@ describe("Policy types", () => {
   it("defaults the Effect-form Scheduler's fourth type parameter to readonly []", () => {
     expectTypeOf(
       EffectScheduler<unknown, typeof defaultSchema, undefined>()("test/Bare")
-    ).toEqualTypeOf(
-      // oxlint-disable-next-line typescript/no-unnecessary-type-arguments -- the explicit default is what's compared.
-      EffectScheduler<unknown, typeof defaultSchema, undefined>()("test/Bare")
-    );
-    expectTypeOf(
-      EffectScheduler<
-        unknown,
-        typeof defaultSchema,
-        undefined,
-        readonly [typeof closed]
-      >()("test/WithClosed").layer
+        .layer
     )
       .parameter(0)
       .toEqualTypeOf<
-        CreateSchedulerParams<
-          typeof defaultSchema,
-          undefined,
-          readonly [typeof closed]
-        >
+        CreateSchedulerParams<typeof defaultSchema, undefined, readonly []>
       >();
+  });
+
+  it("requires policies on layer when the Effect-form Scheduler declares some", () => {
+    const WithClosed = EffectScheduler<
+      unknown,
+      typeof defaultSchema,
+      undefined,
+      readonly [typeof closed]
+    >()("test/WithClosed");
+
+    expectTypeOf(WithClosed.layer).toBeCallableWith({
+      adapter: memoryAdapter(),
+      policies: [closed],
+      schema: defaultSchema,
+    });
+    // @ts-expect-error -- the class declares `closed`, so `layer` must be given it.
+    expectTypeOf(WithClosed.layer).toBeCallableWith({
+      adapter: memoryAdapter(),
+      schema: defaultSchema,
+    });
   });
 });

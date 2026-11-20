@@ -2,7 +2,7 @@ import { Context, Layer } from "effect";
 
 import type { Adapter } from "../adapter/contract.js";
 import type { CreateSchedulerParams } from "../framework/create-scheduler.js";
-import type { AnyPolicyOf } from "../framework/policy.js";
+import type { AnyPolicyOf, UniqueNames } from "../framework/policy.js";
 import { makeScheduler } from "../framework/scheduler-service.js";
 import type { SchedulerService } from "../framework/scheduler-service.js";
 import type { AnySchema } from "../schema/define-schema.js";
@@ -11,6 +11,17 @@ export type { SchedulerService } from "../framework/scheduler-service.js";
 
 /** An Adapter's transaction handle, to name the `Tx` of {@link Scheduler}: `TxOf<typeof adapter>`. */
 export type TxOf<A> = A extends Adapter<infer Tx, infer _G> ? Tx : never;
+
+/** Params of a {@link SchedulerClass}'s `layer`: `policies` can be left out only when the class declares none, since `P` is fixed by then. */
+export type LayerParams<
+  S extends AnySchema,
+  Tx,
+  P extends readonly AnyPolicyOf<S>[],
+> = [P] extends [readonly []]
+  ? CreateSchedulerParams<S, Tx, P>
+  : CreateSchedulerParams<S, Tx, P> & {
+      readonly policies: P & UniqueNames<P>;
+    };
 
 /** The class {@link Scheduler} returns: a service tag with a static `layer`. */
 export type SchedulerClass<
@@ -21,9 +32,7 @@ export type SchedulerClass<
   P extends readonly AnyPolicyOf<S>[],
 > = Context.ServiceClass<Self, Id, SchedulerService<S, Tx, P>> & {
   /** Provide the Actions over `schema`, `adapter` and `policies`. */
-  readonly layer: (
-    params: CreateSchedulerParams<S, Tx, P>
-  ) => Layer.Layer<Self>;
+  readonly layer: (params: LayerParams<S, Tx, P>) => Layer.Layer<Self>;
 };
 
 /**
@@ -54,7 +63,7 @@ export function Scheduler<
     return class extends Tag {
       /** Provide the Actions over `schema` and `adapter`. */
       // Not `this`, so a detached `const { layer } = AppScheduler` still works.
-      static layer(params: CreateSchedulerParams<S, Tx, P>): Layer.Layer<Self> {
+      static layer(params: LayerParams<S, Tx, P>): Layer.Layer<Self> {
         return Layer.succeed(Tag, makeScheduler(params));
       }
     };
