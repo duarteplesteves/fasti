@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Result as EffectResult } from "effect";
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import type { AnyHookOf } from "./hook.js";
 import type { AnyPolicyOf, UniqueNames } from "./policy.js";
 import { makeScheduler } from "./scheduler-service.js";
 import type { SchedulerActions } from "./scheduler-service.js";
@@ -19,6 +20,8 @@ export interface CreateSchedulerParams<
   readonly adapter: Adapter<Tx, GroupsOf<S>>;
   /** The Policies from `definePolicy`, names unique; leave out for none. The built-in `availability` always runs; without `notice`, past starts are bookable. */
   readonly policies?: P & UniqueNames<P>;
+  /** The Hooks from `defineHook`, run in this order on every write they apply to; leave out for none. */
+  readonly hooks?: readonly AnyHookOf<S, NoInfer<Tx>>[];
 }
 
 /** The Actions, plain form: no Effect in sight; expected failures are values, defects reject. */
