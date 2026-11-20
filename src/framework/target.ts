@@ -45,8 +45,8 @@ export function writeActionNames<S extends AnySchema>(
 /** A target as stored, its schema erased. */
 type AnyTarget = string | { readonly from?: string; readonly to: string };
 
-/** Whether `target` names a write Action rather than a Transition edge. */
-export function isActionName(
+/** Whether `target` is named (an Action) rather than a Transition edge; it doesn't check the name exists. */
+export function isNamedTarget(
   target: string | { readonly to: string }
 ): target is string {
   // oxlint-disable-next-line anti-slop/no-runtime-typeof -- names are strings, edges objects.
@@ -82,7 +82,7 @@ export type CalledTarget =
 
 /** Whether target `t` names `called`: an Action by name, an edge by `{ to }` or by `{ from, to }`. */
 export function matchesTarget(t: AnyTarget, called: CalledTarget): boolean {
-  return isActionName(t) || isActionName(called)
+  return isNamedTarget(t) || isNamedTarget(called)
     ? t === called
     : t.to === called.to && (t.from === undefined || t.from === called.from);
 }
@@ -97,7 +97,7 @@ export function checkEdgeTargets(
   const froms = Object.keys(schema.transitions);
 
   for (const target of appliesTo) {
-    if (isActionName(target)) {
+    if (isNamedTarget(target)) {
       continue;
     }
 

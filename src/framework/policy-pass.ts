@@ -19,7 +19,7 @@ import type {
   ViolationOf,
 } from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
-import { isActionName, matchesTarget } from "./target.js";
+import { isNamedTarget, matchesTarget } from "./target.js";
 import type { CalledTarget } from "./target.js";
 
 /** The built-in `availability` Policy: the candidate must fit inside one of the Resource's availability windows (ADR 014). */
@@ -57,7 +57,7 @@ export function availabilityPolicy<S extends AnySchema>(): Policy<
 
 /** `target` as `relax` issues name it. */
 function label(target: CalledTarget): string {
-  return isActionName(target) ? target : `${target.from} → ${target.to}`;
+  return isNamedTarget(target) ? target : `${target.from} → ${target.to}`;
 }
 
 /** The Policies `target` runs: fasti's own first (`availability`), then the developer's, in registration order. */
