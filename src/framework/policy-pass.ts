@@ -9,9 +9,7 @@ import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectReads } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
 import type { PolicyViolation } from "./errors.js";
-import { isActionTarget } from "./policy.js";
 import type {
-  ActionTarget,
   AnyPolicyOf,
   Candidate,
   LoadContext,
@@ -21,6 +19,8 @@ import type {
   ViolationOf,
 } from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
+import { isActionName, matchesTarget } from "./target.js";
+import type { CalledTarget } from "./target.js";
 
 /** The built-in `availability` Policy: the candidate must fit inside one of the Resource's availability windows (ADR 014). */
 export function availabilityPolicy<S extends AnySchema>(): Policy<
@@ -55,27 +55,18 @@ export function availabilityPolicy<S extends AnySchema>(): Policy<
   };
 }
 
-/** What one call runs Policies for: an Action, or the one edge a `transition` moves along. */
-type Target = ActionTarget | { readonly from: string; readonly to: string };
-
 /** `target` as `relax` issues name it. */
-function label(target: Target): string {
-  return isActionTarget(target) ? target : `${target.from} → ${target.to}`;
+function label(target: CalledTarget): string {
+  return isActionName(target) ? target : `${target.from} → ${target.to}`;
 }
 
 /** The Policies `target` runs: `availability` first where it applies, then the developer's, in registration order. */
 export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  target: Target
+  target: CalledTarget
 ): readonly AnyPolicyOf<S>[] {
   return [availabilityPolicy<S>(), ...ctx.policies].filter((policy) =>
-    policy.appliesTo.some(
-      (t: ActionTarget | { readonly from?: string; readonly to: string }) =>
-        isActionTarget(t) || isActionTarget(target)
-          ? t === target
-          : t.to === target.to &&
-            (t.from === undefined || t.from === target.from)
-    )
+    policy.appliesTo.some((t) => matchesTarget(t, target))
   );
 }
 
@@ -149,7 +140,7 @@ export function loadPolicies<S extends AnySchema>(
 /** Each `relax` entry that names no Policy in `policies`, as an issue at its index; `[]` when all apply. Runs before any Adapter call. */
 export function checkRelax<S extends AnySchema>(
   policies: readonly AnyPolicyOf<S>[],
-  target: Target,
+  target: CalledTarget,
   relax: readonly string[] | undefined
 ): Issue[] {
   if (relax === undefined) {

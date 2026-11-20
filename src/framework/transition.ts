@@ -165,6 +165,7 @@ export function transition<S extends AnySchema, Tx, R = never>(
   } as BookingChanges<S>;
 
   return lockedById(ctx, {
+    action: "transition",
     also: params.also,
     destination: null,
     notFound: { _tag: "BookingNotFound", id } satisfies BookingNotFound,

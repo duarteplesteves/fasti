@@ -6,7 +6,12 @@ import type { EffectLocked, EffectReads } from "./effect-adapter.js";
 import type { AdapterError } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
-import type { EffectAlso, Outcome, WriteEffect } from "./write-unit.js";
+import type {
+  EffectAlso,
+  Outcome,
+  WriteEffect,
+  WriteSite,
+} from "./write-unit.js";
 
 /** An outside write moved or changed the row between read and write: start over. Never leaves `lockedById`. */
 export interface Retry {
@@ -27,6 +32,8 @@ export interface LockedByIdParams<
   E,
   R,
 > {
+  /** The Action this is, passed on to `writeUnit`. */
+  readonly action: WriteSite<S>["action"];
   /** Read the row by id, unlocked first, then again under the lock. */
   readonly read: (
     reads: EffectReads<S>
@@ -70,7 +77,10 @@ export function lockedById<
 
       return yield* writeUnit(
         ctx,
-        params.destination ?? seen.resourceId,
+        {
+          action: params.action,
+          resourceId: params.destination ?? seen.resourceId,
+        },
         (locked, now) =>
           Effect.gen(function* lockedByIdUnit() {
             const stored = yield* params.read(locked);

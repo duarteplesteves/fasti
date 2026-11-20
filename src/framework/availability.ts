@@ -77,7 +77,7 @@ export function setAvailability<S extends AnySchema, Tx, R = never>(
 
   return writeUnit(
     ctx,
-    resourceId,
+    { action: "availability.set", resourceId },
     (locked) =>
       Effect.gen(function* setAvailabilityUnit() {
         const previous = yield* locked.getRules(resourceId);

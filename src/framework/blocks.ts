@@ -175,7 +175,7 @@ export function createBlock<S extends AnySchema, Tx, R = never>(
 
   return writeUnit(
     ctx,
-    resourceId,
+    { action: "blocks.create", resourceId },
     (locked) =>
       Effect.gen(function* createBlockUnit(): Effect.fn.Return<
         Outcome<Block<S>, AlsoContext<CreateBlockAlso<S, Tx>>>,
@@ -259,6 +259,7 @@ export function updateBlock<S extends AnySchema, Tx, R = never>(
   );
 
   return lockedById(ctx, {
+    action: "blocks.update",
     also: params.also,
     destination: null,
     notFound,
@@ -336,6 +337,7 @@ export function deleteBlock<S extends AnySchema, Tx, R = never>(
   const notFound: BlockNotFound = { _tag: "BlockNotFound", id };
 
   return lockedById(ctx, {
+    action: "blocks.delete",
     also: params.also,
     destination: null,
     notFound,

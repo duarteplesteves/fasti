@@ -71,6 +71,7 @@ export function cancel<S extends AnySchema, Tx, R = never>(
   } as BookingChanges<S>;
 
   return lockedById(ctx, {
+    action: "cancel",
     also: params.also,
     destination: null,
     notFound,

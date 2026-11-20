@@ -9,30 +9,14 @@ import type {
 } from "../adapter/records.js";
 import type { AvailabilityViolation, BookingId } from "../core/types.js";
 import type { AnySchema, TransitionEdge } from "../schema/define-schema.js";
-import { statusCodec } from "../schema/status-codec.js";
 import type { Booking } from "./booking.js";
 import type { PolicyViolation } from "./errors.js";
-
-/** The Actions a Policy can apply to by name. */
-const actionTargets = ["book", "reschedule", "cancel"] as const;
-
-/** An Action a Policy can apply to by name. */
-export type ActionTarget = (typeof actionTargets)[number];
-
-/** Whether `target` names an Action rather than a Transition edge. */
-export function isActionTarget(
-  target: ActionTarget | { readonly to: string }
-): target is ActionTarget {
-  return actionTargets.some((a) => a === target);
-}
-
-/** A Transition edge a Policy can apply to: `{ to }` is every declared edge into `to`, `{ from, to }` one edge. Edges into `cancelled` belong to `cancel`. */
-export type EdgeTarget<S extends AnySchema> =
-  | { readonly to: TransitionEdge<S>["to"]; readonly from?: never }
-  | TransitionEdge<S>;
-
-/** What a Policy can apply to: the Actions that run it, and Transition edges. */
-export type PolicyTarget<S extends AnySchema> = ActionTarget | EdgeTarget<S>;
+import {
+  checkEdgeTargets,
+  isActionName,
+  isBookingActionName,
+} from "./target.js";
+import type { BookingActionName, PolicyTarget } from "./target.js";
 
 /** What `book` asks a Policy about. */
 export interface BookCandidate<S extends AnySchema> {
@@ -113,7 +97,7 @@ type EdgesOf<S extends AnySchema, T> = T extends {
 export type CandidateFor<
   S extends AnySchema,
   T extends PolicyTarget<S>,
-> = T extends ActionTarget
+> = T extends BookingActionName
   ? Extract<Candidate<S>, { readonly action: T }>
   : TransitionCandidate<S, EdgesOf<S, T>>;
 
@@ -324,29 +308,16 @@ export function definePolicy<
     throw new Error("fasti: the Policy name availability is fasti's own");
   }
 
-  const { canMove } = statusCodec(schema);
-  const froms = Object.keys(schema.transitions);
-
   for (const target of appliesTo) {
-    if (isActionTarget(target)) {
-      continue;
-    }
-
-    const { from, to } = target;
-
-    // Edges into `cancelled` belong to `cancel`.
-    const declared =
-      to !== "cancelled" &&
-      (from === undefined
-        ? froms.some((f) => canMove(f, to))
-        : canMove(from, to));
-
-    if (!declared) {
+    // Plain-JS callers can name an Action a Policy can't apply to.
+    if (isActionName(target) && !isBookingActionName(target)) {
       throw new Error(
-        `fasti: Policy ${name} applies to ${from ?? "*"} → ${to}, which isn't a declared Transition (use cancel for cancelled)`
+        `fasti: Policy ${name} applies to ${String(target)}, which isn't book, reschedule or cancel`
       );
     }
   }
+
+  checkEdgeTargets(schema, `Policy ${name}`, appliesTo);
 
   return { appliesTo, check, load: load ?? null, name };
 }
