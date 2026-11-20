@@ -67,3 +67,7 @@ Building `also` (#98) settled five details the decision left open:
 ## Amendment (2026-11-18): `now` is read at the start of the unit
 
 With Policies (ADR 014, checkpoint 7), "the instant the Policies saw" is concrete: each unit of work reads the Clock once, at its start, before the Invariants and Policies, and hands the same `now` to every Policy's `load` and `check` and to `also`. A retry, whether an Action finding its Booking changed under the lock or the Drizzle Adapter rerunning a unit after a deadlock, starts a new unit and reads `now` again, so no decision is made on stale data. `now` can differ between attempts, never within one: a slot `findSlots` listed at 13:59 can be refused by `notice` at 14:01.
+
+## Amendment (2026-11-20): `availability.set`'s context carries `resourceId`; Hooks see `also`'s context
+
+With Hooks (ADR 017, checkpoint 9a), `availability.set`'s `also` context gains `resourceId` (`{ tx, resourceId, rules, previous, now }`), as the Decision first intended, so a Hook's event is always `also`'s context plus `action`, with no exception. A `blocks.update` that changes nothing counts as a write for Hooks too: it runs them, as it runs `also`, with `block === previous`.

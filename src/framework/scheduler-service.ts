@@ -104,7 +104,7 @@ export type SchedulerActions<
     readonly set: WriteAction<
       F,
       SetAvailabilityParams<S>,
-      SetAvailabilityAlso<Tx>,
+      SetAvailabilityAlso<S, Tx>,
       SetAvailabilityValue,
       SetAvailabilityError
     >;

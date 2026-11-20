@@ -43,7 +43,9 @@ type AnyTarget =
   | { readonly from?: string; readonly to: string };
 
 /** Whether `target` names a write Action rather than a Transition edge. */
-export function isActionName(target: AnyTarget): target is AnyActionName {
+export function isActionName(
+  target: string | { readonly to: string }
+): target is AnyActionName {
   return writeActions.some((a) => a === target);
 }
 
@@ -52,6 +54,11 @@ export function isBookingActionName(
   target: AnyTarget
 ): target is BookingActionName {
   return bookingActions.some((a) => a === target);
+}
+
+/** Whether `target` names an Action that writes a Block. */
+export function isBlockActionName(target: AnyTarget): boolean {
+  return blockActions.some((a) => a === target);
 }
 
 /** A Transition edge: `{ to }` is every declared edge into `to`, `{ from, to }` one edge. Edges into `cancelled` belong to `cancel`. */
