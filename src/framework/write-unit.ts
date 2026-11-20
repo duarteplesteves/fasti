@@ -8,7 +8,7 @@ import type { AdapterError, Vetoed } from "./errors.js";
 import { hookApplies } from "./hook.js";
 import type { Committed, HookEvent } from "./hook.js";
 import type { ActionContext } from "./scheduler-service.js";
-import type { AnyActionName, CalledTarget } from "./target.js";
+import type { CalledTarget } from "./target.js";
 
 /** What a write unit did. Done: run `also` with `context`. NoOp: skip `also` (a repeat cancel; a no-op `blocks.update` still returns Done, by ADR 015). */
 export type Outcome<V, C> =
@@ -35,9 +35,12 @@ export type WriteEffect<V, E, R> = Effect.Effect<
   R
 >;
 
-/** Which write Action a unit runs, and the Resource it locks. Any schema's names: `WriteActionName<S>` can't be checked inside an Action generic over `S`. */
+/**
+ * Which write Action a unit runs, and the Resource it locks. `action` is a name from `writeActionNames`, or `transition`.
+ * A string: `WriteActionName<S>` can't be checked inside an Action generic over `S`. Names are checked where they're chosen: Hook targets by type, `defineHook` against `writeActionNames`.
+ */
 export interface WriteSite<S extends AnySchema> {
-  readonly action: AnyActionName | "transition";
+  readonly action: string;
   readonly resourceId: ResourceIdOf<S>;
 }
 
