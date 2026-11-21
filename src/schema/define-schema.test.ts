@@ -49,6 +49,7 @@ describe(defineSchema, () => {
         },
       },
       initial: ["booked"],
+      plugins: [],
       resource: { idType: { kind: "text" } },
       statuses: {
         booked: { blocking: true, stored: "booked" },

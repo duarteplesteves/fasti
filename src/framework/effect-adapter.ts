@@ -9,9 +9,12 @@ import type {
   InsertBookingResult,
   ListBlocksQuery,
   ListBookingsQuery,
+  ListRecordsQuery,
   LockedAdapter,
+  RecordReads,
   ReplaceRulesParams,
   SchemaAdapter,
+  StoredRecord,
   UpdateBlockResult,
   UpdateBookingParams,
   UpdateBookingResult,
@@ -46,6 +49,16 @@ export interface EffectReads<S extends AnySchema> {
   readonly listBlocks: (
     query: ListBlocksQuery<S>
   ) => Effect.Effect<BlockRecord<S>[], AdapterError>;
+  /** Only called for a table some Plugin declares, so only on an Adapter with `records`. */
+  readonly getRecord: (
+    table: string,
+    id: string
+  ) => Effect.Effect<StoredRecord | null, AdapterError>;
+  /** Only called for a table some Plugin declares, so only on an Adapter with `records`. */
+  readonly listRecords: (
+    table: string,
+    query: ListRecordsQuery<S>
+  ) => Effect.Effect<StoredRecord[], AdapterError>;
 }
 
 /** The handle inside a unit of work, as Effects. */
@@ -69,6 +82,11 @@ export interface EffectLocked<S extends AnySchema, Tx> extends EffectReads<S> {
   ) => Effect.Effect<DeleteBlockResult, AdapterError>;
   readonly replaceRules: (
     params: ReplaceRulesParams<S>
+  ) => Effect.Effect<void, AdapterError>;
+  /** Store a new Plugin record; only called for a table some Plugin declares, so only on an Adapter with `records`. */
+  readonly insertRecord: (
+    table: string,
+    record: StoredRecord
   ) => Effect.Effect<void, AdapterError>;
   readonly updateBooking: (
     params: UpdateBookingParams<S>
@@ -104,10 +122,14 @@ function blockVerb<A>(
 }
 
 function liftReads<S extends AnySchema>(
-  raw: AdapterReads<S> & BlockReads<S>,
+  raw: AdapterReads<S> & BlockReads<S> & RecordReads<S>,
   hasBlocks: boolean
 ): EffectReads<S> {
   return {
+    getRecord: (table, id) =>
+      attempt(async () => await raw.getRecord(table, id)),
+    listRecords: (table, query) =>
+      attempt(async () => await raw.listRecords(table, query)),
     getBlock: (id) =>
       blockVerb(hasBlocks, "getBlock", async () => await raw.getBlock(id)),
     getBooking: (id) => attempt(async () => await raw.getBooking(id)),
@@ -140,6 +162,10 @@ function liftLocked<S extends AnySchema, Tx>(
       }),
     insertBooking: (booking) =>
       attempt(async () => await raw.insertBooking(booking)),
+    insertRecord: (table, record) =>
+      attempt(async () => {
+        await raw.insertRecord(table, record);
+      }),
     replaceRules: (params) =>
       attempt(async () => {
         await raw.replaceRules(params);
@@ -173,7 +199,8 @@ export function liftAdapter<S extends AnySchema, Tx>(
   schema: S
 ): EffectAdapter<S, Tx> {
   const hasBlocks = schema.block !== null;
-  // SAFETY: GroupsOf<S> is "blocks" exactly when `schema.block` isn't null, and the Block verbs are only called then.
+  // SAFETY: GroupsOf<S> has "blocks" exactly when `schema.block` isn't null, and the Block verbs are only called then;
+  // it has "records" exactly when a Plugin declares tables, and the record verbs are only called with those tables.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
   const raw = bound as SchemaAdapter<S, Tx, VerbGroup>;
 

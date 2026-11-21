@@ -11,7 +11,6 @@ import type {
   GroupsOf,
   ListBlocksQuery,
   UpdateBlockResult,
-  VerbGroup,
 } from "../adapter/index.js";
 import type { RuleRecord } from "../adapter/records.js";
 import type { InvalidParams, Result } from "../core/result.js";
@@ -346,7 +345,7 @@ describe("Block exports", () => {
     type S = typeof blockSchema;
 
     expectTypeOf<HasBlocks<S>>().toEqualTypeOf<true>();
-    expectTypeOf<GroupsOf<S>>().toEqualTypeOf<VerbGroup>();
+    expectTypeOf<GroupsOf<S>>().toEqualTypeOf<"blocks">();
     expectTypeOf<BlockColumn>().toEqualTypeOf<
       "id" | "resourceId" | "start" | "end"
     >();

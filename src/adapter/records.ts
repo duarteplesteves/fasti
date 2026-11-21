@@ -14,7 +14,8 @@ export type ResourceIdOf<S extends AnySchema> = TypeOf<S["resource"]["idType"]>;
 /** The logical Statuses a schema declares. */
 export type StatusOf<S extends AnySchema> = keyof S["statuses"] & string;
 
-type FieldValues<F extends Fields> = {
+/** The values of Developer Fields `F`: an optional one may be `null`. */
+export type FieldValues<F extends Fields> = {
   [K in keyof F]: F[K]["required"] extends true
     ? TypeOf<F[K]["type"]>
     : TypeOf<F[K]["type"]> | null;

@@ -1,5 +1,7 @@
 import type { BlockId, BookingId } from "../core/types.js";
+import type { AnyColumn, TypeOf } from "../schema/column.js";
 import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
+import type { HasTables } from "../schema/table.js";
 import type {
   BlockChanges,
   BlockRecord,
@@ -33,11 +35,46 @@ export interface AdapterReads<S extends AnySchema> {
 }
 
 /** An optional group of verbs an Adapter declares it implements, as `Adapter<Tx, "blocks">`. */
-export type VerbGroup = "blocks";
+export type VerbGroup = "blocks" | "records";
 
-/** The verb groups a schema needs from its Adapter: `"blocks"` when it declares `block`. */
+/** The verb groups a schema needs from its Adapter: `"blocks"` when it declares `block`, `"records"` when a Plugin declares tables. */
 export type GroupsOf<S extends AnySchema> =
-  HasBlocks<S> extends true ? "blocks" : never;
+  | (HasBlocks<S> extends true ? "blocks" : never)
+  | (HasTables<S> extends true ? "records" : never);
+
+/** A value in a Plugin record's column. */
+export type StoredValue = TypeOf<AnyColumn> | null;
+
+/** A Plugin record as it crosses the Adapter seam: logical column names, `id` and `resourceId` included. */
+export type StoredRecord = Readonly<Record<string, StoredValue>> & {
+  readonly id: string;
+};
+
+/** A `listRecords` query: one Resource. */
+export interface ListRecordsQuery<S extends AnySchema> {
+  /** The Resource whose records to list. */
+  readonly resourceId: ResourceIdOf<S>;
+}
+
+/** The Plugin record reads, inside and outside a unit of work; `table` is the table's logical name. */
+export interface RecordReads<S extends AnySchema> {
+  /** The record with this id, or `null` when there is none. */
+  readonly getRecord: (
+    table: string,
+    id: string
+  ) => Promise<StoredRecord | null>;
+  /** Every record of the Resource, sorted by `id`. */
+  readonly listRecords: (
+    table: string,
+    query: ListRecordsQuery<S>
+  ) => Promise<StoredRecord[]>;
+}
+
+/** The Plugin record writes, only inside a unit of work. */
+export interface RecordWrites {
+  /** Store a new record; its id is minted by fasti. Any failure rejects. */
+  readonly insertRecord: (table: string, record: StoredRecord) => Promise<void>;
+}
 
 /** A `listBlocks` query: one Resource, one half-open range. */
 export type ListBlocksQuery<S extends AnySchema> = ListBookingsQuery<S>;
@@ -123,7 +160,8 @@ export type LockedAdapter<
   Tx,
   G extends VerbGroup = never,
 > = AdapterReads<S> &
-  With<G, "blocks", BlockReads<S> & BlockWrites<S>> & {
+  With<G, "blocks", BlockReads<S> & BlockWrites<S>> &
+  With<G, "records", RecordReads<S> & RecordWrites> & {
     /** The ORM's own transaction, for the developer's writes (ADR 015). */
     readonly tx: Tx;
     /** Store a new Booking. */
@@ -144,7 +182,8 @@ export type SchemaAdapter<
   Tx,
   G extends VerbGroup = never,
 > = AdapterReads<S> &
-  With<G, "blocks", BlockReads<S>> & {
+  With<G, "blocks", BlockReads<S>> &
+  With<G, "records", RecordReads<S>> & {
     /**
      * Never set. Makes `Adapter<Tx, G>` contravariant in G, which TypeScript can't infer from {@link With}:
      * an Adapter with more groups stands in for one with fewer, never the reverse.
@@ -164,7 +203,7 @@ export type SchemaAdapter<
 /**
  * An Adapter: given the developer's schema, the verbs over their tables.
  *
- * @typeParam G - The optional verb groups it implements; a schema with `block` needs `"blocks"`.
+ * @typeParam G - The optional verb groups it implements; a schema with `block` needs `"blocks"`, one with Plugin tables `"records"`.
  */
 export type Adapter<Tx, G extends VerbGroup = never> = <S extends AnySchema>(
   schema: S

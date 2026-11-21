@@ -1,5 +1,7 @@
+import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import { column } from "../schema/column.js";
 import { defineSchema } from "../schema/define-schema.js";
+import type { AnySchema } from "../schema/define-schema.js";
 
 /** Every rule column renamed; shared by the three schemas below. */
 function ruleColumns(prefix: string) {
@@ -147,3 +149,15 @@ export const integerIdSchema = defineSchema({
 
 /** Two existing Resources for {@link integerIdSchema}. */
 export const integerIdResources = [1, 2] as const;
+
+/** A schema with no Plugins, as every schema here is. */
+export type PluginFreeSchema = AnySchema & { readonly plugins: readonly [] };
+
+/** An Adapter without `records`, as a suite generic over a {@link PluginFreeSchema} needs it: TypeScript can't resolve GroupsOf for a generic schema. */
+export function pluginFree<S extends PluginFreeSchema, Tx>(
+  adapter: Adapter<Tx, "blocks">
+): Adapter<Tx, GroupsOf<S>> {
+  // SAFETY: S has no Plugins, so GroupsOf<S> is at most "blocks".
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the constraint.
+  return adapter as Adapter<Tx, GroupsOf<S>>;
+}

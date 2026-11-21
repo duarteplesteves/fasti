@@ -9,6 +9,32 @@ import type { AnySchema } from "../schema/define-schema.js";
 
 export type { SchedulerService } from "../framework/scheduler-service.js";
 
+export { definePlugin } from "../framework/plugin.js";
+
+export type {
+  Lock,
+  NativeActions,
+  NativeRead,
+  NativeWrite,
+  RecordReadsOf,
+  RecordStoreOf,
+  TableReads,
+  TableWrites,
+  Unit,
+  Written,
+} from "../framework/plugin.js";
+
+export type { Outcome } from "../framework/write-unit.js";
+
+export type {
+  Plugin,
+  PluginResourceId,
+  RecordId,
+  RecordOf,
+  TableDef,
+  Tables,
+} from "../schema/table.js";
+
 /** An Adapter's transaction handle, to name the `Tx` of {@link Scheduler}: `TxOf<typeof adapter>`. */
 export type TxOf<A> = A extends Adapter<infer Tx, infer _G> ? Tx : never;
 

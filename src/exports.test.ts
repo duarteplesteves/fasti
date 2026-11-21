@@ -84,7 +84,11 @@ const surface = [
     ],
     source: "drizzle/sqlite/index.js",
   },
-  { module: effect, names: ["Scheduler"], source: "effect/index.js" },
+  {
+    module: effect,
+    names: ["Scheduler", "definePlugin"],
+    source: "effect/index.js",
+  },
   { module: memory, names: ["memoryAdapter"], source: "memory/index.js" },
   {
     module: prisma,

@@ -20,9 +20,9 @@ import {
 import { defineAdapter } from "../../adapter/contract.js";
 import { createScheduler } from "../../framework/create-scheduler.js";
 import { noOverlapConstraint } from "../../schema/backstop-sql.js";
-import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
+  pluginFree,
   integerIdResources,
   integerIdSchema,
   textIdResources,
@@ -30,6 +30,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../../test-utils/conformance-schemas.js";
+import type { PluginFreeSchema } from "../../test-utils/conformance-schemas.js";
 import { postgresUrl, testDatabase } from "../../test-utils/postgres.js";
 import type { TestDatabase } from "../../test-utils/postgres.js";
 import { unwrap } from "../../test-utils/results.js";
@@ -108,7 +109,7 @@ function at(hour: number): Temporal.Instant {
 let database: TestDatabase;
 
 /** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
-function suite<S extends AnySchema>(
+function suite<S extends PluginFreeSchema>(
   schema: S,
   booking: AnyPgTable,
   others: readonly AnyPgTable[],
@@ -120,7 +121,7 @@ function suite<S extends AnySchema>(
       retry: { transient: () => ({ code: "40001" }) },
       tx: probe,
     },
-    makeAdapter: () => drizzleAdapter(database.db),
+    makeAdapter: () => pluginFree<S, Tx>(drizzleAdapter(database.db)),
     reset: async () => {
       await database.db.execute(
         sql`truncate ${sql.join(
@@ -186,7 +187,10 @@ function suite<S extends AnySchema>(
       await expect(
         runCase(c, {
           ...params,
-          makeAdapter: () => createDrizzleAdapter(database.db, { lock: false }),
+          makeAdapter: () =>
+            pluginFree<S, Tx>(
+              createDrizzleAdapter(database.db, { lock: false })
+            ),
         })
       ).resolves.toBeUndefined();
     });

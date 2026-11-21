@@ -38,6 +38,8 @@ import type { FindSlotsAction, FindSlotsParams } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
 import type { AnyHookOf } from "./hook.js";
 import { busySources } from "./occupancy.js";
+import { pluginActions } from "./plugin.js";
+import type { PluginActionsOf } from "./plugin.js";
 import { availabilityPolicy } from "./policy-pass.js";
 import type { AnyPolicyOf, ViolationFor } from "./policy.js";
 import { reschedule } from "./reschedule.js";
@@ -62,7 +64,7 @@ export interface ActionContext<S extends AnySchema, Tx> {
 
 /**
  * Every Action, in form `F`: each declared once for both forms, so they can't drift (ADR 010).
- * `blocks` only when the schema declares `block`; `transition` only when some declared Transition doesn't end in `cancelled`. `Tx` is the Adapter's transaction handle, as `also` gets it; `P` the Policies tuple.
+ * `blocks` only when the schema declares `block`; `scheduler.<plugin>` for each installed Plugin; `transition` only when some declared Transition doesn't end in `cancelled`. `Tx` is the Adapter's transaction handle, as `also` gets it; `P` the Policies tuple.
  */
 export type SchedulerActions<
   S extends AnySchema,
@@ -125,6 +127,7 @@ export type SchedulerActions<
 } & (HasBlocks<S> extends true
   ? { readonly blocks: BlockActions<S, Tx, F> }
   : unknown) &
+  PluginActionsOf<S, Tx, F> &
   ([TransitionEdge<S>] extends [never]
     ? unknown
     : {
@@ -193,9 +196,11 @@ export function makeScheduler<
     reschedule: (params: RescheduleParams<S>) => reschedule(ctx, params),
   };
 
+  // Plugin names never take a scheduler key (defineSchema checks), so nothing here is overwritten.
   // SAFETY: each Action takes an optional Effect-form `also` and merges its value as WithAlso describes; the plain form's is adapted in toPlain.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an overloaded interface can't be implemented by a single-signature arrow.
-  return (
-    schema.block === null ? base : { ...base, blocks }
-  ) as SchedulerActions<S, Tx, P, "effect">;
+  return {
+    ...(schema.block === null ? base : { ...base, blocks }),
+    ...pluginActions(ctx),
+  } as SchedulerActions<S, Tx, P, "effect">;
 }
