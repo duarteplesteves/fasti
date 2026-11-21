@@ -1,8 +1,9 @@
+// oxlint-disable max-classes-per-file -- one service class per schema under test.
 import { Cause, Effect, Exit, Result as EffectResult } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Result } from "../core/result.js";
-import { Scheduler as EffectScheduler } from "../effect/index.js";
+import { Scheduler as EffectScheduler, definePlugin } from "../effect/index.js";
 import { column, createScheduler, defineSchema } from "../index.js";
 import type { Plugin } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
@@ -205,6 +206,58 @@ describe.each(forms)("a native Plugin, %s form", (_form, make) => {
       })
     ).rejects.toBe(boom);
     expect(unwrap(await scheduler.list({ resourceId: ann }))).toStrictEqual([]);
+  });
+});
+
+describe("a Plugin that throws", () => {
+  const boom = new Error("boom");
+
+  const broken = definePlugin({
+    actions: {
+      crash: {
+        kind: "write",
+        run: (_params: { readonly why?: string }) => {
+          throw boom;
+        },
+      },
+    },
+    name: "broken",
+  });
+
+  const brokenSchema = defineSchema({ plugins: [broken] });
+
+  class BrokenScheduler extends EffectScheduler<
+    BrokenScheduler,
+    typeof brokenSchema,
+    Tx
+  >()("test/BrokenScheduler") {}
+
+  it("rejects in the plain form", async () => {
+    const scheduler = createScheduler({
+      adapter: memoryAdapter(),
+      schema: brokenSchema,
+    });
+
+    await expect(scheduler.broken.crash({})).rejects.toBe(boom);
+  });
+
+  it("is a defect of the Effect, not a throw at call time, in the Effect form", async () => {
+    const service = Effect.runSync(
+      Effect.provide(
+        Effect.gen(function* get() {
+          return yield* BrokenScheduler;
+        }),
+        BrokenScheduler.layer({
+          adapter: memoryAdapter(),
+          schema: brokenSchema,
+        })
+      )
+    );
+
+    const crash = service.broken.crash({});
+    const exit = await Effect.runPromiseExit(crash);
+
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(boom);
   });
 });
 

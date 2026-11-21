@@ -54,7 +54,7 @@ export interface EffectReads<S extends AnySchema> {
     table: string,
     id: string
   ) => Effect.Effect<StoredRecord | null, AdapterError>;
-  /** As `getRecord`. */
+  /** Only called for a table some Plugin declares, so only on an Adapter with `records`. */
   readonly listRecords: (
     table: string,
     query: ListRecordsQuery<S>
@@ -83,7 +83,7 @@ export interface EffectLocked<S extends AnySchema, Tx> extends EffectReads<S> {
   readonly replaceRules: (
     params: ReplaceRulesParams<S>
   ) => Effect.Effect<void, AdapterError>;
-  /** As `getRecord`. */
+  /** Store a new Plugin record; only called for a table some Plugin declares, so only on an Adapter with `records`. */
   readonly insertRecord: (
     table: string,
     record: StoredRecord

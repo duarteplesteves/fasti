@@ -160,7 +160,6 @@ type Opaque =
   | undefined
   // oxlint-disable-next-line typescript/no-invalid-void-type -- an Action may resolve with nothing.
   | void
-  | Error
   | { readonly [Symbol.toStringTag]: `Temporal.${string}` }
   // oxlint-disable-next-line anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- any function: kept whole.
   | ((...args: never[]) => unknown);
@@ -277,7 +276,8 @@ function bind<S extends AnySchema, Tx>(
   const records = handles(tables, ctx.adapter, null);
 
   if (action.kind === "read") {
-    return (params) => action.run(params, { records });
+    // Suspended, so a throw in `run` is a defect of the Effect, not of the call that builds it.
+    return (params) => Effect.suspend(() => action.run(params, { records }));
   }
 
   return ({
@@ -309,7 +309,7 @@ function bind<S extends AnySchema, Tx>(
     }
 
     return Effect.map(
-      action.run(params, { lock, records }),
+      Effect.suspend(() => action.run(params, { lock, records })),
       // SAFETY: a write Action's `run` resolves with a Written, by NativeWrite.
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the Action is erased here.
       (written) => (written as Written<unknown, never>).value

@@ -12,12 +12,10 @@ export type { SchedulerService } from "../framework/scheduler-service.js";
 export { definePlugin } from "../framework/plugin.js";
 
 export type {
-  Fill,
   Lock,
   NativeActions,
   NativeRead,
   NativeWrite,
-  PluginActionsOf,
   RecordReadsOf,
   RecordStoreOf,
   TableReads,
