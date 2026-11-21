@@ -37,6 +37,8 @@ import { findSlots } from "./find-slots.js";
 import type { FindSlotsAction, FindSlotsParams } from "./find-slots.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
 import type { AnyHookOf } from "./hook.js";
+import { busySources } from "./occupancy.js";
+import { availabilityPolicy } from "./policy-pass.js";
 import type { AnyPolicyOf, ViolationFor } from "./policy.js";
 import { reschedule } from "./reschedule.js";
 import type { RescheduleError, RescheduleParams } from "./reschedule.js";
@@ -48,8 +50,12 @@ export interface ActionContext<S extends AnySchema, Tx> {
   readonly schema: S;
   readonly codec: StatusCodec<StatusOf<S>>;
   readonly adapter: EffectAdapter<S, Tx>;
+  /** fasti's own Policies, run before the developer's: `availability` for now. */
+  readonly pluginPolicies: readonly AnyPolicyOf<S>[];
   /** The developer's Policies, names unique. */
   readonly policies: readonly AnyPolicyOf<S>[];
+  /** What a Booking can't overlap, beside other Bookings. */
+  readonly busy: typeof busySources;
   /** The developer's Hooks, in order; `[]` when none. */
   readonly hooks: readonly AnyHookOf<S, Tx>[];
 }
@@ -160,7 +166,9 @@ export function makeScheduler<
   const ctx: ActionContext<S, Tx> = {
     adapter: liftAdapter(adapter(schema), schema),
     codec: statusCodec(schema),
+    busy: busySources,
     hooks,
+    pluginPolicies: [availabilityPolicy<S>()],
     policies,
     schema,
   };

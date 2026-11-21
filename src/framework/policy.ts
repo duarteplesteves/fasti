@@ -13,7 +13,7 @@ import type { Booking } from "./booking.js";
 import type { PolicyViolation } from "./errors.js";
 import {
   checkEdgeTargets,
-  isActionName,
+  isNamedTarget,
   isBookingActionName,
 } from "./target.js";
 import type { BookingActionName, PolicyTarget } from "./target.js";
@@ -310,7 +310,7 @@ export function definePolicy<
 
   for (const target of appliesTo) {
     // Plain-JS callers can name an Action a Policy can't apply to.
-    if (isActionName(target) && !isBookingActionName(target)) {
+    if (isNamedTarget(target) && !isBookingActionName(target)) {
       throw new Error(
         `fasti: Policy ${name} applies to ${String(target)}, which isn't book, reschedule or cancel`
       );

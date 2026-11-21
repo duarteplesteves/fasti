@@ -8,12 +8,7 @@ import type {
 } from "./blocks.js";
 import type { BookAlso } from "./book.js";
 import type { ChangeAlso } from "./booking.js";
-import {
-  checkEdgeTargets,
-  isActionName,
-  isBlockActionName,
-  matchesTarget,
-} from "./target.js";
+import { checkEdgeTargets, matchesTarget, writeActionNames } from "./target.js";
 import type { CalledTarget, HookTarget } from "./target.js";
 
 /** What one saved write tells its Hooks: `also`'s context plus `action`. One variant per write Action. */
@@ -104,7 +99,7 @@ export type AnyHookOf<S extends AnySchema, Tx> =
 /**
  * A Hook: `run` observes every saved write it applies to, in the Action's transaction or after the commit.
  * The `adapter` only types `tx`; it is never called.
- * Throws on an empty `appliesTo`, an unknown name, `blocks.*` on a schema without `block`, an undeclared edge, or an edge into `cancelled`.
+ * Throws on an empty `appliesTo`, an unknown name, a name in a group the schema lacks (`blocks.*` without `block`), an undeclared edge, or an edge into `cancelled`.
  *
  * @example
  * ```ts
@@ -139,23 +134,23 @@ export function defineHook<
     );
   }
 
+  const names: readonly string[] = writeActionNames(schema);
+  const groups = new Set(names.map((n) => n.split(".")[0]));
+
   for (const target of appliesTo) {
-    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- an unknown name is a string too, so isActionName can't tell it from an edge; checkEdgeTargets checks the edges.
-    if (typeof target !== "string") {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- an unknown name is a string too; checkEdgeTargets checks the edges.
+    if (typeof target !== "string" || names.includes(target)) {
       continue;
     }
 
-    if (!isActionName(target)) {
-      throw new Error(
-        `fasti: a Hook applies to ${target}, which isn't a write Action`
-      );
-    }
+    const [group = target, action] = target.split(".");
 
-    if (isBlockActionName(target) && schema.block === null) {
-      throw new Error(
-        `fasti: a Hook applies to ${target}, but the schema has no block`
-      );
-    }
+    // A name in a group the schema lacks, e.g. `blocks.*` without `block`.
+    throw new Error(
+      action === undefined || groups.has(group)
+        ? `fasti: a Hook applies to ${target}, which isn't a write Action`
+        : `fasti: a Hook applies to ${target}, but the schema has no ${group}`
+    );
   }
 
   checkEdgeTargets(schema, "a Hook", appliesTo);
