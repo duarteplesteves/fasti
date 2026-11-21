@@ -1,3 +1,4 @@
+import { isList } from "../adapter/contract.js";
 import type { StoredRecord, StoredValue } from "../adapter/contract.js";
 import type {
   BlockChanges,
@@ -163,13 +164,6 @@ function canonical(value: Json): Json {
   }
 
   return value;
-}
-
-/** Whether `value` is a list: a `dates` value or a JSON array. `Array.isArray` doesn't narrow readonly arrays. */
-function isList(
-  value: StoredValue
-): value is readonly Temporal.PlainDate[] | readonly Json[] {
-  return Array.isArray(value);
 }
 
 /** One value → its row value: Instants to `Date`s (milliseconds, I7), PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical. */

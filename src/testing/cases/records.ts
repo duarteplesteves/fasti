@@ -88,7 +88,8 @@ function recordValue(type: RecordColumn): StoredValue {
     }
 
     case "json": {
-      return known().json;
+      // A top-level array here; the required `json` column gets an object from `values`.
+      return [known().json, "x", 1];
     }
 
     case "dates": {

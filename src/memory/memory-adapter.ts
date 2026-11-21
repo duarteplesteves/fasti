@@ -1,4 +1,4 @@
-import { defineAdapter } from "../adapter/contract.js";
+import { defineAdapter, isList } from "../adapter/contract.js";
 import type {
   Adapter,
   AdapterReads,
@@ -23,13 +23,6 @@ import { tablesOf } from "../schema/table.js";
 
 /** A stored row as plain values: every column, Developer Fields included. */
 type Row = Readonly<Record<string, StoredValue>>;
-
-/** Whether `v` is a list: a `dates` value or a JSON array. `Array.isArray` doesn't narrow readonly arrays. */
-function isList(
-  v: StoredValue | undefined
-): v is readonly Temporal.PlainDate[] | readonly Json[] {
-  return Array.isArray(v);
-}
 
 /** Whether `v` is a JSON object. */
 function isJsonObject(

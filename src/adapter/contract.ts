@@ -1,5 +1,5 @@
 import type { BlockId, BookingId } from "../core/types.js";
-import type { RecordColumn, TypeOf } from "../schema/column.js";
+import type { Json, RecordColumn, TypeOf } from "../schema/column.js";
 import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
 import type { HasTables } from "../schema/table.js";
 import type {
@@ -44,6 +44,13 @@ export type GroupsOf<S extends AnySchema> =
 
 /** A value in a Plugin record's column. */
 export type StoredValue = TypeOf<RecordColumn> | null;
+
+/** Whether `v` is a list: a `dates` value or a JSON array. Internal; `Array.isArray` doesn't narrow readonly arrays. */
+export function isList(
+  v: StoredValue | undefined
+): v is readonly Temporal.PlainDate[] | readonly Json[] {
+  return Array.isArray(v);
+}
 
 /** A Plugin record as it crosses the Adapter seam: logical column names; `id` and `resourceId` included, and on a timed table `start` and `end`. */
 export type StoredRecord = Readonly<Record<string, StoredValue>> & {

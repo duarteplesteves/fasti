@@ -1,10 +1,12 @@
 import { Effect } from "effect";
 
 import type {
+  DeleteRecordResult,
   ListRecordsQuery,
   StoredRecord,
   StoredValue,
   UpdateRecordParams,
+  UpdateRecordResult,
 } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
@@ -59,17 +61,11 @@ export interface TableWrites<N extends string, T extends TableDef> {
   readonly update: (params: {
     readonly expected: RecordOf<N, T>;
     readonly changes: RecordChanges<N, T>;
-  }) => Effect.Effect<
-    { readonly ok: true } | { readonly ok: false; readonly reason: "changed" },
-    AdapterError
-  >;
+  }) => Effect.Effect<UpdateRecordResult, AdapterError>;
   /** Remove a record; `missing` when there was none. */
   readonly delete: (
     id: RecordId<N>
-  ) => Effect.Effect<
-    { readonly ok: true } | { readonly ok: false; readonly reason: "missing" },
-    AdapterError
-  >;
+  ) => Effect.Effect<DeleteRecordResult, AdapterError>;
   /** Replace every record of this table on one Resource; fasti mints the ids. */
   readonly replace: (params: {
     readonly resourceId: PluginResourceId;

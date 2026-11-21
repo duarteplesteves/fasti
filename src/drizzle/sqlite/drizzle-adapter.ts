@@ -196,7 +196,7 @@ function recordReads<S extends AnySchema>(
             .where(
               and(
                 eq(col(t, "resourceId"), resourceId),
-                ...(range === undefined
+                ...(range === undefined || !def.timed
                   ? []
                   : [
                       lt(col(t, "start"), new Date(range.to.epochMilliseconds)),
