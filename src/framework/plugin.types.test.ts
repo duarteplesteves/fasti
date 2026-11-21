@@ -7,6 +7,7 @@ import { column, defineSchema } from "../index.js";
 import type { AdapterError, RecordId, Scheduler, Vetoed } from "../index.js";
 import { notes } from "../test-utils/notes-plugin.js";
 import type { NoteLimit } from "../test-utils/notes-plugin.js";
+import { promiseNotes } from "../test-utils/promise-notes-plugin.js";
 
 type StaffId = string & { readonly __brand: "StaffId" };
 
@@ -16,6 +17,11 @@ const schema = defineSchema({
 });
 
 type S = typeof schema;
+
+const promiseSchema = defineSchema({
+  plugins: [promiseNotes({ max: 2 })],
+  resource: { idType: column.uuid<StaffId>() },
+});
 
 /** A note as the app sees it: the schema's branded Resource id, the table's branded record id. */
 interface AppNote {
@@ -122,6 +128,15 @@ describe("Plugin Actions on the scheduler", () => {
     expectTypeOf<
       Extract<Audited, { readonly ok: false }>["error"]
     >().toEqualTypeOf<NoteLimit | AdapterError | Vetoed<unknown>>();
+  });
+
+  it("types a Promise-style Plugin's Actions as the native one's, in both forms (I9)", () => {
+    expectTypeOf<
+      Scheduler<typeof promiseSchema, undefined, readonly []>["notes"]
+    >().toEqualTypeOf<Scheduler<S, undefined, readonly []>["notes"]>();
+    expectTypeOf<
+      SchedulerService<typeof promiseSchema, undefined, readonly []>["notes"]
+    >().toEqualTypeOf<SchedulerService<S, undefined, readonly []>["notes"]>();
   });
 
   it("brands record ids per table", () => {

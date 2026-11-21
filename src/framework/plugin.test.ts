@@ -1,20 +1,42 @@
 // oxlint-disable max-classes-per-file -- one service class per schema under test.
-import { Cause, Effect, Exit, Result as EffectResult } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  References,
+  Result as EffectResult,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Result } from "../core/result.js";
 import { Scheduler as EffectScheduler, definePlugin } from "../effect/index.js";
-import { column, createScheduler, defineSchema } from "../index.js";
-import type { Plugin } from "../index.js";
+import type { SchedulerService } from "../effect/index.js";
+import {
+  column,
+  createScheduler,
+  defineHook,
+  definePlugin as definePromisePlugin,
+  defineSchema,
+} from "../index.js";
+import type { Plugin, PluginResourceId, Scheduler } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { notes } from "../test-utils/notes-plugin.js";
+import { promiseNotes } from "../test-utils/promise-notes-plugin.js";
 import { unwrap } from "../test-utils/results.js";
 
 type StaffId = string & { readonly __brand: "StaffId" };
 
-const schema = defineSchema({
-  plugins: [notes({ max: 2 })],
-  resource: { idType: column.uuid<StaffId>() },
+const resource = { idType: column.uuid<StaffId>() };
+
+const schema = defineSchema({ plugins: [notes({ max: 2 })], resource });
+
+const promiseSchema = defineSchema({
+  plugins: [promiseNotes({ max: 2 })],
+  resource,
 });
 
 // SAFETY: test fixtures; any UUID string is a StaffId here.
@@ -28,6 +50,17 @@ class NotesScheduler extends EffectScheduler<
   typeof schema,
   Tx
 >()("test/NotesScheduler") {}
+
+class PromiseNotesScheduler extends EffectScheduler<
+  PromiseNotesScheduler,
+  typeof promiseSchema,
+  Tx
+>()("test/PromiseNotesScheduler") {}
+
+/** `scheduler.notes` in each form, typed by the native Plugin: the Promise-style one must fit these too (I9). */
+type PlainNotes = Scheduler<typeof schema, Tx, readonly []>["notes"];
+
+type EffectNotes = SchedulerService<typeof schema, Tx, readonly []>["notes"];
 
 /** What `notes.add`'s `also` gets. */
 interface AddContext {
@@ -63,64 +96,91 @@ function toResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
   return { error: found.success, ok: false };
 }
 
-const forms: readonly (readonly [string, () => NotesForm])[] = [
-  [
-    "plain",
-    () => {
-      const scheduler = createScheduler({ adapter: memoryAdapter(), schema });
+function plainForm(scheduler: PlainNotes): NotesForm {
+  return {
+    add: async ({ also, ...params }) =>
+      also === undefined
+        ? await scheduler.add(params)
+        : await scheduler.add({ ...params, also }),
+    list: async (params) => await scheduler.list(params),
+  };
+}
 
-      return {
-        add: async ({ also, ...params }) =>
-          also === undefined
-            ? await scheduler.notes.add(params)
-            : await scheduler.notes.add({ ...params, also }),
-        list: async (params) => await scheduler.notes.list(params),
-      };
-    },
+async function run<A, E>(effect: Effect.Effect<A, E>) {
+  return toResult(await Effect.runPromiseExit(effect));
+}
+
+function effectForm(scheduler: EffectNotes): NotesForm {
+  return {
+    add: async ({ also, ...params }) =>
+      await run(
+        also === undefined
+          ? scheduler.add(params)
+          : scheduler.add({
+              ...params,
+              also: (ctx) => {
+                const r = also(ctx);
+
+                return r.ok ? Effect.succeed(r.value) : Effect.fail(r.error);
+              },
+            })
+      ),
+    list: async (params) => await run(scheduler.list(params)),
+  };
+}
+
+const forms: readonly (readonly [string, string, () => NotesForm])[] = [
+  [
+    "native",
+    "plain",
+    () =>
+      plainForm(createScheduler({ adapter: memoryAdapter(), schema }).notes),
   ],
   [
+    "native",
     "effect",
-    () => {
-      const layer = NotesScheduler.layer({ adapter: memoryAdapter(), schema });
-
-      async function run<A, E>(
-        use: (s: NotesScheduler["Service"]) => Effect.Effect<A, E>
-      ) {
-        return toResult(
-          await Effect.runPromiseExit(
-            Effect.provide(
-              Effect.gen(function* withService() {
-                return yield* use(yield* NotesScheduler);
-              }),
-              layer
-            )
+    () =>
+      effectForm(
+        Effect.runSync(
+          Effect.provide(
+            Effect.gen(function* get() {
+              return (yield* NotesScheduler).notes;
+            }),
+            NotesScheduler.layer({ adapter: memoryAdapter(), schema })
           )
-        );
-      }
-
-      return {
-        add: async ({ also, ...params }) =>
-          await run((s) =>
-            also === undefined
-              ? s.notes.add(params)
-              : s.notes.add({
-                  ...params,
-                  also: (ctx) => {
-                    const r = also(ctx);
-
-                    return r.ok
-                      ? Effect.succeed(r.value)
-                      : Effect.fail(r.error);
-                  },
-                })
-          ),
-        list: async (params) => await run((s) => s.notes.list(params)),
-      };
-    },
+        )
+      ),
+  ],
+  [
+    "Promise-style",
+    "plain",
+    () =>
+      plainForm(
+        createScheduler({ adapter: memoryAdapter(), schema: promiseSchema })
+          .notes
+      ),
+  ],
+  [
+    "Promise-style",
+    "effect",
+    () =>
+      effectForm(
+        Effect.runSync(
+          Effect.provide(
+            Effect.gen(function* get() {
+              return (yield* PromiseNotesScheduler).notes;
+            }),
+            PromiseNotesScheduler.layer({
+              adapter: memoryAdapter(),
+              schema: promiseSchema,
+            })
+          )
+        )
+      ),
   ],
 ];
 
-describe.each(forms)("a native Plugin, %s form", (_form, make) => {
+describe.each(forms)("a %s Plugin, %s form", (_style, _form, make) => {
   it("adds a note and lists it back", async () => {
     const scheduler = make();
     const added = unwrap(await scheduler.add({ resourceId: ann, text: "hi" }));
@@ -206,6 +266,206 @@ describe.each(forms)("a native Plugin, %s form", (_form, make) => {
       })
     ).rejects.toBe(boom);
     expect(unwrap(await scheduler.list({ resourceId: ann }))).toStrictEqual([]);
+  });
+});
+
+/** A developer service an `also` can require. */
+const Audit = Context.Service<{
+  readonly record: (text: string) => Effect.Effect<string>;
+}>("test/Audit");
+
+/** A log entry as {@link capturing} records it: the `action` annotation, the level and the cause. */
+interface LogEntry {
+  readonly action: unknown;
+  readonly logLevel: string;
+  readonly cause: Cause.Cause<unknown>;
+}
+
+/** A Logger layer, in place of the default one, that records each entry into `into`. */
+function capturing(into: LogEntry[]) {
+  return Logger.layer([
+    Logger.make(({ cause, fiber, logLevel }) => {
+      into.push({
+        action: fiber.getRef(References.CurrentLogAnnotations)["action"],
+        cause,
+        logLevel,
+      });
+    }),
+  ]);
+}
+
+describe("the Promise face crossing (R2)", () => {
+  it("runs an Effect `also` that reads a caller's service inside a Promise-style `lock`", async () => {
+    const audit = Layer.succeed(Audit, {
+      record: (text) => Effect.succeed(`audited ${text}`),
+    });
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* addAudited() {
+        return yield* (yield* PromiseNotesScheduler).notes.add({
+          also: ({ note }) =>
+            Effect.gen(function* record() {
+              return yield* (yield* Audit).record(note.text);
+            }),
+          resourceId: ann,
+          text: "hi",
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            PromiseNotesScheduler.layer({
+              adapter: memoryAdapter(),
+              schema: promiseSchema,
+            }),
+            audit
+          )
+        )
+      )
+    );
+
+    expect(exit).toMatchObject({
+      _tag: "Success",
+      value: { also: "audited hi", text: "hi" },
+    });
+  });
+
+  it("rolls the unit back when the call is interrupted mid-unit, and aborts the Plugin's signal", async () => {
+    const started = Promise.withResolvers<undefined>();
+    const aborted = Promise.withResolvers<undefined>();
+
+    const gated = definePromisePlugin({
+      actions: {
+        add: {
+          kind: "write",
+          run: async (
+            params: {
+              readonly resourceId: PluginResourceId;
+              readonly text: string;
+              readonly wait: boolean;
+            },
+            { lock, signal }
+          ) =>
+            await lock(params.resourceId, async ({ records }) => {
+              const note = await records.note.insert({
+                resourceId: params.resourceId,
+                text: params.text,
+              });
+
+              if (params.wait) {
+                started.resolve(undefined);
+                const abort = Promise.withResolvers<undefined>();
+
+                signal.addEventListener("abort", () => {
+                  abort.resolve(undefined);
+                });
+                await abort.promise;
+                aborted.resolve(undefined);
+              }
+
+              // Done even when aborted: fasti must still roll the unit back.
+              return { _tag: "Done", context: { note }, value: note } as const;
+            }),
+        },
+        list: {
+          kind: "read",
+          run: async (
+            params: { readonly resourceId: PluginResourceId },
+            { records }
+          ) => ({ ok: true, value: await records.note.list(params) }) as const,
+        },
+      },
+      name: "gated",
+      tables: {
+        note: { columns: { text: { required: true, type: column.text() } } },
+      },
+    });
+
+    const gatedSchema = defineSchema({ plugins: [gated], resource });
+
+    class GatedScheduler extends EffectScheduler<
+      GatedScheduler,
+      typeof gatedSchema,
+      Tx
+    >()("test/GatedScheduler") {}
+
+    const listed = await Effect.runPromise(
+      Effect.gen(function* interrupted() {
+        const s = yield* GatedScheduler;
+
+        const fiber = yield* Effect.forkChild(
+          s.gated.add({ resourceId: ann, text: "slow", wait: true })
+        );
+
+        yield* Effect.promise(async () => {
+          await started.promise;
+        });
+
+        const exit = yield* Fiber.interrupt(fiber).pipe(
+          Effect.andThen(Fiber.await(fiber))
+        );
+
+        expect(Exit.hasInterrupts(exit)).toBeTruthy();
+
+        yield* Effect.promise(async () => {
+          await aborted.promise;
+        });
+
+        // Queued behind the slow unit on the Resource Lock, so that unit has finished once this one returns.
+        yield* s.gated.add({ resourceId: ann, text: "fast", wait: false });
+
+        return yield* s.gated.list({ resourceId: ann });
+      }).pipe(
+        Effect.provide(
+          GatedScheduler.layer({
+            adapter: memoryAdapter(),
+            schema: gatedSchema,
+          })
+        )
+      )
+    );
+
+    expect(listed.map((n) => n.text)).toStrictEqual(["fast"]);
+  });
+
+  it("logs an after-commit Hook failure to the caller's Logger", async () => {
+    const adapter = memoryAdapter();
+    const logs: LogEntry[] = [];
+
+    const hooks = [
+      defineHook(promiseSchema, adapter, {
+        appliesTo: "*",
+        run: () => {
+          throw new Error("mail server down");
+        },
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* addLogged() {
+        return yield* (yield* PromiseNotesScheduler).notes.add({
+          resourceId: ann,
+          text: "hi",
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            PromiseNotesScheduler.layer({
+              adapter,
+              hooks,
+              schema: promiseSchema,
+            }),
+            capturing(logs)
+          )
+        )
+      )
+    );
+
+    expect(exit).toMatchObject({ _tag: "Success", value: { text: "hi" } });
+    expect(logs).toMatchObject([{ action: "notes.add", logLevel: "Error" }]);
+    expect(Cause.pretty(logs[0]?.cause ?? Cause.empty)).toContain(
+      "mail server down"
+    );
   });
 });
 

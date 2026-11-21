@@ -32,7 +32,7 @@ export type Scheduler<
 > = SchedulerActions<S, Tx, P, "plain">;
 
 /** A typed failure becomes `error`; a defect or interruption is thrown, so the promise rejects. */
-function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
+export function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
   if (Exit.isSuccess(exit)) {
     return { ok: true, value: exit.value };
   }
