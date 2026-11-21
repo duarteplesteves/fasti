@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   integerIdResources,
   integerIdSchema,
+  recordsResources,
+  recordsSchema,
+  runsOn,
   textIdResources,
   textIdSchema,
   uuidIdResources,
@@ -27,6 +30,7 @@ describe.each([
   ["text ids", textIdSchema, textIdResources],
   ["uuid ids", uuidIdSchema, uuidIdResources],
   ["integer ids", integerIdSchema, integerIdResources],
+  ["Plugin records", recordsSchema, recordsResources],
 ] as const)("memoryAdapter, %s", (_label, schema, resources) => {
   const params = {
     groups: { backstop: false, retry: null, tx: null },
@@ -39,14 +43,12 @@ describe.each([
   testAdapter(params);
 
   // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
-  // Blocks cases are skipped without `block`, so a failure there would prove nothing.
-  it.fails.each(
-    concurrencyCases.filter(
-      (c) => schema.block !== null || !c.tags.includes("blocks")
-    )
-  )("[lock off] $name", async (c) => {
-    await expect(
-      runCase(c, { ...params, makeAdapter: lockOffAdapter })
-    ).resolves.toBeUndefined();
-  });
+  it.fails.each(concurrencyCases.filter((c) => runsOn(c, schema)))(
+    "[lock off] $name",
+    async (c) => {
+      await expect(
+        runCase(c, { ...params, makeAdapter: lockOffAdapter })
+      ).resolves.toBeUndefined();
+    }
+  );
 });

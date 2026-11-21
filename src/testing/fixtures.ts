@@ -38,7 +38,7 @@ export function instant(): Temporal.Instant {
 type FieldValue = string | number | boolean | Temporal.Instant;
 
 /** A random value of a column kind. Integers stay within a 4-byte SQL integer. */
-function valueOf(type: AnyColumn): FieldValue {
+export function valueOf(type: AnyColumn): FieldValue {
   switch (type.kind) {
     case "text": {
       return `text-${randomUUID()}`;

@@ -1,10 +1,18 @@
 import type { Effect } from "effect";
 import { describe, expectTypeOf, it } from "vitest";
 
+import type { Adapter } from "../adapter/index.js";
 import type { Result } from "../core/result.js";
-import type { SchedulerService } from "../effect/index.js";
-import { column, defineSchema } from "../index.js";
+import type {
+  PluginResourceId,
+  RecordReadsOf,
+  RecordStoreOf,
+  SchedulerService,
+  TableDef,
+} from "../effect/index.js";
+import { column, createScheduler, defineSchema } from "../index.js";
 import type { AdapterError, RecordId, Scheduler, Vetoed } from "../index.js";
+import type { Column } from "../schema/column.js";
 import { notes } from "../test-utils/notes-plugin.js";
 import type { NoteLimit } from "../test-utils/notes-plugin.js";
 import { promiseNotes } from "../test-utils/promise-notes-plugin.js";
@@ -48,7 +56,12 @@ function clashes() {
     }),
     defineSchema({
       // @ts-expect-error -- `booking` is fasti's own table.
-      plugins: [{ ...notes({ max: 1 }), tables: { booking: { columns: {} } } }],
+      plugins: [
+        {
+          ...notes({ max: 1 }),
+          tables: { booking: { columns: {}, timed: false } },
+        },
+      ],
     }),
   ];
 }
@@ -143,6 +156,96 @@ describe("Plugin Actions on the scheduler", () => {
     expectTypeOf<RecordId<"note">>().not.toEqualTypeOf<RecordId<"memo">>();
     expectTypeOf<RecordId<"note">>().not.toExtend<RecordId<"memo">>();
     expectTypeOf<string>().not.toExtend<RecordId<"note">>();
+  });
+});
+
+/** A timed and an untimed table. A type alias, so it has the implicit index signature `Tables` needs. */
+// oxlint-disable-next-line typescript/consistent-type-definitions -- see above.
+type SlotTables = {
+  readonly slot: TableDef<
+    {
+      readonly label: {
+        readonly required: true;
+        readonly type: Column<"text", string>;
+      };
+    },
+    true
+  >;
+  readonly tag: TableDef<
+    {
+      readonly on: {
+        readonly required: false;
+        readonly type: Column<"dates", readonly Temporal.PlainDate[]>;
+      };
+    },
+    false
+  >;
+};
+
+/** A `list` query with a range. */
+interface Ranged {
+  readonly resourceId: PluginResourceId;
+  readonly overlapping: {
+    readonly from: Temporal.Instant;
+    readonly to: Temporal.Instant;
+  };
+}
+
+type Reads = RecordReadsOf<SlotTables>;
+
+type Store = RecordStoreOf<SlotTables>;
+
+/** Never called: only the types are checked. */
+function bind(blocksOnly: Adapter<undefined, "blocks">) {
+  return [
+    // @ts-expect-error -- the notes table needs the `records` verbs.
+    createScheduler({ adapter: blocksOnly, schema }),
+    createScheduler({ adapter: blocksOnly, schema: defineSchema({}) }),
+  ];
+}
+
+describe("record handles", () => {
+  it("takes `overlapping` on a timed table only", () => {
+    expectTypeOf<Ranged>().toExtend<Parameters<Reads["slot"]["list"]>[0]>();
+    expectTypeOf<Ranged>().not.toExtend<Parameters<Reads["tag"]["list"]>[0]>();
+  });
+
+  it("writes only on a unit, under the lock", () => {
+    type Verbs = "insert" | "update" | "delete" | "replace";
+
+    expectTypeOf<Extract<keyof Reads["tag"], Verbs>>().toBeNever();
+    expectTypeOf<Extract<keyof Store["tag"], Verbs>>().toEqualTypeOf<Verbs>();
+  });
+
+  it("types each verb; `start` and `end` only on a timed table", () => {
+    type Slot = NonNullable<Effect.Success<ReturnType<Store["slot"]["get"]>>>;
+
+    type Tag = NonNullable<Effect.Success<ReturnType<Store["tag"]["get"]>>>;
+
+    expectTypeOf<Slot["start"]>().toEqualTypeOf<Temporal.Instant>();
+    expectTypeOf<Slot["id"]>().toEqualTypeOf<RecordId<"slot">>();
+    expectTypeOf<Tag>().not.toHaveProperty("start");
+    expectTypeOf<Tag["on"]>().toEqualTypeOf<
+      readonly Temporal.PlainDate[] | null
+    >();
+    expectTypeOf<
+      Effect.Success<ReturnType<Store["tag"]["update"]>>
+    >().toEqualTypeOf<
+      { readonly ok: true } | { readonly ok: false; readonly reason: "changed" }
+    >();
+    expectTypeOf<
+      Effect.Success<ReturnType<Store["tag"]["delete"]>>
+    >().toEqualTypeOf<
+      { readonly ok: true } | { readonly ok: false; readonly reason: "missing" }
+    >();
+    expectTypeOf<{
+      readonly label: string;
+      readonly resourceId: PluginResourceId;
+    }>().not.toExtend<Parameters<Store["slot"]["insert"]>[0]>();
+  });
+
+  it("refuses an Adapter without `records` for a schema with Plugin tables", () => {
+    expectTypeOf(bind).toBeFunction();
   });
 });
 

@@ -7,6 +7,7 @@ import type {
 import type { TypeOf } from "../schema/column.js";
 import type { AnySchema, Fields } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
+import type { Columns } from "../schema/table.js";
 
 /** The Resource id type a schema declares, brand included. */
 export type ResourceIdOf<S extends AnySchema> = TypeOf<S["resource"]["idType"]>;
@@ -14,8 +15,8 @@ export type ResourceIdOf<S extends AnySchema> = TypeOf<S["resource"]["idType"]>;
 /** The logical Statuses a schema declares. */
 export type StatusOf<S extends AnySchema> = keyof S["statuses"] & string;
 
-/** The values of Developer Fields `F`: an optional one may be `null`. */
-export type FieldValues<F extends Fields> = {
+/** The values of Developer Fields or Plugin table columns `F`: an optional one may be `null`. */
+export type FieldValues<F extends Columns> = {
   [K in keyof F]: F[K]["required"] extends true
     ? TypeOf<F[K]["type"]>
     : TypeOf<F[K]["type"]> | null;

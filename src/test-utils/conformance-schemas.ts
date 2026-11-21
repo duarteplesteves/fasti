@@ -2,6 +2,8 @@ import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import { column } from "../schema/column.js";
 import { defineSchema } from "../schema/define-schema.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import type { ConformanceCase } from "../testing/conformance-case.js";
+import { conformancePlugin } from "../testing/conformance-plugin.js";
 
 /** Every rule column renamed; shared by the three schemas below. */
 function ruleColumns(prefix: string) {
@@ -150,7 +152,25 @@ export const integerIdSchema = defineSchema({
 /** Two existing Resources for {@link integerIdSchema}. */
 export const integerIdResources = [1, 2] as const;
 
-/** A schema with no Plugins, as every schema here is. */
+/** Text ids and the conformance Plugin, so the `records` cases run too. Booking and rule tables renamed. */
+export const recordsSchema = defineSchema({
+  names: { tables: { availabilityRule: "r_hours", booking: "r_bookings" } },
+  plugins: [conformancePlugin],
+  resource: { idType: column.text() },
+});
+
+/** Two existing Resources for {@link recordsSchema}. */
+export const recordsResources = ["staff-a", "staff-b"] as const;
+
+/** Whether case `c` runs on `schema`, for a negative control: a skipped case would prove nothing. */
+export function runsOn(c: ConformanceCase, schema: AnySchema): boolean {
+  return (
+    (schema.block !== null || !c.tags.includes("blocks")) &&
+    (schema.plugins.includes(conformancePlugin) || !c.tags.includes("records"))
+  );
+}
+
+/** A schema with no Plugins, as every schema here but {@link recordsSchema} is. */
 export type PluginFreeSchema = AnySchema & { readonly plugins: readonly [] };
 
 /** An Adapter without `records`, as a suite generic over a {@link PluginFreeSchema} needs it: TypeScript can't resolve GroupsOf for a generic schema. */

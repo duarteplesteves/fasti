@@ -6,6 +6,7 @@ export type {
   BlockReads,
   BlockWrites,
   DeleteBlockResult,
+  DeleteRecordResult,
   GroupsOf,
   InsertBookingResult,
   ListBlocksQuery,
@@ -14,6 +15,7 @@ export type {
   LockedAdapter,
   RecordReads,
   RecordWrites,
+  ReplaceRecordsParams,
   ReplaceRulesParams,
   SchemaAdapter,
   StoredRecord,
@@ -21,6 +23,8 @@ export type {
   UpdateBlockResult,
   UpdateBookingParams,
   UpdateBookingResult,
+  UpdateRecordParams,
+  UpdateRecordResult,
   VerbGroup,
 } from "./contract.js";
 

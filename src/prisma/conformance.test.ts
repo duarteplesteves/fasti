@@ -22,6 +22,7 @@ import { backstopSql, noOverlapConstraint } from "../schema/backstop-sql.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import {
   pluginFree,
+  runsOn,
   integerIdResources,
   integerIdSchema,
   textIdResources,
@@ -276,22 +277,21 @@ function suite<S extends PluginFreeSchema>(
 
     // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
     // Run without the backstop, which would refuse the overlap a missing lock lets through and so mask it.
-    // Blocks cases are skipped without `block`, so a failure there would prove nothing.
-    it.fails.each(
-      concurrencyCases.filter(
-        (c) => schema.block !== null || !c.tags.includes("blocks")
-      )
-    )("[lock off] $name", async (c) => {
-      await expect(
-        runCase(c, {
-          ...params,
-          makeAdapter: () =>
-            pluginFree<S, Tx>(
-              createPrismaAdapter(database.db, { lock: false })
-            ),
-        })
-      ).resolves.toBeUndefined();
-    });
+    // Cases skipped for this schema are left out too, so a failure there would prove nothing.
+    it.fails.each(concurrencyCases.filter((c) => runsOn(c, schema)))(
+      "[lock off] $name",
+      async (c) => {
+        await expect(
+          runCase(c, {
+            ...params,
+            makeAdapter: () =>
+              pluginFree<S, Tx>(
+                createPrismaAdapter(database.db, { lock: false })
+              ),
+          })
+        ).resolves.toBeUndefined();
+      }
+    );
   });
 }
 

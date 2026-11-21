@@ -8,6 +8,8 @@ import type {
   BlockReads,
   BlockWrites,
   ListBookingsQuery,
+  RecordReads,
+  RecordWrites,
   SchemaAdapter,
 } from "../../adapter/contract.js";
 import { LOCK_NAMESPACE, isPgTransient } from "../../adapter/postgres-lock.js";
@@ -15,18 +17,27 @@ import { retryTransient } from "../../adapter/retry.js";
 import { noOverlapConstraint } from "../../schema/backstop-sql.js";
 import type { AnySchema, BlockSchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
+import { tablesOf } from "../../schema/table.js";
+import type { TableDef } from "../../schema/table.js";
 import {
   decodeBlock,
   decodeBooking,
+  decodeRecord,
   decodeRule,
   encodeBooking,
+  encodeRecord,
   encodeRow,
   encodeRule,
 } from "../codec.js";
-import type { Row } from "../codec.js";
+import type { RecordRow, Row } from "../codec.js";
 import { col, query, recordTable } from "../query.js";
 import type { RecordTable as SharedRecordTable } from "../query.js";
-import { availabilityRuleTable, blockTable, bookingTable } from "./tables.js";
+import {
+  availabilityRuleTable,
+  blockTable,
+  bookingTable,
+  recordTables,
+} from "./tables.js";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- any database, whatever its driver and relations.
 type AnyPgDatabase = PgAsyncDatabase<any, any>;
@@ -86,8 +97,8 @@ async function byId(
 async function compareAndSet(
   q: AnyPgDatabase,
   t: RecordTable,
-  expected: Row,
-  changes: Row
+  expected: RecordRow,
+  changes: RecordRow
 ): Promise<boolean> {
   const unchanged = Object.entries(expected).map(([key, value]) => {
     const c = col(t, key);
@@ -122,22 +133,156 @@ function blockTableOf(schema: AnySchema): RecordTable | null {
   return recordTable(blockTable(schema as BlockSchema));
 }
 
+/** A Plugin table: its definition and its Drizzle table. */
+interface PluginTable {
+  readonly def: TableDef;
+  readonly t: RecordTable;
+}
+
+/** The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares. */
+function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
+  const defs = tablesOf(schema.plugins);
+  const tables: Readonly<Record<string, PgTable>> = recordTables(schema);
+
+  return (table) => {
+    const def = defs[table];
+    const t = tables[table];
+
+    if (def === undefined || t === undefined) {
+      throw new Error(`drizzleAdapter: no Plugin table "${table}"`);
+    }
+
+    return { def, t: recordTable(t) };
+  };
+}
+
+/** The record reads over `q`. */
+function recordReads<S extends AnySchema>(
+  q: AnyPgDatabase,
+  pluginTable: (table: string) => PluginTable
+): RecordReads<S> {
+  return {
+    getRecord: async (table, id) => {
+      const { def, t } = pluginTable(table);
+      const row = await query("getRecord", async () => await byId(q, t, id));
+
+      return row === undefined ? null : decodeRecord(def, row);
+    },
+    listRecords: async (table, { overlapping: range, resourceId }) => {
+      const { def, t } = pluginTable(table);
+
+      const rows = await query(
+        "listRecords",
+        async () =>
+          await q
+            .select()
+            .from(t.table)
+            .where(
+              and(
+                eq(col(t, "resourceId"), resourceId),
+                ...(range === undefined
+                  ? []
+                  : [
+                      lt(col(t, "start"), new Date(range.to.epochMilliseconds)),
+                      gt(col(t, "end"), new Date(range.from.epochMilliseconds)),
+                    ])
+              )
+            )
+            .orderBy(
+              ...(def.timed ? [asc(col(t, "start"))] : []),
+              asc(col(t, "id"))
+            )
+      );
+
+      // SAFETY: a record table's columns are the schema's, of the kinds RecordRow holds.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the table is typed generically.
+      return (rows as RecordRow[]).map((row) => decodeRecord(def, row));
+    },
+  };
+}
+
+/** The record writes on `tx`. */
+function recordWrites<S extends AnySchema>(
+  tx: AnyPgDatabase,
+  pluginTable: (table: string) => PluginTable
+): RecordWrites<S> {
+  return {
+    deleteRecord: async (table, id) => {
+      const { t } = pluginTable(table);
+
+      const deleted = await query(
+        "deleteRecord",
+        async () =>
+          await tx
+            .delete(t.table)
+            .where(eq(col(t, "id"), id))
+            .returning({ id: col(t, "id") })
+      );
+
+      return deleted.length === 1
+        ? { ok: true }
+        : { ok: false, reason: "missing" };
+    },
+    insertRecord: async (table, record) => {
+      const { t } = pluginTable(table);
+
+      await query("insertRecord", async () => {
+        await tx.insert(t.table).values(encodeRecord(record));
+      });
+    },
+    replaceRecords: async (table, { records, resourceId }) => {
+      const { t } = pluginTable(table);
+
+      await query("replaceRecords", async () => {
+        await tx.delete(t.table).where(eq(col(t, "resourceId"), resourceId));
+
+        // Drizzle refuses an insert of no rows.
+        if (records.length > 0) {
+          await tx.insert(t.table).values(records.map(encodeRecord));
+        }
+      });
+    },
+    updateRecord: async (table, { changes, expected }) => {
+      const { t } = pluginTable(table);
+
+      const updated = await query(
+        "updateRecord",
+        async () =>
+          await compareAndSet(
+            tx,
+            t,
+            encodeRecord(expected),
+            encodeRecord(changes)
+          )
+      );
+
+      return updated ? { ok: true } : { ok: false, reason: "changed" };
+    },
+  };
+}
+
 /** The Drizzle Postgres Adapter, with the lock switchable for the negative control. Internal: use {@link drizzleAdapter}. */
 export function createDrizzleAdapter<DB extends AnyPgDatabase>(
   db: DB,
   { lock }: CreateDrizzleAdapterParams
-): Adapter<TxOf<DB>, "blocks"> {
+): Adapter<TxOf<DB>, "blocks" | "records"> {
   return defineAdapter(
-    <S extends AnySchema>(schema: S): SchemaAdapter<S, TxOf<DB>, "blocks"> => {
+    <S extends AnySchema>(
+      schema: S
+    ): SchemaAdapter<S, TxOf<DB>, "blocks" | "records"> => {
       const table = bookingTable(schema);
       const bookings = recordTable(table);
       const blocks = blockTableOf(schema);
       const rules = availabilityRuleTable(schema);
       const codec = statusCodec(schema);
       const noOverlap = noOverlapConstraint(schema);
+      const pluginTable = pluginTablesOf(schema);
 
-      function reads(q: AnyPgDatabase): AdapterReads<S> & BlockReads<S> {
+      function reads(
+        q: AnyPgDatabase
+      ): AdapterReads<S> & BlockReads<S> & RecordReads<S> {
         return {
+          ...recordReads<S>(q, pluginTable),
           getBlock: async (id) => {
             if (blocks === null) {
               return null;
@@ -204,7 +349,7 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
         return blocks;
       }
 
-      const singleAttempt: SchemaAdapter<S, TxOf<DB>, "blocks"> = {
+      const singleAttempt: SchemaAdapter<S, TxOf<DB>, "blocks" | "records"> = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
           await db.transaction(async (tx) => {
@@ -290,6 +435,7 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
             return await work({
               ...reads(tx),
               ...blockWrites,
+              ...recordWrites<S>(tx, pluginTable),
               insertBooking: async (booking) => {
                 // SAFETY: encodeBooking writes one value per column of bookingTable(schema).
                 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row is built from the schema at runtime.
@@ -368,11 +514,11 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
 
 /**
  * The Drizzle Postgres Adapter, over your tables made with {@link bookingTable},
- * {@link availabilityRuleTable} and, if your schema declares `block`, {@link blockTable}.
+ * {@link availabilityRuleTable}, {@link blockTable} if your schema declares `block`, and {@link recordTables} if its Plugins declare tables.
  * `tx` is Drizzle's own transaction, for your writes in the same unit of work.
  */
 export function drizzleAdapter<DB extends AnyPgDatabase>(
   db: DB
-): Adapter<TxOf<DB>, "blocks"> {
+): Adapter<TxOf<DB>, "blocks" | "records"> {
   return createDrizzleAdapter(db, { lock: true });
 }

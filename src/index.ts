@@ -4,6 +4,8 @@ export type {
   AnyColumn,
   Column,
   ColumnKind,
+  Json,
+  RecordColumn,
   ResourceIdColumn,
 } from "./schema/column.js";
 

@@ -1,3 +1,4 @@
+import type { StoredRecord, StoredValue } from "../adapter/contract.js";
 import type {
   BlockChanges,
   BlockRecord,
@@ -5,8 +6,10 @@ import type {
   BookingRecord,
   RuleRecord,
 } from "../adapter/records.js";
+import type { ColumnKind, Json } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
+import type { TableDef } from "../schema/table.js";
 
 /** A value a record holds. */
 type RecordValue = string | number | boolean | Temporal.Instant | null;
@@ -140,4 +143,124 @@ export function decodeRule(row: RuleRow): RuleRecord {
   }
 
   return rule;
+}
+
+/** A Plugin record row as Drizzle reads and writes it: `Date`s for Instants, ISO strings for dates and times, JSON as is. */
+export type RecordRow = Readonly<Record<string, Date | Json>>;
+
+/** `value` with every object's keys sorted: stored as text (SQLite), equal values then have equal text, so compare-and-set holds (R3). */
+function canonical(value: Json): Json {
+  if (Array.isArray(value)) {
+    return value.map(canonical);
+  }
+
+  if (value instanceof Object) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .toSorted(([a], [b]) => (a < b ? -1 : Number(a > b)))
+        .map(([k, v]) => [k, canonical(v)])
+    );
+  }
+
+  return value;
+}
+
+/** Whether `value` is a list: a `dates` value or a JSON array. `Array.isArray` doesn't narrow readonly arrays. */
+function isList(
+  value: StoredValue
+): value is readonly Temporal.PlainDate[] | readonly Json[] {
+  return Array.isArray(value);
+}
+
+/** One value → its row value: Instants to `Date`s (milliseconds, I7), PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical. */
+function encodeValue(value: StoredValue): Date | Json {
+  if (value instanceof Temporal.Instant) {
+    return new Date(value.epochMilliseconds);
+  }
+
+  if (
+    value instanceof Temporal.PlainDate ||
+    value instanceof Temporal.PlainTime
+  ) {
+    return value.toString();
+  }
+
+  if (isList(value)) {
+    return value.map((v) =>
+      v instanceof Temporal.PlainDate ? v.toString() : canonical(v)
+    );
+  }
+
+  return canonical(value);
+}
+
+/** Plugin record → row, column by column; works on a partial record (an update's changes) too. */
+export function encodeRecord(
+  record: Readonly<Record<string, StoredValue>>
+): RecordRow {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key, encodeValue(value)])
+  );
+}
+
+/** One row value of a column of `kind` → its value; `kind` is `undefined` for fasti's own columns. */
+function decodeValue(
+  kind: ColumnKind | undefined,
+  value: Date | Json
+): StoredValue {
+  if (value instanceof Date) {
+    return Temporal.Instant.fromEpochMilliseconds(value.getTime());
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  // SAFETY: recordTables makes `date` and `time` columns ISO text, and `dates` a list of ISO dates (date[] or JSON text).
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+  const iso = value as string;
+
+  switch (kind) {
+    case "date": {
+      return Temporal.PlainDate.from(iso);
+    }
+
+    case "time": {
+      return Temporal.PlainTime.from(iso);
+    }
+
+    case "dates": {
+      // SAFETY: as above.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
+      return (value as readonly string[]).map((d) =>
+        Temporal.PlainDate.from(d)
+      );
+    }
+
+    case "text":
+    case "uuid":
+    case "integer":
+    case "boolean":
+    case "instant":
+    case "json":
+    case undefined: {
+      return value;
+    }
+
+    default: {
+      throw new Error(`Unknown column kind: ${String(kind)}`);
+    }
+  }
+}
+
+/** Row → Plugin record of `table`, column by column. */
+export function decodeRecord(table: TableDef, row: RecordRow): StoredRecord {
+  // SAFETY: the row comes from recordTables(schema): `id`, `resourceId`, and one column per declared one, of its kind.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+  return Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      decodeValue(table.columns[key]?.type.kind, value),
+    ])
+  ) as StoredRecord;
 }

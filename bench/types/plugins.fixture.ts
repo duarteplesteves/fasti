@@ -25,6 +25,7 @@ import { notes } from "../../src/test-utils/notes-plugin.js";
 const tags = definePlugin({
   actions: {
     tag: {
+      timed: false,
       kind: "write",
       run: (
         params: {
@@ -52,8 +53,12 @@ const tags = definePlugin({
   },
   name: "tags",
   tables: {
-    colour: { columns: { hex: { required: true, type: column.text() } } },
+    colour: {
+      columns: { hex: { required: true, type: column.text() } },
+      timed: false,
+    },
     tag: {
+      timed: false,
       columns: {
         label: { required: true, type: column.text() },
         weight: { required: false, type: column.integer() },
@@ -109,6 +114,7 @@ const waitlist = definePromisePlugin({
   name: "waitlist",
   tables: {
     entry: {
+      timed: false,
       columns: {
         at: { required: true, type: column.instant() },
         customer: { required: true, type: column.text() },

@@ -5,6 +5,7 @@ import type {
   BlockReads,
   BlockWrites,
   DeleteBlockResult,
+  DeleteRecordResult,
   GroupsOf,
   InsertBookingResult,
   ListBlocksQuery,
@@ -12,12 +13,15 @@ import type {
   ListRecordsQuery,
   LockedAdapter,
   RecordReads,
+  ReplaceRecordsParams,
   ReplaceRulesParams,
   SchemaAdapter,
   StoredRecord,
   UpdateBlockResult,
   UpdateBookingParams,
   UpdateBookingResult,
+  UpdateRecordParams,
+  UpdateRecordResult,
   VerbGroup,
 } from "../adapter/contract.js";
 import type {
@@ -87,6 +91,21 @@ export interface EffectLocked<S extends AnySchema, Tx> extends EffectReads<S> {
   readonly insertRecord: (
     table: string,
     record: StoredRecord
+  ) => Effect.Effect<void, AdapterError>;
+  /** As `insertRecord`. */
+  readonly updateRecord: (
+    table: string,
+    params: UpdateRecordParams
+  ) => Effect.Effect<UpdateRecordResult, AdapterError>;
+  /** As `insertRecord`. */
+  readonly deleteRecord: (
+    table: string,
+    id: string
+  ) => Effect.Effect<DeleteRecordResult, AdapterError>;
+  /** As `insertRecord`. */
+  readonly replaceRecords: (
+    table: string,
+    params: ReplaceRecordsParams<S>
   ) => Effect.Effect<void, AdapterError>;
   readonly updateBooking: (
     params: UpdateBookingParams<S>
@@ -165,6 +184,14 @@ function liftLocked<S extends AnySchema, Tx>(
     insertRecord: (table, record) =>
       attempt(async () => {
         await raw.insertRecord(table, record);
+      }),
+    updateRecord: (table, params) =>
+      attempt(async () => await raw.updateRecord(table, params)),
+    deleteRecord: (table, id) =>
+      attempt(async () => await raw.deleteRecord(table, id)),
+    replaceRecords: (table, params) =>
+      attempt(async () => {
+        await raw.replaceRecords(table, params);
       }),
     replaceRules: (params) =>
       attempt(async () => {

@@ -8,6 +8,7 @@ import { blockCases } from "./cases/blocks.js";
 import { changeCases } from "./cases/change.js";
 import { hookCases } from "./cases/hooks.js";
 import { lockCases } from "./cases/lock.js";
+import { recordCases } from "./cases/records.js";
 import { rollbackCases } from "./cases/rollback.js";
 import { roundTripCases } from "./cases/round-trips.js";
 import { ruleCases } from "./cases/rules.js";
@@ -18,6 +19,7 @@ import type {
   RetryProbe,
   TxProbe,
 } from "./conformance-case.js";
+import { conformancePlugin } from "./conformance-plugin.js";
 
 /** Params of {@link testAdapter} and {@link runCase}. */
 export interface TestAdapterParams<S extends AnySchema, Tx> {
@@ -32,7 +34,7 @@ export interface TestAdapterParams<S extends AnySchema, Tx> {
   /**
    * Opt-in groups: `backstop` only if your Adapter ships a database constraint; `tx` a probe over a table of your own, or `null` if `tx` is no transaction (e.g. in memory);
    * `retry` a value your Adapter retries as transient, or `null` if it never retries.
-   * The `blocks` cases run iff `schema` declares `block`.
+   * The `blocks` cases run iff `schema` declares `block`; the `records` cases iff it installs {@link conformancePlugin}.
    */
   readonly groups: {
     readonly backstop: boolean;
@@ -51,6 +53,7 @@ export const conformanceCases: readonly ConformanceCase[] = [
   ...lockCases,
   ...backstopCases,
   ...blockCases,
+  ...recordCases,
   ...txCases,
   ...hookCases,
 ];
@@ -76,7 +79,7 @@ export async function runCase<S extends AnySchema, Tx>(
 
 /**
  * Register the Conformance Suite as Vitest tests: one `it` per case.
- * Cases of a group you didn't opt into (`backstop: false`, `tx: null`, `retry: null`), or `blocks` cases for a schema without `block`, are registered as skipped.
+ * Cases of a group you didn't opt into (`backstop: false`, `tx: null`, `retry: null`), `blocks` cases for a schema without `block`, or `records` cases for one without {@link conformancePlugin}, are registered as skipped.
  */
 export function testAdapter<S extends AnySchema, Tx>(
   params: TestAdapterParams<S, Tx>
@@ -86,6 +89,8 @@ export function testAdapter<S extends AnySchema, Tx>(
       const skipped =
         (c.tags.includes("backstop") && !params.groups.backstop) ||
         (c.tags.includes("blocks") && params.schema.block === null) ||
+        (c.tags.includes("records") &&
+          !params.schema.plugins.includes(conformancePlugin)) ||
         (c.tags.includes("tx") && params.groups.tx === null) ||
         (c.tags.includes("retry") && params.groups.retry === null);
 
