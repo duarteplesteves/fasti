@@ -10,8 +10,8 @@ import { drizzle as nodeSqlite } from "drizzle-orm/node-sqlite";
 import type { AnySQLiteTable } from "drizzle-orm/sqlite-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { AnySchema } from "../../schema/define-schema.js";
 import {
+  pluginFree,
   integerIdResources,
   integerIdSchema,
   textIdResources,
@@ -19,6 +19,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../../test-utils/conformance-schemas.js";
+import type { PluginFreeSchema } from "../../test-utils/conformance-schemas.js";
 import * as tables from "../../test-utils/sqlite-tables.js";
 import { sqliteTestDatabase } from "../../test-utils/sqlite.js";
 import type { SqliteTestDatabase } from "../../test-utils/sqlite.js";
@@ -51,7 +52,7 @@ const probe: TxProbe<Tx> = {
 let database: SqliteTestDatabase;
 
 /** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
-function suite<S extends AnySchema>(
+function suite<S extends PluginFreeSchema>(
   schema: S,
   fastiTables: readonly AnySQLiteTable[],
   resources: TestAdapterParams<S, Tx>["resources"]
@@ -59,7 +60,7 @@ function suite<S extends AnySchema>(
   const params: TestAdapterParams<S, Tx> = {
     // SQLite has no exclusion constraint, so no backstop.
     groups: { backstop: false, retry: null, tx: probe },
-    makeAdapter: () => drizzleAdapter(database.db),
+    makeAdapter: () => pluginFree<S, Tx>(drizzleAdapter(database.db)),
     reset: async () => {
       for (const t of [...fastiTables, tables.testProbe]) {
         // oxlint-disable-next-line no-await-in-loop -- a few tables, setup only.
@@ -89,7 +90,9 @@ function suite<S extends AnySchema>(
           runCase(c, {
             ...params,
             makeAdapter: () =>
-              createDrizzleAdapter(drizzle({ client }), { lock: false }),
+              pluginFree<S, Tx>(
+                createDrizzleAdapter(drizzle({ client }), { lock: false })
+              ),
           })
         ).resolves.toBeUndefined();
       } finally {

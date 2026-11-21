@@ -21,6 +21,7 @@ import { createScheduler } from "../framework/create-scheduler.js";
 import { backstopSql, noOverlapConstraint } from "../schema/backstop-sql.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import {
+  pluginFree,
   integerIdResources,
   integerIdSchema,
   textIdResources,
@@ -28,6 +29,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
+import type { PluginFreeSchema } from "../test-utils/conformance-schemas.js";
 import { postgresUrl } from "../test-utils/postgres.js";
 import { prismaTestDatabase } from "../test-utils/prisma.js";
 import { unwrap } from "../test-utils/results.js";
@@ -241,7 +243,7 @@ function raise(tx: Tx, code: "40001" | "P0001") {
 }
 
 /** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
-function suite<S extends AnySchema>(
+function suite<S extends PluginFreeSchema>(
   schema: S,
   resources: TestAdapterParams<S, Tx>["resources"]
 ): void {
@@ -251,7 +253,7 @@ function suite<S extends AnySchema>(
       retry: { transient: () => ({ code: "40001" }) },
       tx: probe,
     },
-    makeAdapter: () => prismaAdapter(database.db),
+    makeAdapter: () => pluginFree<S, Tx>(prismaAdapter(database.db)),
     reset: async () => {
       await truncate(schema);
     },
@@ -283,7 +285,10 @@ function suite<S extends AnySchema>(
       await expect(
         runCase(c, {
           ...params,
-          makeAdapter: () => createPrismaAdapter(database.db, { lock: false }),
+          makeAdapter: () =>
+            pluginFree<S, Tx>(
+              createPrismaAdapter(database.db, { lock: false })
+            ),
         })
       ).resolves.toBeUndefined();
     });

@@ -20,6 +20,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
       - run: bun run typecheck
+      # Fails on "excessively deep" or when the Plugin fixture's instantiations exceed the budget (#175).
+      - run: bun run typecheck:budget
       - run: bun run build
       - run: bun run publint
       - run: bun run attw

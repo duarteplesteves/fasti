@@ -27,6 +27,8 @@ export type {
   Transitions,
 } from "./schema/define-schema.js";
 
+export type { Plugin, RecordId, TableDef, Tables } from "./schema/table.js";
+
 export { createScheduler } from "./framework/create-scheduler.js";
 
 export type {

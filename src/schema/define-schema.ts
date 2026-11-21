@@ -1,5 +1,7 @@
 import { column } from "./column.js";
 import type { AnyColumn, Column, ResourceIdColumn } from "./column.js";
+import { checkPlugins } from "./table.js";
+import type { InstallablePlugins, Plugin } from "./table.js";
 
 /** A Developer Field: an extra Booking or Block column the developer declares. */
 export interface FieldDef {
@@ -94,6 +96,7 @@ type DistinctStored<N, St extends string> = {
  * @typeParam T - The declared Transitions.
  * @typeParam I - The Statuses `book` may create a Booking in.
  * @typeParam N - The stored Status values, by logical name.
+ * @typeParam Ps - The installed Plugins.
  */
 export interface DefineSchemaParams<
   R extends ResourceIdColumn,
@@ -106,6 +109,7 @@ export interface DefineSchemaParams<
   I extends readonly string[] = readonly ["booked"],
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no renamed Statuses" is exactly `{}`.
   N = Record<never, never>,
+  Ps extends readonly Plugin[] = readonly [],
 > {
   /** The Resource id type; defaults to `column.text()`. */
   readonly resource?: { readonly idType: R };
@@ -127,6 +131,8 @@ export interface DefineSchemaParams<
   };
   /** Declare Blocks, with their Developer Fields (`{}` for none); absent, the schema has no Blocks. A name that collides with a Block column is a type error. */
   readonly block?: { readonly fields: B };
+  /** The Plugins, from `definePlugin`; their Actions appear on `scheduler.<name>`. Two with one name, one named after a scheduler key (`book`, …), or two tables with one name (or one named `booking`) is a type error. */
+  readonly plugins?: Ps & InstallablePlugins<Ps>;
   /** Physical names; each defaults to its logical name, and names of one kind must be distinct. */
   readonly names?: {
     readonly tables?: {
@@ -166,6 +172,7 @@ interface BlockFieldGuard {
  * @typeParam B - The Block's Developer Fields, or `null` for a schema without Blocks.
  * @typeParam Tr - The resolved Transition table.
  * @typeParam In - The Statuses `book` may create a Booking in.
+ * @typeParam Ps - The installed Plugins.
  */
 export interface Schema<
   R extends ResourceIdColumn = ResourceIdColumn,
@@ -174,6 +181,7 @@ export interface Schema<
   B extends Fields | null = null,
   Tr extends Transitions<St> = Transitions<St>,
   In extends St = Extract<St, "booked">,
+  Ps extends readonly Plugin[] = readonly [],
 > {
   /** The Resource id type. */
   readonly resource: { readonly idType: R };
@@ -189,6 +197,8 @@ export interface Schema<
   readonly transitions: Tr;
   /** The Statuses `book` may create a Booking in. */
   readonly initial: readonly [In, ...In[]];
+  /** The installed Plugins, in order. */
+  readonly plugins: Ps;
   /** Physical names, keyed by logical name. */
   readonly names: {
     readonly tables: {
@@ -216,7 +226,8 @@ export type AnySchema = Schema<
   string,
   Fields | null,
   Transitions<string>,
-  string
+  string,
+  readonly Plugin[]
 >;
 
 /** The Statuses `book` may create a Booking of `S` in. */
@@ -414,8 +425,9 @@ function resolveLifecycle(
  * @typeParam T - The declared Transitions.
  * @typeParam I - The initial Statuses; `["booked"]` when `initial` is absent.
  * @typeParam N - The stored Status values.
+ * @typeParam Ps - The installed Plugins.
  * @throws When a base Status is redeclared, `transitions` or `initial` names an unknown Status, `initial` is empty,
- * a Developer Field is named `also` (or a Booking one `waived`), two Statuses share a stored value (I6), or two columns of one table, or two tables, share a physical name.
+ * a Developer Field is named `also` (or a Booking one `waived`), Plugins or their tables clash by name, two Statuses share a stored value (I6), or two columns of one table, or two tables, share a physical name.
  */
 export function defineSchema<
   R extends ResourceIdColumn = Column<"text", string>,
@@ -429,15 +441,17 @@ export function defineSchema<
   const I extends readonly string[] = readonly ["booked"],
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no renamed Statuses" is exactly `{}`.
   const N = Record<never, never>,
+  const Ps extends readonly Plugin[] = readonly [],
 >(
-  params: DefineSchemaParams<R, F, B, D, T, I, N> & BlockFieldGuard
+  params: DefineSchemaParams<R, F, B, D, T, I, N, Ps> & BlockFieldGuard
 ): Schema<
   R,
   F,
   StatusesOf<D>,
   B,
   ResolveTransitions<T, StatusesOf<D>>,
-  I[number] & StatusesOf<D>
+  I[number] & StatusesOf<D>,
+  Ps
 > {
   type St = StatusesOf<D>;
 
@@ -449,6 +463,11 @@ export function defineSchema<
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above, for F.
   const fields = (params.booking?.fields ?? {}) as F;
   const blockFields = params.block?.fields ?? {};
+  // SAFETY: Ps falls back to its default, no Plugins, exactly when `plugins` is absent.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above, for Ps.
+  const plugins = (params.plugins ?? []) as Ps;
+
+  checkPlugins(plugins);
 
   assertNotReserved("Booking", fields, ["also", "waived"]);
   assertNotReserved("Block", blockFields, ["also"]);
@@ -517,6 +536,7 @@ export function defineSchema<
       },
       tables,
     },
+    plugins,
     resource: { idType },
     ...lifecycle,
   };

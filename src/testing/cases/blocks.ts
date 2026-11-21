@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import type { SchemaAdapter } from "../../adapter/contract.js";
+import type { SchemaAdapter, VerbGroup } from "../../adapter/contract.js";
 import type { BlockChanges, BlockRecord } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
@@ -15,9 +15,9 @@ function withBlocks<S extends AnySchema, Tx>({
     throw new Error("a blocks case ran on a schema without block");
   }
 
-  // SAFETY: `schema.block` isn't null, so GroupsOf<S> is "blocks".
+  // SAFETY: `schema.block` isn't null, so GroupsOf<S> includes "blocks"; cast to every group, then narrowed by the return type.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
-  return adapter as SchemaAdapter<S, Tx, "blocks">;
+  return adapter as SchemaAdapter<S, Tx, VerbGroup>;
 }
 
 /** Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record. */
