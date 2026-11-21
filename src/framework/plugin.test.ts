@@ -427,6 +427,50 @@ describe("the Promise face crossing (R2)", () => {
     expect(listed.map((n) => n.text)).toStrictEqual(["fast"]);
   });
 
+  it("rejects with what a Promise-style `work` throws, and rolls its writes back", async () => {
+    const boom = new Error("boom");
+
+    const throwing = definePromisePlugin({
+      actions: {
+        add: {
+          kind: "write",
+          run: async (
+            params: { readonly resourceId: PluginResourceId },
+            { lock }
+          ) =>
+            await lock(params.resourceId, async ({ records }) => {
+              await records.note.insert({ ...params, text: "hi" });
+
+              throw boom;
+            }),
+        },
+        list: {
+          kind: "read",
+          run: async (
+            params: { readonly resourceId: PluginResourceId },
+            { records }
+          ) => ({ ok: true, value: await records.note.list(params) }) as const,
+        },
+      },
+      name: "throwing",
+      tables: {
+        note: { columns: { text: { required: true, type: column.text() } } },
+      },
+    });
+
+    const scheduler = createScheduler({
+      adapter: memoryAdapter(),
+      schema: defineSchema({ plugins: [throwing], resource }),
+    });
+
+    await expect(scheduler.throwing.add({ resourceId: ann })).rejects.toBe(
+      boom
+    );
+    expect(
+      unwrap(await scheduler.throwing.list({ resourceId: ann }))
+    ).toStrictEqual([]);
+  });
+
   it("logs an after-commit Hook failure to the caller's Logger", async () => {
     const adapter = memoryAdapter();
     const logs: LogEntry[] = [];
