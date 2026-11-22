@@ -1,5 +1,5 @@
-// The type-check budget's fixture: `baseline.fixture.ts` plus three Plugins (`waitlist` written with the Promise face)
-// installed and called in both forms.
+// The type-check budget's fixture: `baseline.fixture.ts` plus four Plugins (`waitlist` written with the Promise face,
+// `holidays` with busy time and a Policy) installed and called in both forms.
 import { Effect } from "effect";
 
 import {
@@ -19,6 +19,7 @@ import {
   ok,
 } from "../../src/index.js";
 import { memoryAdapter } from "../../src/memory/index.js";
+import { holidays } from "../../src/test-utils/holidays-plugin.js";
 import { notes } from "../../src/test-utils/notes-plugin.js";
 
 /** A Plugin with two tables and an Action on each. */
@@ -134,7 +135,7 @@ const schema = defineSchema({
     statuses: { inProgress: { blocking: true } },
     transitions: { booked: ["inProgress"] },
   },
-  plugins: [notes({ max: 3 }), tags, waitlist],
+  plugins: [notes({ max: 3 }), tags, waitlist, holidays({ eveHours: 1 })],
   resource: { idType: column.uuid<StaffId>() },
 });
 
@@ -175,7 +176,7 @@ export async function useBuiltins() {
     also: ({ booking }) => ({ ok: true, value: booking.id }),
     fields: { customer: "Ann" },
     end,
-    relax: ["maxPerDay"],
+    relax: ["maxPerDay", "holidayEve"],
     resourceId: staff,
     start,
   });

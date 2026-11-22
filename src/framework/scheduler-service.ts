@@ -8,6 +8,7 @@ import type {
 } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import { statusCodec } from "../schema/status-codec.js";
+import type { PoliciesOf } from "../schema/table.js";
 import { getAvailability, setAvailability } from "./availability.js";
 import type {
   GetAvailabilityError,
@@ -35,12 +36,19 @@ import { liftAdapter } from "./effect-adapter.js";
 import type { EffectAdapter } from "./effect-adapter.js";
 import { findSlots } from "./find-slots.js";
 import type { FindSlotsAction, FindSlotsParams } from "./find-slots.js";
-import type { Form, ReadAction, WriteAction } from "./forms.js";
+import type {
+  Form,
+  PolicedWriteAction,
+  ReadAction,
+  WriteAction,
+} from "./forms.js";
 import type { AnyHookOf } from "./hook.js";
 import { busySources } from "./occupancy.js";
-import { pluginActions } from "./plugin.js";
+import type { BusySource } from "./occupancy.js";
+import { pluginActions, pluginBusy, pluginPolicies } from "./plugin.js";
 import type { PluginActionsOf } from "./plugin.js";
-import { availabilityPolicy } from "./policy-pass.js";
+import { appPolicy, availabilityPolicy } from "./policy-pass.js";
+import type { RunnablePolicy } from "./policy-pass.js";
 import type { AnyPolicyOf, ViolationFor } from "./policy.js";
 import { reschedule } from "./reschedule.js";
 import type { RescheduleError, RescheduleParams } from "./reschedule.js";
@@ -52,15 +60,18 @@ export interface ActionContext<S extends AnySchema, Tx> {
   readonly schema: S;
   readonly codec: StatusCodec<StatusOf<S>>;
   readonly adapter: EffectAdapter<S, Tx>;
-  /** fasti's own Policies, run before the developer's: `availability` for now. */
-  readonly pluginPolicies: readonly AnyPolicyOf<S>[];
-  /** The developer's Policies, names unique. */
-  readonly policies: readonly AnyPolicyOf<S>[];
-  /** What a Booking can't overlap, beside other Bookings. */
-  readonly busy: typeof busySources;
+  /** fasti's own Policies (`availability` for now), then the Plugins', in install order: run before the developer's. */
+  readonly pluginPolicies: readonly RunnablePolicy<S>[];
+  /** The developer's Policies; every name unique across these and `pluginPolicies`. */
+  readonly policies: readonly RunnablePolicy<S>[];
+  /** What a Booking can't overlap, beside other Bookings: Blocks, then the Plugins' busy time. */
+  readonly busy: readonly BusySource[];
   /** The developer's Hooks, in order; `[]` when none. */
   readonly hooks: readonly AnyHookOf<S, Tx>[];
 }
+
+/** The installed Plugins' Policies, as written: a union. */
+type PluginPolicy<S extends AnySchema> = PoliciesOf<S["plugins"][number]>;
 
 /**
  * Every Action, in form `F`: each declared once for both forms, so they can't drift (ADR 010).
@@ -72,23 +83,24 @@ export type SchedulerActions<
   P extends readonly AnyPolicyOf<S>[],
   F extends Form,
 > = {
+  // `book` and `reschedule` always run `availability`, so they're policed even while the Plugins' Policies are unknown.
   /** Store a new Booking. */
-  readonly book: WriteAction<
+  readonly book: PolicedWriteAction<
     F,
     BookParams<S>,
     BookAlso<S, Tx>,
     Booking<S>,
-    BookError,
-    ViolationFor<P[number], "book">
+    BookError<S>,
+    ViolationFor<P[number] | PluginPolicy<S>, "book">
   >;
   /** Move a Booking in time or to another Resource, keeping its id and Status. */
-  readonly reschedule: WriteAction<
+  readonly reschedule: PolicedWriteAction<
     F,
     RescheduleParams<S>,
     ChangeAlso<S, Tx>,
     Booking<S>,
     RescheduleError<S>,
-    ViolationFor<P[number], "reschedule">
+    ViolationFor<P[number] | PluginPolicy<S>, "reschedule">
   >;
   /** Cancel a Booking, freeing its slot. Idempotent. */
   readonly cancel: WriteAction<
@@ -97,14 +109,14 @@ export type SchedulerActions<
     ChangeAlso<S, Tx>,
     CancelValue<S>,
     CancelError<S>,
-    ViolationFor<P[number], "cancel">
+    ViolationFor<P[number] | PluginPolicy<S>, "cancel">
   >;
   /** Free slots on a Resource in a range, zoned in the caller's timezone. */
   readonly findSlots: FindSlotsAction<
     F,
     S,
-    ViolationFor<P[number], "book">,
-    ViolationFor<P[number], "reschedule">
+    ViolationFor<P[number] | PluginPolicy<S>, "book">,
+    ViolationFor<P[number] | PluginPolicy<S>, "reschedule">
   >;
   /** A Resource's Availability Rules. */
   readonly availability: {
@@ -146,7 +158,7 @@ export type SchedulerService<
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- params are typed by SchedulerActions at the call site.
 type ActionImpl = (params: never) => Effect.Effect<unknown, unknown>;
 
-/** Bind the Actions to a schema, an Adapter and Policies. Throws on duplicate Policy names. */
+/** Bind the Actions to a schema, an Adapter and Policies. Throws on duplicate Policy names, across the Plugins' and the app's. */
 export function makeScheduler<
   S extends AnySchema,
   Tx,
@@ -158,10 +170,16 @@ export function makeScheduler<
   // Widened from the caller's P: only the types need the tuple.
   const policies: readonly AnyPolicyOf<S>[] = registered.policies ?? [];
   const hooks: readonly AnyHookOf<S, Tx>[] = registered.hooks ?? [];
-  const names = policies.map((p) => p.name);
+
+  const first = [
+    appPolicy(availabilityPolicy<S>()),
+    ...pluginPolicies<S>(schema.plugins),
+  ];
+
+  const names = [...first, ...policies].map((p) => p.name);
   const duplicate = names.find((n, i) => names.indexOf(n) !== i);
 
-  // Plain-JS callers can get past UniqueNames.
+  // Plain-JS callers can get past UniqueNames and InstallablePlugins.
   if (duplicate !== undefined) {
     throw new Error(`fasti: two Policies are named ${duplicate}`);
   }
@@ -169,10 +187,10 @@ export function makeScheduler<
   const ctx: ActionContext<S, Tx> = {
     adapter: liftAdapter(adapter(schema), schema),
     codec: statusCodec(schema),
-    busy: busySources,
+    busy: [...busySources, ...pluginBusy(schema.plugins)],
     hooks,
-    pluginPolicies: [availabilityPolicy<S>()],
-    policies,
+    pluginPolicies: first,
+    policies: policies.map(appPolicy),
     schema,
   };
 

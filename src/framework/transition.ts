@@ -18,6 +18,7 @@ import type { AlsoFn, Form, Run, WithAlso } from "./forms.js";
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
+import type { ConflictOf } from "./occupancy.js";
 import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
 import type {
   Edge,
@@ -106,7 +107,7 @@ export type TransitionError<S extends AnySchema> =
   | InvalidParams
   | BookingNotFound
   | StatusMismatch<StatusOf<S>>
-  | SlotConflict
+  | SlotConflict<ConflictOf<S>>
   | AdapterError;
 
 /**

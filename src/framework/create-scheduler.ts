@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Result as EffectResult } from "effect";
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import type { PolicyNamesOf } from "../schema/table.js";
 import type { AnyHookOf } from "./hook.js";
 import type { AnyPolicyOf, UniqueNames } from "./policy.js";
 import { makeScheduler } from "./scheduler-service.js";
@@ -18,8 +19,8 @@ export interface CreateSchedulerParams<
   readonly schema: S;
   /** The Adapter over the developer's database, e.g. `drizzleAdapter(db)`. A schema with `block` needs one that implements Blocks. */
   readonly adapter: Adapter<Tx, GroupsOf<S>>;
-  /** The Policies from `definePolicy`, names unique; leave out for none. The built-in `availability` always runs; without `notice`, past starts are bookable. */
-  readonly policies?: P & UniqueNames<P>;
+  /** The Policies from `definePolicy`, names unique, and not an installed Plugin's Policy's; leave out for none. The built-in `availability` always runs, then the Plugins'; without `notice`, past starts are bookable. */
+  readonly policies?: P & UniqueNames<P, PolicyNamesOf<S["plugins"][number]>>;
   /** The Hooks from `defineHook`, run in this order on every write they apply to; leave out for none. */
   readonly hooks?: readonly AnyHookOf<S, NoInfer<Tx>>[];
 }

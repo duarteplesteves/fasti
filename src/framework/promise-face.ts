@@ -4,7 +4,11 @@ import { Effect } from "effect";
 import type { Context } from "effect";
 
 import type { Result } from "../core/result.js";
+import type { AnySchema } from "../schema/define-schema.js";
 import type {
+  BusyRange,
+  InstalledBusy,
+  InstalledPolicy,
   Plugin,
   PluginResourceId,
   RecordId,
@@ -14,8 +18,17 @@ import type {
 } from "../schema/table.js";
 import { exitToResult } from "./create-scheduler.js";
 import { AdapterError } from "./errors.js";
-import type { Vetoed } from "./errors.js";
-import type { NativeRead, NativeWrite, Written } from "./plugin.js";
+import type { ConflictingBooking, Vetoed } from "./errors.js";
+import type {
+  BusyConflict,
+  ListQuery,
+  PluginPolicies,
+  NativeRead,
+  NativeWrite,
+  Written,
+} from "./plugin.js";
+import type { Candidate } from "./policy.js";
+import type { BookingActionName } from "./target.js";
 import type { Outcome } from "./write-unit.js";
 
 declare const contextType: unique symbol;
@@ -42,10 +55,8 @@ export type PluginOutcome<V, C, E> =
 export interface PromiseTableReads<N extends string, T extends TableDef> {
   /** The record with this id, or `null` when there is none. */
   readonly get: (id: RecordId<N>) => Promise<RecordOf<N, T> | null>;
-  /** Every record of the Resource, sorted by `id`. */
-  readonly list: (query: {
-    readonly resourceId: PluginResourceId;
-  }) => Promise<readonly RecordOf<N, T>[]>;
+  /** Every record of the Resource; a timed table's sorted by `start`, then `id`, another's by `id`. */
+  readonly list: (query: ListQuery<T>) => Promise<readonly RecordOf<N, T>[]>;
 }
 
 /** Typed writes on Plugin table `T` named `N`, as Promises: only on a unit of work. */
@@ -75,6 +86,11 @@ export interface PromiseUnit<T extends Tables> {
   readonly tx: unknown;
   /** The Clock's time, read once on the unit: the same `now` `also` and the Hooks get. */
   readonly now: Temporal.Instant;
+  /** The blocking Bookings on the locked Resource overlapping the half-open `[start, end)`, sorted by start, then id: refuse busy time over them yourself (Invariant 1). */
+  readonly conflicts: (range: {
+    readonly start: Temporal.Instant;
+    readonly end: Temporal.Instant;
+  }) => Promise<readonly ConflictingBooking[]>;
 }
 
 /**
@@ -125,6 +141,46 @@ export type PromiseActions<T extends Tables> = Readonly<
   >
 >;
 
+/** What a Promise-style Plugin Policy's `load` gets: the candidate's Resource and range (on `cancel`, the stored Booking's), the unit's `now`, and the Plugin's tables, read on the unit. */
+export interface PromiseLoadContext<T extends Tables> {
+  readonly resourceId: PluginResourceId;
+  readonly from: Temporal.Instant;
+  readonly to: Temporal.Instant;
+  readonly now: Temporal.Instant;
+  readonly records: PromiseReadsOf<T>;
+}
+
+/**
+ * A Promise-style Plugin Policy: a relaxable rule, run under the lock before the app's Policies. Its name is unique
+ * across the Plugins and the app. Write `check`'s `data` type (what `load` resolves with); `null` from `check` passes.
+ */
+export interface PromisePolicy<T extends Tables> {
+  readonly name: string;
+  /** The Actions that run it; at least one. */
+  readonly appliesTo: readonly [BookingActionName, ...BookingActionName[]];
+  /** Runs once per Action call, under the Resource Lock: does the I/O. `null` for none: `check` then gets `undefined`. */
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- the Policy's own data, typed where `check` takes it.
+  readonly load: ((ctx: PromiseLoadContext<T>) => unknown) | null;
+  /** Runs once per candidate: `null` passes, anything else is the Violation's `detail`. */
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- the Policy's own detail, typed where it's written.
+  readonly check: (candidate: Candidate<AnySchema>, data: never) => unknown;
+}
+
+/** A Promise-style Plugin's busy time: ranges no blocking Booking may overlap (Invariant 1, not relaxable); they may overlap each other. */
+export interface PromiseBusy<T extends Tables> {
+  /** Tags the Conflicts it causes in `SlotConflict`. */
+  readonly kind: string;
+  /** The busy ranges on `resourceId` overlapping the half-open `overlapping`. */
+  readonly list: (ctx: {
+    readonly records: PromiseReadsOf<T>;
+    readonly resourceId: PluginResourceId;
+    readonly overlapping: {
+      readonly from: Temporal.Instant;
+      readonly to: Temporal.Instant;
+    };
+  }) => Promise<readonly BusyRange[]>;
+}
+
 /** Promise-style Actions `A` as the native Actions `promiseFace` makes of them: the app types both alike. */
 export type NativeOf<T extends Tables, A> = {
   readonly [K in keyof A]: A[K] extends {
@@ -174,6 +230,7 @@ type ErasedPromiseLock = (
     readonly records: Handles<Promise<unknown>>;
     readonly tx: unknown;
     readonly now: Temporal.Instant;
+    readonly conflicts: PromiseUnit<Tables>["conflicts"];
   }) => Promise<PluginOutcome<unknown, object, unknown>>
 ) => Promise<Result<unknown, unknown>>;
 
@@ -186,6 +243,10 @@ interface ErasedTools {
       readonly records: Handles<Effect.Effect<unknown, AdapterError>>;
       readonly tx: unknown;
       readonly now: Temporal.Instant;
+      readonly conflicts: (range: {
+        readonly start: Temporal.Instant;
+        readonly end: Temporal.Instant;
+      }) => Effect.Effect<readonly ConflictingBooking[], AdapterError>;
     }) => Effect.Effect<Outcome<unknown, object>, unknown>
   ) => Effect.Effect<Written<unknown, object>, unknown>;
 }
@@ -225,6 +286,24 @@ function fromResult<A, E>(result: Result<A, E>): Effect.Effect<A, E> {
   return result.ok ? Effect.succeed(result.value) : Effect.fail(result.error);
 }
 
+/** A native verb as a Promise, run with the caller's services; a failure rejects with its AdapterError. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- any verb's arguments, passed through.
+function promisedVerb<Args extends readonly unknown[], A>(
+  verb: (...args: Args) => Effect.Effect<A, AdapterError>,
+  services: Context.Context<never>,
+  signal: AbortSignal
+): (...args: Args) => Promise<A> {
+  return async (...args) => {
+    const result = await settle(services, signal, verb(...args));
+
+    if (!result.ok) {
+      throw result.error;
+    }
+
+    return result.value;
+  };
+}
+
 /** Native record handles as Promises, run with the caller's services; a failure rejects with its AdapterError. */
 function promised(
   handles: Handles<Effect.Effect<unknown, AdapterError>>,
@@ -237,19 +316,31 @@ function promised(
       Object.fromEntries(
         Object.entries(verbs).map(([name, verb]) => [
           name,
-          async (...args: readonly never[]) => {
-            const result = await settle(services, signal, verb(...args));
-
-            if (!result.ok) {
-              throw result.error;
-            }
-
-            return result.value;
-          },
+          promisedVerb(verb, services, signal),
         ])
       ),
     ])
   );
+}
+
+/** A Promise-style `load` or busy `list` as a native one: its `records` become Promises, run with the caller's services. */
+function nativeRead<A>(read: (ctx: never) => A | Promise<A>) {
+  return (ctx: {
+    readonly records: Handles<Effect.Effect<unknown, AdapterError>>;
+  }): Effect.Effect<A, AdapterError> =>
+    Effect.flatMap(Effect.context(), (services) =>
+      attempt(
+        async (signal) =>
+          await read(
+            // SAFETY: the native context with Promise record handles: what PromiseLoadContext and PromiseBusy's `list` take.
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- erased across the crossing.
+            {
+              ...ctx,
+              records: promised(ctx.records, services, signal),
+            } as never
+          )
+      )
+    );
 }
 
 /** One Promise-style Action as a native one: the caller's services and the call's AbortSignal cross with it. */
@@ -275,6 +366,7 @@ function nativeRun(def: ErasedDef) {
                   async () =>
                     await work({
                       ...unit,
+                      conflicts: promisedVerb(unit.conflicts, services, signal),
                       records: promised(unit.records, services, signal),
                     })
                 ).pipe(
@@ -323,8 +415,8 @@ function promiseFace(actions: Readonly<Record<string, ErasedDef>>): Readonly<
 }
 
 /**
- * Define a Plugin with plain async functions: tables stored by every Adapter with `records`, and Actions on
- * `scheduler.<name>`. It builds the same Plugin as the native `definePlugin` from `@fastijs/scheduler/effect`, and the app
+ * Define a Plugin with plain async functions: tables stored by every Adapter with `records`, Actions on
+ * `scheduler.<name>`, Policies run before the app's, and busy time no Booking may overlap. It builds the same Plugin as the native `definePlugin` from `@fastijs/scheduler/effect`, and the app
  * types its Actions alike. Write each Action's params type on `run`'s first parameter, with {@link PluginResourceId}
  * for the Resource id.
  *
@@ -348,8 +440,11 @@ function promiseFace(actions: Readonly<Record<string, ErasedDef>>): Readonly<
  */
 export function definePlugin<
   const N extends string,
-  // A has no default, and comes before T to allow that: a default on A stops `run`'s tools being typed from T.
+  // A has no default, and comes before T to allow that: a default stops a parameter being inferred from context-sensitive functions.
   const A extends PromiseActions<T>,
+  // P and B have no default either: left out, they're their constraints, which PluginPolicies and BusyConflict read as none.
+  const P extends readonly PromisePolicy<T>[],
+  const B extends PromiseBusy<T> | null,
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no tables" is exactly `{}`.
   const T extends Tables = Record<never, never>,
 >(def: {
@@ -359,7 +454,11 @@ export function definePlugin<
   readonly tables?: T;
   /** Its Actions, by name; `{}` for none. */
   readonly actions: A;
-}): Plugin<N, T, NativeOf<T, A>> {
+  /** Its Policies, run in this order before the app's; leave out for none. */
+  readonly policies?: P;
+  /** Its busy time; leave out for none. */
+  readonly busy?: B;
+}): Plugin<N, T, NativeOf<T, A>, PluginPolicies<P>, BusyConflict<B>> {
   // SAFETY: T falls back to its default, `{}`, exactly when `tables` is absent.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the default can't be tied to absence in the signature.
   const tables = (def.tables ?? {}) as T;
@@ -372,5 +471,14 @@ export function definePlugin<
   // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- see above.
   const actions = promiseFace(erased) as unknown as NativeOf<T, A>;
 
-  return { actions, name: def.name, tables };
+  const policies = (def.policies ?? []).map((policy): InstalledPolicy => ({
+    ...policy,
+    load: policy.load && nativeRead(policy.load),
+  }));
+
+  const busy: InstalledBusy | null = def.busy
+    ? { kind: def.busy.kind, list: nativeRead(def.busy.list) }
+    : null;
+
+  return { actions, busy, name: def.name, policies, tables };
 }

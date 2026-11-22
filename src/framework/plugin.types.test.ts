@@ -11,10 +11,20 @@ import type {
   TableDef,
 } from "../effect/index.js";
 import { column, createScheduler, defineSchema } from "../index.js";
-import type { AdapterError, RecordId, Scheduler, Vetoed } from "../index.js";
+import type {
+  AdapterError,
+  RecordId,
+  Scheduler,
+  Vetoed,
+  Violation,
+} from "../index.js";
 import type { Column } from "../schema/column.js";
+import type { AnySchema } from "../schema/define-schema.js";
+import { holidays } from "../test-utils/holidays-plugin.js";
+import type { HolidayEve } from "../test-utils/holidays-plugin.js";
 import { notes } from "../test-utils/notes-plugin.js";
 import type { NoteLimit } from "../test-utils/notes-plugin.js";
+import { promiseHolidays } from "../test-utils/promise-holidays-plugin.js";
 import { promiseNotes } from "../test-utils/promise-notes-plugin.js";
 
 type StaffId = string & { readonly __brand: "StaffId" };
@@ -252,5 +262,63 @@ describe("record handles", () => {
 describe("name clashes", () => {
   it("refuses each clash at defineSchema", () => {
     expectTypeOf(clashes).toBeFunction();
+  });
+});
+
+describe("a Plugin's busy time and Policies, as the app sees them", () => {
+  const holidaySchemas = {
+    native: defineSchema({
+      plugins: [holidays({ eveHours: 1 })],
+      resource: { idType: column.uuid<StaffId>() },
+    }),
+    promise: defineSchema({
+      plugins: [promiseHolidays({ eveHours: 1 })],
+      resource: { idType: column.uuid<StaffId>() },
+    }),
+  };
+
+  type BookOf<H extends AnySchema> = Scheduler<
+    H,
+    undefined,
+    readonly []
+  >["book"];
+
+  /** The kinds `book`'s SlotConflict can carry. */
+  type KindOf<H extends AnySchema> = Extract<
+    Extract<Awaited<ReturnType<BookOf<H>>>, { ok: false }>["error"],
+    { readonly _tag: "SlotConflict" }
+  >["conflicts"][number]["kind"];
+
+  it("adds the Plugin's own kind to SlotConflict, for both styles", () => {
+    expectTypeOf<KindOf<typeof holidaySchemas.native>>().toEqualTypeOf<
+      "booking" | "block" | "holiday"
+    >();
+    expectTypeOf<KindOf<typeof holidaySchemas.promise>>().toEqualTypeOf<
+      "booking" | "block" | "holiday"
+    >();
+    expectTypeOf<KindOf<S>>().toEqualTypeOf<"booking" | "block">();
+  });
+
+  it("lets `relax` name a Plugin Policy, and types its Violation in `waived` and PolicyViolation", () => {
+    type Book = BookOf<typeof holidaySchemas.native>;
+
+    type Relaxed = Awaited<
+      ReturnType<
+        (book: Book) => ReturnType<typeof book<readonly ["holidayEve"]>>
+      >
+    >;
+
+    expectTypeOf<
+      Extract<Relaxed, { ok: true }>["value"]["waived"]
+    >().toEqualTypeOf<readonly Violation<"holidayEve", HolidayEve>[]>();
+    expectTypeOf<Parameters<Book>[0]["relax"]>().toEqualTypeOf<
+      readonly ("availability" | "holidayEve")[] | undefined
+    >();
+
+    type PromiseBook = BookOf<typeof holidaySchemas.promise>;
+
+    expectTypeOf<Parameters<PromiseBook>[0]["relax"]>().toEqualTypeOf<
+      readonly ("availability" | "holidayEve")[] | undefined
+    >();
   });
 });
