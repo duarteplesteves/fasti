@@ -52,6 +52,23 @@ export function isList(
   return Array.isArray(v);
 }
 
+/** `value` with every object's keys sorted: stored as text (SQLite), equal values then have equal text, so compare-and-set holds (R3). Internal. */
+export function canonical(value: Json): Json {
+  if (Array.isArray(value)) {
+    return value.map(canonical);
+  }
+
+  if (value instanceof Object) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .toSorted(([a], [b]) => (a < b ? -1 : Number(a > b)))
+        .map(([k, v]) => [k, canonical(v)])
+    );
+  }
+
+  return value;
+}
+
 /** A Plugin record as it crosses the Adapter seam: logical column names; `id` and `resourceId` included, and on a timed table `start` and `end`. */
 export type StoredRecord = Readonly<Record<string, StoredValue>> & {
   readonly id: string;

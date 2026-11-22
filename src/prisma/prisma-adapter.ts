@@ -7,6 +7,8 @@ import type {
   BlockReads,
   BlockWrites,
   ListBookingsQuery,
+  RecordReads,
+  RecordWrites,
   SchemaAdapter,
 } from "../adapter/contract.js";
 import { LOCK_NAMESPACE, isPgTransient } from "../adapter/postgres-lock.js";
@@ -14,13 +16,17 @@ import { retryTransient } from "../adapter/retry.js";
 import { noOverlapConstraint } from "../schema/backstop-sql.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { statusCodec } from "../schema/status-codec.js";
+import { tablesOf } from "../schema/table.js";
+import type { TableDef } from "../schema/table.js";
 import {
   decodeBlock,
   decodeBooking,
   decodeRule,
+  decodeStored,
   encodeBooking,
   encodeRecord,
   encodeRule,
+  encodeStored,
   physical,
 } from "./codec.js";
 import type { ColumnNames, PrismaRow, PrismaValue } from "./codec.js";
@@ -213,6 +219,151 @@ async function compareAndSet(
   return updated.length === 1;
 }
 
+/** A Plugin table: its definition and its physical table. */
+interface PluginTable {
+  readonly def: TableDef;
+  readonly t: PhysicalTable;
+}
+
+/** The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares. */
+function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
+  const defs = tablesOf(schema.plugins);
+
+  return (table) => {
+    const def = defs[table];
+
+    if (def === undefined) {
+      throw new Error(`prismaAdapter: no Plugin table "${table}"`);
+    }
+
+    // prismaModels names a Plugin table and its columns logically.
+    const columns = [
+      "id",
+      "resourceId",
+      ...(def.timed ? ["start", "end"] : []),
+      ...Object.keys(def.columns),
+    ];
+
+    return {
+      def,
+      t: {
+        name: table,
+        names: Object.fromEntries(columns.map((c) => [c, c])),
+      },
+    };
+  };
+}
+
+/** The record reads over `q`. */
+function recordReads<S extends AnySchema>(
+  q: Queryable,
+  pluginTable: (table: string) => PluginTable
+): RecordReads<S> {
+  return {
+    getRecord: async (table, id) => {
+      const { def, t } = pluginTable(table);
+      const row = await query("getRecord", async () => await byId(q, t, id));
+
+      return row === undefined ? null : decodeStored(def, row);
+    },
+    listRecords: async (table, { overlapping: range, resourceId }) => {
+      const { def, t } = pluginTable(table);
+
+      const rows = await query("listRecords", async () => {
+        if (def.timed && range !== undefined) {
+          return await overlapping(q, t, { overlapping: range, resourceId });
+        }
+
+        const select = tableOf(q, t.name)
+          .select(...Object.values(t.names))
+          .where((f, fns) => fns.eq(ref(f, "resourceId"), resourceId));
+
+        const plan = def.timed
+          ? select
+              .orderBy("start", { direction: "asc" })
+              .orderBy("id", { direction: "asc" })
+              .build()
+          : select.orderBy("id", { direction: "asc" }).build();
+
+        return await rowsOf(q, plan);
+      });
+
+      return rows.map((row) => decodeStored(def, row));
+    },
+  };
+}
+
+/** The record writes on `tx`. */
+function recordWrites<S extends AnySchema>(
+  tx: Queryable,
+  pluginTable: (table: string) => PluginTable
+): RecordWrites<S> {
+  return {
+    deleteRecord: async (table, id) => {
+      const { t } = pluginTable(table);
+
+      const deleted = await query("deleteRecord", async () => {
+        const plan = tableOf(tx, t.name)
+          .delete()
+          .where((f, fns) => fns.eq(ref(f, "id"), id))
+          .returning("id")
+          .build();
+
+        return await rowsOf(tx, plan);
+      });
+
+      return deleted.length === 1
+        ? { ok: true }
+        : { ok: false, reason: "missing" };
+    },
+    insertRecord: async (table, record) => {
+      const { t } = pluginTable(table);
+
+      await query("insertRecord", async () => {
+        await tx.execute(
+          tableOf(tx, t.name)
+            .insert([encodeStored(record)])
+            .build()
+        );
+      });
+    },
+    replaceRecords: async (table, { records, resourceId }) => {
+      const { t } = pluginTable(table);
+
+      await query("replaceRecords", async () => {
+        const builder = tableOf(tx, t.name);
+
+        await tx.execute(
+          builder
+            .delete()
+            .where((f, fns) => fns.eq(ref(f, "resourceId"), resourceId))
+            .build()
+        );
+
+        if (records.length > 0) {
+          await tx.execute(builder.insert(records.map(encodeStored)).build());
+        }
+      });
+    },
+    updateRecord: async (table, { changes, expected }) => {
+      const { t } = pluginTable(table);
+
+      const updated = await query(
+        "updateRecord",
+        async () =>
+          await compareAndSet(
+            tx,
+            t,
+            encodeStored(expected),
+            encodeStored(changes)
+          )
+      );
+
+      return updated ? { ok: true } : { ok: false, reason: "changed" };
+    },
+  };
+}
+
 /** Params of {@link createPrismaAdapter}. */
 export interface CreatePrismaAdapterParams {
   /** `false` skips the Resource Lock: only for the negative control, never exported publicly. */
@@ -223,14 +374,15 @@ export interface CreatePrismaAdapterParams {
 export function createPrismaAdapter<DB extends AnyPostgresClient>(
   db: DB,
   { lock }: CreatePrismaAdapterParams
-): Adapter<PrismaTxOf<DB>, "blocks"> {
+): Adapter<PrismaTxOf<DB>, "blocks" | "records"> {
   return defineAdapter(
     <S extends AnySchema>(
       schema: S
-    ): SchemaAdapter<S, PrismaTxOf<DB>, "blocks"> => {
+    ): SchemaAdapter<S, PrismaTxOf<DB>, "blocks" | "records"> => {
       const { columns, tables } = schema.names;
       const codec = statusCodec(schema);
       const noOverlap = noOverlapConstraint(schema);
+      const pluginTable = pluginTablesOf(schema);
 
       const bookings: PhysicalTable = {
         name: tables.booking,
@@ -258,8 +410,11 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
         return blocks;
       }
 
-      function reads(q: Queryable): AdapterReads<S> & BlockReads<S> {
+      function reads(
+        q: Queryable
+      ): AdapterReads<S> & BlockReads<S> & RecordReads<S> {
         return {
+          ...recordReads<S>(q, pluginTable),
           getBlock: async (id) => {
             if (blocks === null) {
               return null;
@@ -324,7 +479,11 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
         };
       }
 
-      const singleAttempt: SchemaAdapter<S, PrismaTxOf<DB>, "blocks"> = {
+      const singleAttempt: SchemaAdapter<
+        S,
+        PrismaTxOf<DB>,
+        "blocks" | "records"
+      > = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
           await db.transaction(async (tx: Queryable) => {
@@ -438,6 +597,7 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
             return await work({
               ...reads(tx),
               ...blockWrites,
+              ...recordWrites<S>(tx, pluginTable),
               insertBooking: async (booking) => {
                 const inserted = await backstopped(
                   "insertBooking",
@@ -521,13 +681,13 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
 }
 
 /**
- * The Prisma Adapter, over the tables {@link prismaModels} put in your contract. `tx` is Prisma's
+ * The Prisma Adapter, over the tables {@link prismaModels} put in your contract, Plugin tables included. `tx` is Prisma's
  * own transaction, for your writes in the same unit of work.
  *
  * @experimental While Prisma 8 is a release candidate.
  */
 export function prismaAdapter<DB extends AnyPostgresClient>(
   db: DB
-): Adapter<PrismaTxOf<DB>, "blocks"> {
+): Adapter<PrismaTxOf<DB>, "blocks" | "records"> {
   return createPrismaAdapter(db, { lock: true });
 }
