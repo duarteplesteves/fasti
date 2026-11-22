@@ -7,17 +7,16 @@ import { detectConflicts } from "../core/detect-conflicts.js";
 import type { DetectConflictsParams } from "../core/detect-conflicts.js";
 import type { BlockId, Booking, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import type { BusyConflictOf, BusyRange } from "../schema/table.js";
 import type { EffectReads } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
 import type { Conflict, SlotConflict } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
 
-/** A range a Booking can't overlap, from a busy source. */
-interface BusyRange {
-  readonly id: string;
-  readonly start: Temporal.Instant;
-  readonly end: Temporal.Instant;
-}
+/** Something a requested slot overlaps on schema `S`: a Booking, a Block, or an installed Plugin's busy time, by its `kind`. */
+export type ConflictOf<S extends AnySchema> =
+  | Conflict
+  | BusyConflictOf<S["plugins"][number]>;
 
 /** A source of busy time on a Resource, beside Bookings: `kind` tags the Conflicts it causes. */
 export interface BusySource<K extends string = string> {
@@ -34,11 +33,11 @@ const blockBusy: BusySource<"block"> = {
   list: (reads, query) => reads.listBlocks(query),
 };
 
-/** Every busy source a scheduler checks Bookings against. */
-export const busySources = [blockBusy] as const;
+/** fasti's own busy sources, checked before the Plugins'. */
+export const busySources: readonly BusySource[] = [blockBusy];
 
-/** What a Conflict can be: a Booking, or a busy source's kind. */
-type Kind = "booking" | (typeof busySources)[number]["kind"];
+/** What a Conflict can be: `booking`, or a busy source's kind; a candidate of any other kind sees Bookings only. */
+type Kind = string;
 
 /** What `occupants` reads with: the codec and the busy sources. */
 type OccupancyContext<S extends AnySchema, Tx> = Pick<
@@ -54,7 +53,7 @@ interface Occupants {
 
 /**
  * Everything occupying `resourceId` over the half-open `[from, to)` for a candidate of kind `candidate`: the one place occupants enter the Core.
- * Only a Booking candidate sees the busy sources: Blocks may overlap each other (ADR 016). Internal.
+ * Only a Booking candidate sees the busy sources: busy time may overlap busy time (ADR 016). Internal.
  */
 export function occupants<S extends AnySchema, Tx>(
   { busy, codec }: OccupancyContext<S, Tx>,
@@ -132,7 +131,7 @@ export function toConflicts(
 
 /**
  * What a candidate `[start, end)` on `resourceId` would overlap, as Conflicts: the overlap Invariant's one check (ADR 014, ADR 016).
- * `kind` is the candidate's: a Block candidate conflicts with blocking Bookings only.
+ * `kind` is the candidate's: any but `booking` (a Block, a Plugin's busy time) conflicts with blocking Bookings only.
  */
 export function conflictsAt<S extends AnySchema, Tx>(
   ctx: OccupancyContext<S, Tx>,
@@ -184,7 +183,7 @@ export interface CheckOverlapParams<S extends AnySchema> {
   readonly excludeBookingId: BookingId | null;
 }
 
-/** The overlap Invariant for a Booking at `[start, end)`: fails `SlotConflict` if it would overlap a blocking Booking or a Block, ignoring `excludeBookingId` (ADR 014). */
+/** The overlap Invariant for a Booking at `[start, end)`: fails `SlotConflict` if it would overlap a blocking Booking or busy time, ignoring `excludeBookingId` (ADR 014). */
 export function checkOverlap<S extends AnySchema, Tx>(
   ctx: OccupancyContext<S, Tx>,
   reads: EffectReads<S>,

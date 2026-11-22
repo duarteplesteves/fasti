@@ -22,6 +22,7 @@ import type {
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
+import type { ConflictOf } from "./occupancy.js";
 import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
@@ -48,7 +49,7 @@ export type RescheduleError<S extends AnySchema> =
   | InvalidParams
   | BookingNotFound
   | StatusMismatch<StatusOf<S>>
-  | SlotConflict
+  | SlotConflict<ConflictOf<S>>
   | AdapterError;
 
 /** Move a blocking Booking in time or to another Resource, keeping its id and Status (ADR 009): the Invariants first (overlap ignoring itself), then every Policy that applies to `reschedule` (ADR 014). */

@@ -20,10 +20,10 @@ export interface ConflictingBlock {
 /** Something a requested slot overlaps; narrow on `kind`. */
 export type Conflict = ConflictingBooking | ConflictingBlock;
 
-/** The slot overlaps what occupies the Resource: the overlap Invariant (ADR 014). Sorted by start, then id. */
-export interface SlotConflict {
+/** The slot overlaps what occupies the Resource: the overlap Invariant (ADR 014). Sorted by start, then id. `C` is what it can overlap. */
+export interface SlotConflict<C extends { readonly kind: string } = Conflict> {
   readonly _tag: "SlotConflict";
-  readonly conflicts: readonly Conflict[];
+  readonly conflicts: readonly C[];
 }
 
 /** The write breaks one or more Policies: every broken one, with its `detail` (ADR 014). */

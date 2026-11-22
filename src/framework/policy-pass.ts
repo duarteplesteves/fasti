@@ -20,7 +20,29 @@ import type {
 } from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { isNamedTarget, matchesTarget } from "./target.js";
-import type { CalledTarget } from "./target.js";
+import type { CalledTarget, PolicyTarget } from "./target.js";
+
+/** What a Policy's `load` gets besides fasti's reads: the candidate's Resource and range, and the unit's `now`. */
+export interface LoadArgs<S extends AnySchema> {
+  readonly resourceId: LoadContext<S>["resourceId"];
+  readonly from: Temporal.Instant;
+  readonly to: Temporal.Instant;
+  readonly now: Temporal.Instant;
+}
+
+/** A Policy as the pass runs it, the app's and the Plugins' alike: `load` is an Effect over the unit's reads. */
+export interface RunnablePolicy<S extends AnySchema> {
+  readonly name: string;
+  readonly appliesTo: readonly PolicyTarget<S>[];
+  readonly load:
+    | ((
+        reads: EffectReads<S>,
+        ctx: LoadArgs<S>
+      ) => Effect.Effect<unknown, AdapterError>)
+    | null;
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- each Policy's own `D`, opaque to the registry.
+  readonly check: (candidate: never, data: never) => unknown;
+}
 
 /** The built-in `availability` Policy: the candidate must fit inside one of the Resource's availability windows (ADR 014). */
 export function availabilityPolicy<S extends AnySchema>(): Policy<
@@ -60,11 +82,11 @@ function label(target: CalledTarget): string {
   return isNamedTarget(target) ? target : `${target.from} → ${target.to}`;
 }
 
-/** The Policies `target` runs: fasti's own first (`availability`), then the developer's, in registration order. */
+/** The Policies `target` runs: fasti's own first (`availability`), then the Plugins', then the developer's, in registration order. */
 export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
   target: CalledTarget
-): readonly AnyPolicyOf<S>[] {
+): readonly RunnablePolicy<S>[] {
   return [...ctx.pluginPolicies, ...ctx.policies].filter((policy) =>
     policy.appliesTo.some((t) => matchesTarget(t, target))
   );
@@ -93,9 +115,41 @@ function promiseReads<S extends AnySchema>(
   };
 }
 
+/** An app Policy, with its Promise `load` run on fasti's reads: a rejection with `AdapterError` is that failure; any other is a defect. */
+export function appPolicy<S extends AnySchema>(
+  policy: AnyPolicyOf<S>
+): RunnablePolicy<S> {
+  const { load } = policy;
+
+  return {
+    ...policy,
+    load:
+      load &&
+      ((reads, ctx) =>
+        // A rejection other than AdapterError escapes Effect.promise as a defect.
+        Effect.flatMap(
+          Effect.promise(async () => {
+            try {
+              return {
+                data: await load({ ...ctx, reads: promiseReads(reads) }),
+                ok: true,
+              } as const;
+            } catch (error) {
+              if (error instanceof AdapterError) {
+                return { error, ok: false } as const;
+              }
+
+              throw error;
+            }
+          }),
+          (r) => (r.ok ? Effect.succeed(r.data) : Effect.fail(r.error))
+        )),
+  };
+}
+
 /** A Policy with what its `load` returned. */
 interface Loaded<S extends AnySchema> {
-  readonly policy: AnyPolicyOf<S>;
+  readonly policy: RunnablePolicy<S>;
   // oxlint-disable-next-line anti-slop/no-unknown-returns -- the Policy's own `Data`, handed back to its `check`.
   readonly data: unknown;
 }
@@ -103,43 +157,22 @@ interface Loaded<S extends AnySchema> {
 /** Run each Policy's `load` once, in order. A failing read is `AdapterError`; any other throw is a defect. */
 export function loadPolicies<S extends AnySchema>(
   reads: EffectReads<S>,
-  policies: readonly AnyPolicyOf<S>[],
-  ctx: Omit<LoadContext<S>, "reads">
+  policies: readonly RunnablePolicy<S>[],
+  ctx: LoadArgs<S>
 ): Effect.Effect<readonly Loaded<S>[], AdapterError> {
-  const loadCtx = { ...ctx, reads: promiseReads(reads) };
-
   // Effect.all runs them in order, one at a time.
   return Effect.all(
-    policies.map((policy) => {
-      const { load } = policy;
-
-      if (load === null) {
-        return Effect.succeed({ data: undefined, policy });
-      }
-
-      // A rejection other than AdapterError escapes Effect.promise as a defect.
-      return Effect.flatMap(
-        Effect.promise(async () => {
-          try {
-            return { data: await load(loadCtx), ok: true } as const;
-          } catch (error) {
-            if (error instanceof AdapterError) {
-              return { error, ok: false } as const;
-            }
-
-            throw error;
-          }
-        }),
-        (r) =>
-          r.ok ? Effect.succeed({ data: r.data, policy }) : Effect.fail(r.error)
-      );
-    })
+    policies.map((policy) =>
+      policy.load === null
+        ? Effect.succeed({ data: undefined, policy })
+        : Effect.map(policy.load(reads, ctx), (data) => ({ data, policy }))
+    )
   );
 }
 
 /** Each `relax` entry that names no Policy in `policies`, as an issue at its index; `[]` when all apply. Runs before any Adapter call. */
 export function checkRelax<S extends AnySchema>(
-  policies: readonly AnyPolicyOf<S>[],
+  policies: readonly RunnablePolicy<S>[],
   target: CalledTarget,
   relax: readonly string[] | undefined
 ): Issue[] {
@@ -195,7 +228,10 @@ export function judge<S extends AnySchema>(
 }
 
 /** Load and check every Policy in `policies` for `candidate`, under the lock, after the Invariants (ADR 014). Every one runs, relaxed ones too: fails `PolicyViolation` with the unrelaxed broken ones, else succeeds with the relaxed broken ones (`waived`). */
-export function enforcePolicies<S extends AnySchema, P extends AnyPolicyOf<S>>(
+export function enforcePolicies<
+  S extends AnySchema,
+  P extends RunnablePolicy<S>,
+>(
   reads: EffectReads<S>,
   policies: readonly P[],
   candidate: Candidate<S>,

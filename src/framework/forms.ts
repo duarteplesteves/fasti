@@ -41,7 +41,7 @@ interface UnpolicedWriteAction<F extends Form, P, Ctx, V, E> {
 }
 
 /** An Action that writes, checked by Policies whose Violations are `W`: generic over `relax`, so one signature per `also` overload. */
-interface PolicedWriteAction<
+export interface PolicedWriteAction<
   F extends Form,
   P,
   Ctx,

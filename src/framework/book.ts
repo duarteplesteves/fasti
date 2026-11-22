@@ -10,6 +10,7 @@ import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
 import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
+import type { ConflictOf } from "./occupancy.js";
 import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
@@ -51,8 +52,11 @@ export interface BookAlso<S extends AnySchema, Tx> {
   readonly now: Temporal.Instant;
 }
 
-/** Every way `book` can fail, apart from `PolicyViolation`, which the scheduler types from its Policies. */
-export type BookError = InvalidParams | SlotConflict | AdapterError;
+/** Every way `book` can fail on schema `S`, apart from `PolicyViolation`, which the scheduler types from its Policies. */
+export type BookError<S extends AnySchema = AnySchema> =
+  | InvalidParams
+  | SlotConflict<ConflictOf<S>>
+  | AdapterError;
 
 /** Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and keeps every Policy that applies to `book` (ADR 014: Invariants first). */
 export function book<S extends AnySchema, Tx, R = never>(

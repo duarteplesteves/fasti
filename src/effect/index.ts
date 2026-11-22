@@ -6,6 +6,7 @@ import type { AnyPolicyOf, UniqueNames } from "../framework/policy.js";
 import { makeScheduler } from "../framework/scheduler-service.js";
 import type { SchedulerService } from "../framework/scheduler-service.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import type { PolicyNamesOf } from "../schema/table.js";
 
 export type { SchedulerService } from "../framework/scheduler-service.js";
 
@@ -47,7 +48,8 @@ export type LayerParams<
 > = [P] extends [readonly []]
   ? CreateSchedulerParams<S, Tx, P>
   : CreateSchedulerParams<S, Tx, P> & {
-      readonly policies: P & UniqueNames<P>;
+      readonly policies: P &
+        UniqueNames<P, PolicyNamesOf<S["plugins"][number]>>;
     };
 
 /** The class {@link Scheduler} returns: a service tag with a static `layer`. */

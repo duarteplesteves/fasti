@@ -11,6 +11,7 @@ import type {
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type {
+  BusyRange,
   Plugin,
   PluginResourceId,
   RecordId,
@@ -20,11 +21,29 @@ import type {
 } from "../schema/table.js";
 import { uuidV7 } from "./booking-id.js";
 import type { EffectLocked, EffectReads } from "./effect-adapter.js";
-import type { AdapterError, Vetoed } from "./errors.js";
+import type { AdapterError, ConflictingBooking, Vetoed } from "./errors.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
+import { conflictsAt } from "./occupancy.js";
+import type { BusySource } from "./occupancy.js";
+import type { LoadArgs, RunnablePolicy } from "./policy-pass.js";
+import type { Candidate } from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
+import type { BookingActionName } from "./target.js";
 import { writeUnit } from "./write-unit.js";
 import type { EffectAlso, Outcome } from "./write-unit.js";
+
+/** What `list` on Plugin table `T` takes: a Resource, and on a timed table an optional range. */
+export type ListQuery<T extends TableDef> = {
+  readonly resourceId: PluginResourceId;
+} & (T["timed"] extends true
+  ? {
+      /** Only the records with `start < to && end > from`. */
+      readonly overlapping?: {
+        readonly from: Temporal.Instant;
+        readonly to: Temporal.Instant;
+      };
+    }
+  : { readonly overlapping?: never });
 
 /** Typed reads on Plugin table `T` named `N`. */
 export interface TableReads<N extends string, T extends TableDef> {
@@ -34,15 +53,7 @@ export interface TableReads<N extends string, T extends TableDef> {
   ) => Effect.Effect<RecordOf<N, T> | null, AdapterError>;
   /** Every record of the Resource; a timed table's sorted by `start`, then `id`, another's by `id`. */
   readonly list: (
-    query: { readonly resourceId: PluginResourceId } & (T["timed"] extends true
-      ? {
-          /** Only the records with `start < to && end > from`. */
-          readonly overlapping?: {
-            readonly from: Temporal.Instant;
-            readonly to: Temporal.Instant;
-          };
-        }
-      : { readonly overlapping?: never })
+    query: ListQuery<T>
   ) => Effect.Effect<readonly RecordOf<N, T>[], AdapterError>;
 }
 
@@ -91,6 +102,11 @@ export interface Unit<T extends Tables> {
   readonly tx: unknown;
   /** The Clock's time, read once on the unit: the same `now` `also` and the Hooks get. */
   readonly now: Temporal.Instant;
+  /** The blocking Bookings on the locked Resource overlapping the half-open `[start, end)`, sorted by start, then id: refuse busy time over them yourself (Invariant 1). */
+  readonly conflicts: (range: {
+    readonly start: Temporal.Instant;
+    readonly end: Temporal.Instant;
+  }) => Effect.Effect<readonly ConflictingBooking[], AdapterError>;
 }
 
 declare const contextType: unique symbol;
@@ -139,8 +155,77 @@ export type NativeActions<T extends Tables> = Readonly<
   >
 >;
 
+/** What a Plugin Policy's `load` gets: the candidate's Resource and range (on `cancel`, the stored Booking's), the unit's `now`, and the Plugin's tables, read on the unit. */
+export interface PluginLoadContext<T extends Tables> {
+  readonly resourceId: PluginResourceId;
+  readonly from: Temporal.Instant;
+  readonly to: Temporal.Instant;
+  readonly now: Temporal.Instant;
+  readonly records: RecordReadsOf<T>;
+}
+
 /**
- * Define a Plugin, natively in Effect: tables stored by every Adapter with `records`, and Actions on `scheduler.<name>`.
+ * A Plugin Policy, natively: a relaxable rule, run under the lock before the app's Policies. Its name is unique across
+ * the Plugins and the app. Write `check`'s `data` type (what `load` resolves with); `null` from `check` passes.
+ */
+export interface NativePolicy<T extends Tables> {
+  readonly name: string;
+  /** The Actions that run it; at least one. */
+  readonly appliesTo: readonly [BookingActionName, ...BookingActionName[]];
+  /** Runs once per Action call, under the Resource Lock: does the I/O. `null` for none: `check` then gets `undefined`. */
+  readonly load:
+    | ((ctx: PluginLoadContext<T>) => Effect.Effect<unknown, AdapterError>)
+    | null;
+  /** Runs once per candidate: `null` passes, anything else is the Violation's `detail`. */
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- the Policy's own detail, typed where it's written.
+  readonly check: (candidate: Candidate<AnySchema>, data: never) => unknown;
+}
+
+/** A Plugin's busy time, natively: ranges no blocking Booking may overlap (Invariant 1, not relaxable); they may overlap each other. */
+export interface NativeBusy<T extends Tables> {
+  /** Tags the Conflicts it causes in `SlotConflict`. */
+  readonly kind: string;
+  /** The busy ranges on `resourceId` overlapping the half-open `overlapping`. */
+  readonly list: (ctx: {
+    readonly records: RecordReadsOf<T>;
+    readonly resourceId: PluginResourceId;
+    readonly overlapping: {
+      readonly from: Temporal.Instant;
+      readonly to: Temporal.Instant;
+    };
+  }) => Effect.Effect<readonly BusyRange[], AdapterError>;
+}
+
+/** The Policies in tuple `P`, as a union; `never` when it's only the constraint (no `policies` given). */
+export type PluginPolicies<P extends readonly { readonly name: string }[]> =
+  string extends P[number]["name"] ? never : P[number];
+
+/** The Conflict busy time `B` causes: its kind and its ranges' id type; `never` for no busy time (or only the constraint). */
+export type BusyConflict<B> = B extends {
+  readonly kind: infer K extends string;
+  readonly list: (ctx: never) => infer Listed;
+}
+  ? string extends K
+    ? never
+    : {
+        readonly kind: K;
+        readonly id: RangeOf<Listed>["id"];
+        readonly start: Temporal.Instant;
+        readonly end: Temporal.Instant;
+      }
+  : never;
+
+/** The range type a busy `list` resolves with, natively or as a Promise. */
+type RangeOf<Listed> =
+  Listed extends Effect.Effect<readonly (infer R extends BusyRange)[], unknown>
+    ? R
+    : Listed extends Promise<readonly (infer R extends BusyRange)[]>
+      ? R
+      : never;
+
+/**
+ * Define a Plugin, natively in Effect: tables stored by every Adapter with `records`, Actions on `scheduler.<name>`,
+ * Policies run before the app's, and busy time no Booking may overlap.
  * Write each Action's params type on `run`'s first parameter; anything else in the Plugin's types that holds a Resource
  * id uses {@link PluginResourceId}, and the app sees the schema's own id type there.
  *
@@ -162,8 +247,11 @@ export type NativeActions<T extends Tables> = Readonly<
  */
 export function definePlugin<
   const N extends string,
-  // A has no default, and comes before T to allow that: a default on A stops `run`'s tools being typed from T.
+  // A has no default, and comes before T to allow that: a default stops a parameter being inferred from context-sensitive functions.
   const A extends NativeActions<T>,
+  // P and B have no default either: left out, they're their constraints, which PluginPolicies and BusyConflict read as none.
+  const P extends readonly NativePolicy<T>[],
+  const B extends NativeBusy<T> | null,
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no tables" is exactly `{}`.
   const T extends Tables = Record<never, never>,
 >(def: {
@@ -173,12 +261,22 @@ export function definePlugin<
   readonly tables?: T;
   /** Its Actions, by name; `{}` for none. */
   readonly actions: A;
-}): Plugin<N, T, A> {
+  /** Its Policies, run in this order before the app's; leave out for none. */
+  readonly policies?: P;
+  /** Its busy time; leave out for none. */
+  readonly busy?: B;
+}): Plugin<N, T, A, PluginPolicies<P>, BusyConflict<B>> {
   // SAFETY: T falls back to its default, `{}`, exactly when `tables` is absent.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the default can't be tied to absence in the signature.
   const tables = (def.tables ?? {}) as T;
 
-  return { actions: def.actions, name: def.name, tables };
+  return {
+    actions: def.actions,
+    busy: def.busy ?? null,
+    name: def.name,
+    policies: def.policies ?? [],
+    tables,
+  };
 }
 
 // ── App side: a Plugin's types with the schema's Resource id in place of PluginResourceId (approach A, R1).
@@ -267,6 +365,7 @@ interface ErasedUnit {
   readonly records: object;
   readonly tx: unknown;
   readonly now: Temporal.Instant;
+  readonly conflicts: Unit<Tables>["conflicts"];
 }
 
 /** A Plugin Action bound to a scheduler: what the Effect form's `scheduler.<plugin>.<name>` runs. */
@@ -349,6 +448,21 @@ function bind<S extends AnySchema, Tx>(
           { action: name, resourceId },
           (locked, now) =>
             work({
+              conflicts: ({ end, start }) =>
+                Effect.map(
+                  conflictsAt(ctx, locked, {
+                    end,
+                    excludeBookingId: null,
+                    // Not "booking": busy time may overlap busy time, so only Bookings come back.
+                    kind: "busy",
+                    resourceId,
+                    start,
+                  }),
+                  (found) =>
+                    found.filter(
+                      (c): c is ConflictingBooking => c.kind === "booking"
+                    )
+                ),
               now,
               records: handles(tables, locked, locked),
               tx: locked.tx,
@@ -389,5 +503,52 @@ export function pluginActions<S extends AnySchema, Tx>(
         ),
       ];
     })
+  );
+}
+
+/** Every installed Plugin's busy time, as busy sources: each reads its Plugin's tables on the unit. */
+export function pluginBusy(
+  plugins: AnySchema["plugins"]
+): readonly BusySource[] {
+  return plugins.flatMap(({ busy, tables }) =>
+    busy === null
+      ? []
+      : [
+          {
+            kind: busy.kind,
+            list: (reads, { overlapping, resourceId }) =>
+              // SAFETY: `list` was written against its Plugin's tables, which `handles` reads, with the Resource id in
+              // PluginResourceId's place; a NativeBusy fails only with AdapterError.
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the busy time is erased here.
+              busy.list({
+                overlapping,
+                records: handles(Object.keys(tables), reads, null),
+                resourceId,
+              } as never) as Effect.Effect<readonly BusyRange[], AdapterError>,
+          },
+        ]
+  );
+}
+
+/** Every installed Plugin's Policies, in install order, as the Policy pass runs them: each `load` reads its Plugin's tables on the unit. */
+export function pluginPolicies<S extends AnySchema>(
+  plugins: S["plugins"]
+): readonly RunnablePolicy<S>[] {
+  return plugins.flatMap(({ policies, tables }) =>
+    policies.map(({ appliesTo, check, load, name }) => ({
+      appliesTo,
+      check,
+      load:
+        load &&
+        ((reads: EffectReads<S>, ctx: LoadArgs<S>) =>
+          // SAFETY: `load` was written against its Plugin's tables, which `handles` reads, with the Resource id in
+          // PluginResourceId's place; a NativePolicy fails only with AdapterError.
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the Policy is erased here.
+          load({
+            ...ctx,
+            records: handles(Object.keys(tables), reads, null),
+          } as never) as Effect.Effect<unknown, AdapterError>),
+      name,
+    }))
   );
 }
