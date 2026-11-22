@@ -27,7 +27,27 @@ export type {
   Transitions,
 } from "./schema/define-schema.js";
 
-export type { Plugin, RecordId } from "./schema/table.js";
+export type {
+  Plugin,
+  PluginResourceId,
+  RecordId,
+  RecordOf,
+} from "./schema/table.js";
+
+export { definePlugin, fail, ok } from "./framework/promise-face.js";
+
+export type {
+  PluginOutcome,
+  PromiseLock,
+  PromiseReadsOf,
+  PromiseStoreOf,
+  PromiseTableReads,
+  PromiseTableWrites,
+  PromiseUnit,
+  Ran,
+  ReadDef,
+  WriteDef,
+} from "./framework/promise-face.js";
 
 export { createScheduler } from "./framework/create-scheduler.js";
 

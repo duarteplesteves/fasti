@@ -1,4 +1,5 @@
-// The type-check budget's fixture: `baseline.fixture.ts` plus three Plugins installed and called in both forms.
+// The type-check budget's fixture: `baseline.fixture.ts` plus three Plugins (`waitlist` written with the Promise face)
+// installed and called in both forms.
 import { Effect } from "effect";
 
 import {
@@ -10,9 +11,12 @@ import {
   column,
   createScheduler,
   defineHook,
+  definePlugin as definePromisePlugin,
   definePolicy,
   defineSchema,
+  fail,
   notice,
+  ok,
 } from "../../src/index.js";
 import { memoryAdapter } from "../../src/memory/index.js";
 import { notes } from "../../src/test-utils/notes-plugin.js";
@@ -58,12 +62,12 @@ const tags = definePlugin({
   },
 });
 
-/** A Plugin whose write can end in NoOp, and whose read fails with its own error. */
-const waitlist = definePlugin({
+/** A Promise-style Plugin whose write can end in NoOp, and whose read fails with its own error. */
+const waitlist = definePromisePlugin({
   actions: {
     join: {
       kind: "write",
-      run: (
+      run: async (
         params: {
           readonly resourceId: PluginResourceId;
           readonly customer: string;
@@ -71,33 +75,35 @@ const waitlist = definePlugin({
         },
         { lock }
       ) =>
-        lock(params.resourceId, ({ records }) =>
-          Effect.gen(function* join() {
-            const all = yield* records.entry.list(params);
-            const found = all.find((e) => e.customer === params.customer);
+        await lock(params.resourceId, async ({ records }) => {
+          const all = await records.entry.list(params);
+          const found = all.find((e) => e.customer === params.customer);
 
-            if (found !== undefined) {
-              return { _tag: "NoOp", value: found } as const;
-            }
+          if (found !== undefined) {
+            return { _tag: "NoOp", value: found } as const;
+          }
 
-            const entry = yield* records.entry.insert({
-              at: params.at,
-              customer: params.customer,
-              resourceId: params.resourceId,
-            });
+          const entry = await records.entry.insert({
+            at: params.at,
+            customer: params.customer,
+            resourceId: params.resourceId,
+          });
 
-            return { _tag: "Done", context: { entry }, value: entry } as const;
-          })
-        ),
+          return { _tag: "Done", context: { entry }, value: entry } as const;
+        }),
     },
     next: {
       kind: "read",
-      run: (params: { readonly resourceId: PluginResourceId }, { records }) =>
-        Effect.flatMap(records.entry.list(params), ([first]) =>
-          first === undefined
-            ? Effect.fail({ _tag: "WaitlistEmpty" } as const)
-            : Effect.succeed(first)
-        ),
+      run: async (
+        params: { readonly resourceId: PluginResourceId },
+        { records }
+      ) => {
+        const [first] = await records.entry.list(params);
+
+        return first === undefined
+          ? fail({ _tag: "WaitlistEmpty" } as const)
+          : ok(first);
+      },
     },
   },
   name: "waitlist",
