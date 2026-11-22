@@ -334,4 +334,25 @@ describe("Policy names", () => {
       "fasti: two Policies are named holidayEve"
     );
   });
+
+  it("throws in defineSchema on a Plugin Policy that applies to nothing", () => {
+    const idle = definePlugin({
+      actions: {},
+      name: "idle",
+      policies: [
+        {
+          // SAFETY: a plain-JS caller's empty list, past the non-empty tuple type.
+          // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- the point of the test.
+          appliesTo: [] as unknown as readonly ["book"],
+          check: () => null,
+          load: null,
+          name: "idle",
+        },
+      ],
+    });
+
+    expect(() => defineSchema({ plugins: [idle], resource })).toThrow(
+      `defineSchema: Plugin "idle"'s Policy "idle" must apply to at least one Action.`
+    );
+  });
 });

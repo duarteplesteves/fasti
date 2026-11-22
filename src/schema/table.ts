@@ -199,12 +199,21 @@ export function tablesOf(plugins: readonly Plugin[]): Tables {
   return Object.fromEntries(plugins.flatMap((p) => Object.entries(p.tables)));
 }
 
-/** Throw when two Plugins share a name, a Plugin takes a scheduler key, two tables (or one and `booking`) share a name, or a table declares a column fasti owns. */
+/** Throw when two Plugins share a name, a Plugin takes a scheduler key, a Plugin Policy applies to nothing, two tables (or one and `booking`) share a name, or a table declares a column fasti owns. */
 export function checkPlugins(plugins: readonly Plugin[]): void {
   const names = new Set<string>();
   const tables = new Set<string>();
 
-  for (const { name, tables: own } of plugins) {
+  for (const { name, policies, tables: own } of plugins) {
+    // Plain-JS callers can get past the non-empty tuple type.
+    const idle = policies.find((p) => p.appliesTo.length === 0);
+
+    if (idle !== undefined) {
+      throw new Error(
+        `defineSchema: Plugin "${name}"'s Policy "${idle.name}" must apply to at least one Action.`
+      );
+    }
+
     if (schedulerKeys.some((k) => k === name)) {
       throw new Error(
         `defineSchema: a Plugin can't be named "${name}"; "${name}" is a scheduler key.`
