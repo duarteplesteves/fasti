@@ -6,10 +6,12 @@ import { spawnSync } from "node:child_process";
 const BASELINE_0_6 = 94_520;
 
 /**
- * 130% of the 0.6 baseline. Set at 125% (#175), when three Plugins measured 110,799 (117%); raised in #179, when busy
- * time and Plugin Policies (and a fourth fixture Plugin using both) measured 121,749 (129%), the baseline 110,074.
+ * 145% of the 0.6 baseline. Set at 125% (#175), when three Plugins measured 110,799 (117%); raised to 130% in #179,
+ * when busy time and Plugin Policies (and a fourth fixture Plugin using both) measured 121,749 (129%), the baseline
+ * 110,074; raised in #180, when Plugin Hooks and Hook targets measured 134,658 (142%), the baseline 120,321: most of
+ * that rise is fasti's own source, as the baseline rose with it.
  */
-const BUDGET = Math.round(BASELINE_0_6 * 1.3);
+const BUDGET = Math.round(BASELINE_0_6 * 1.45);
 
 /** Type-check one fixture's project; its instantiation count, or a failure message. */
 function measure(

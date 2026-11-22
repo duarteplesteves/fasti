@@ -45,7 +45,12 @@ import type {
 import type { AnyHookOf } from "./hook.js";
 import { busySources } from "./occupancy.js";
 import type { BusySource } from "./occupancy.js";
-import { pluginActions, pluginBusy, pluginPolicies } from "./plugin.js";
+import {
+  pluginActions,
+  pluginBusy,
+  pluginHooks,
+  pluginPolicies,
+} from "./plugin.js";
 import type { PluginActionsOf } from "./plugin.js";
 import { appPolicy, availabilityPolicy } from "./policy-pass.js";
 import type { RunnablePolicy } from "./policy-pass.js";
@@ -54,6 +59,8 @@ import { reschedule } from "./reschedule.js";
 import type { RescheduleError, RescheduleParams } from "./reschedule.js";
 import { transition } from "./transition.js";
 import type { TransitionAction, TransitionParams } from "./transition.js";
+import { appHook } from "./write-unit.js";
+import type { RunnableHook } from "./write-unit.js";
 
 /** What every Action runs with. */
 export interface ActionContext<S extends AnySchema, Tx> {
@@ -66,8 +73,8 @@ export interface ActionContext<S extends AnySchema, Tx> {
   readonly policies: readonly RunnablePolicy<S>[];
   /** What a Booking can't overlap, beside other Bookings: Blocks, then the Plugins' busy time. */
   readonly busy: readonly BusySource[];
-  /** The developer's Hooks, in order; `[]` when none. */
-  readonly hooks: readonly AnyHookOf<S, Tx>[];
+  /** The Plugins' Hooks in install order, then the developer's: what `writeUnit` runs. */
+  readonly hooks: readonly RunnableHook<S, Tx>[];
 }
 
 /** The installed Plugins' Policies, as written: a union. */
@@ -184,11 +191,16 @@ export function makeScheduler<
     throw new Error(`fasti: two Policies are named ${duplicate}`);
   }
 
+  const lifted = liftAdapter(adapter(schema), schema);
+
   const ctx: ActionContext<S, Tx> = {
-    adapter: liftAdapter(adapter(schema), schema),
+    adapter: lifted,
     codec: statusCodec(schema),
     busy: [...busySources, ...pluginBusy(schema.plugins)],
-    hooks,
+    hooks: [
+      ...pluginHooks<S, Tx>(schema.plugins, lifted),
+      ...hooks.map(appHook),
+    ],
     pluginPolicies: first,
     policies: policies.map(appPolicy),
     schema,

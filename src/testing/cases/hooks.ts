@@ -1,11 +1,14 @@
 import { assert, expect } from "vitest";
 
+import type { Result } from "../../core/result.js";
 import type { BookingId } from "../../core/types.js";
 import { createScheduler } from "../../framework/create-scheduler.js";
 import type { AnyHookOf } from "../../framework/hook.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
+import { conformancePlugin } from "../conformance-plugin.js";
 import { newBooking } from "../fixtures.js";
+import { newRecord, withRecords } from "./records.js";
 
 /** Book one hour on the first Resource through a scheduler with `hooks`, waiving `availability` so no rules are needed. */
 async function bookWith<S extends AnySchema, Tx>(
@@ -60,6 +63,33 @@ function throwing<S extends AnySchema, Tx>(reason: Error): AnyHookOf<S, Tx> {
     },
     when: "inTransaction",
   };
+}
+
+/** `conformance.insert` on a scheduler over `ctx` with `hooks`: its types are erased, as the schema is generic here. */
+function insertWith<S extends AnySchema, Tx>(
+  { schema, unbound }: CaseContext<S, Tx>,
+  hooks: readonly AnyHookOf<S, Tx>[]
+): (params: {
+  readonly resourceId: unknown;
+  readonly record: object;
+}) => Promise<Result<{ readonly id: string }, unknown>> {
+  if (!schema.plugins.includes(conformancePlugin)) {
+    throw new Error(
+      "a Plugin Hook case ran on a schema without conformancePlugin"
+    );
+  }
+
+  const scheduler = createScheduler({ adapter: unbound, hooks, schema });
+
+  // SAFETY: conformancePlugin is installed, so the scheduler has `conformance.insert`, which takes these params.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- PluginActionsOf can't be resolved for a generic schema.
+  const { conformance } = scheduler as unknown as {
+    readonly conformance: {
+      readonly insert: ReturnType<typeof insertWith>;
+    };
+  };
+
+  return conformance.insert;
 }
 
 /** The one Booking id an in-transaction Hook saw. */
@@ -160,5 +190,54 @@ export const hookCases: readonly ConformanceCase[] = [
       expect(readBack).toStrictEqual(stored);
     },
     tags: ["retry"],
+  },
+  {
+    name: "a Plugin write whose in-transaction Hook throws a transient value once is retried: one record, after-commit runs once",
+    async run(ctx) {
+      const retry = required(ctx.retry, "retry");
+      const [resourceId] = ctx.resources;
+      let attempts = 0;
+      const committed: string[] = [];
+
+      const insert = insertWith(ctx, [
+        {
+          appliesTo: "*",
+          run() {
+            attempts += 1;
+
+            if (attempts === 1) {
+              throw retry.transient();
+            }
+          },
+          when: "inTransaction",
+        },
+        {
+          appliesTo: "*",
+          run({ action }) {
+            committed.push(action);
+          },
+          when: "afterCommit",
+        },
+      ]);
+
+      const {
+        id: _id,
+        resourceId: _resourceId,
+        ...record
+      } = newRecord("conformanceUntimed", resourceId, "null");
+
+      const result = await insert({ record, resourceId });
+
+      assert(result.ok, "expected the insert to succeed after the retry");
+      expect(attempts).toBe(2);
+      expect(committed).toStrictEqual(["conformance.insert"]);
+
+      const stored = await withRecords(ctx).listRecords("conformanceUntimed", {
+        resourceId,
+      });
+
+      expect(stored.map((r) => r.id)).toStrictEqual([result.value.id]);
+    },
+    tags: ["records", "retry"],
   },
 ];

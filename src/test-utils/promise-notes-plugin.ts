@@ -3,7 +3,13 @@ import type { PluginResourceId } from "../index.js";
 import type { NoteLimit } from "./notes-plugin.js";
 
 /** The test-only `notes` Plugin written with the Promise face, against the root entry point only: it behaves as `notes` does (I9). */
-export function promiseNotes({ max }: { readonly max: number }) {
+export function promiseNotes({
+  max,
+  trace = null,
+}: {
+  readonly max: number;
+  readonly trace?: string[] | null;
+}) {
   return definePlugin({
     actions: {
       add: {
@@ -41,7 +47,46 @@ export function promiseNotes({ max }: { readonly max: number }) {
           { records }
         ) => ok(await records.note.list({ resourceId: params.resourceId })),
       },
+      noop: {
+        kind: "write",
+        run: async (
+          params: { readonly resourceId: PluginResourceId },
+          { lock }
+        ) =>
+          // Pinned: with no Failed branch, the error type has nothing to infer from.
+          await lock<null, object>(params.resourceId, async () => {
+            await Promise.resolve();
+
+            return { _tag: "NoOp", value: null } as const;
+          }),
+      },
     },
+    hooks:
+      trace === null
+        ? []
+        : [
+            {
+              appliesTo: ["notes.add"],
+              run: async (event) => {
+                trace.push(`plugin inTransaction ${event.action}`);
+
+                if (event.action === "notes.add") {
+                  await event.records.note.insert({
+                    resourceId: event.note.resourceId,
+                    text: `${event.note.text} (echo)`,
+                  });
+                }
+              },
+              when: "inTransaction",
+            },
+            {
+              appliesTo: "*",
+              run: (event) => {
+                trace.push(`plugin afterCommit ${event.action}`);
+              },
+              when: "afterCommit",
+            },
+          ],
     name: "notes",
     tables: {
       note: {

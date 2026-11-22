@@ -1,5 +1,6 @@
-import { definePlugin } from "../framework/plugin.js";
+import { definePlugin } from "../framework/promise-face.js";
 import { column } from "../schema/column.js";
+import type { PluginResourceId, RecordOf } from "../schema/table.js";
 
 /** A column of every kind, required and optional. */
 const columns = {
@@ -23,15 +24,43 @@ const columns = {
   uuidOpt: { required: false, type: column.uuid() },
 } as const;
 
+const tables = {
+  conformanceTimed: { columns, timed: true },
+  conformanceUntimed: { columns, timed: false },
+} as const;
+
+/** An untimed record's own columns. */
+type UntimedColumns = Omit<
+  RecordOf<"conformanceUntimed", typeof tables.conformanceUntimed>,
+  "id" | "resourceId"
+>;
+
 /**
- * The Plugin the `records` cases store through: one timed and one untimed table, each with a column of every kind.
- * Install it in the schema you pass `testAdapter`, and create its tables, to run them.
+ * The Plugin the `records` cases store through: one timed and one untimed table, each with a column of every kind,
+ * and `insert`, a write Action the `retry` cases run Hooks on. Install it in the schema you pass `testAdapter`, and
+ * create its tables, to run them.
  */
 export const conformancePlugin = definePlugin({
-  actions: {},
-  name: "conformance",
-  tables: {
-    conformanceTimed: { columns, timed: true },
-    conformanceUntimed: { columns, timed: false },
+  actions: {
+    insert: {
+      kind: "write",
+      run: async (
+        params: {
+          readonly resourceId: PluginResourceId;
+          readonly record: UntimedColumns;
+        },
+        { lock }
+      ) =>
+        await lock(params.resourceId, async ({ records }) => {
+          const record = await records.conformanceUntimed.insert({
+            ...params.record,
+            resourceId: params.resourceId,
+          });
+
+          return { _tag: "Done", context: { record }, value: record } as const;
+        }),
+    },
   },
+  name: "conformance",
+  tables,
 });

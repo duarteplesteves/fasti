@@ -1,4 +1,7 @@
+import type { Effect } from "effect";
+
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
+import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
 import type { SetAvailabilityAlso } from "./availability.js";
 import type {
@@ -8,8 +11,37 @@ import type {
 } from "./blocks.js";
 import type { BookAlso } from "./book.js";
 import type { ChangeAlso } from "./booking.js";
+import type { Fill, Written } from "./plugin.js";
 import { checkEdgeTargets, matchesTarget, writeActionNames } from "./target.js";
-import type { CalledTarget, HookTarget } from "./target.js";
+import type { CalledTarget, HookTarget, WriteNamesOf } from "./target.js";
+
+/** The context write Action `Ac` hands `also`, as its Plugin writes it. */
+export type WrittenContext<Ac> = Ac extends {
+  readonly run: (
+    params: never,
+    tools: never
+  ) => Effect.Effect<Written<unknown, infer C>, unknown>;
+}
+  ? C
+  : never;
+
+/** One event per installed Plugin's write Action: `action` is `<plugin>.<action>`, the rest its `also` context, the schema's Resource id filled in. */
+type PluginWriteEvent<
+  S extends AnySchema,
+  Tx,
+> = S["plugins"][number] extends infer Pl
+  ? Pl extends {
+      readonly name: infer N extends string;
+      readonly actions: infer A;
+    }
+    ? {
+        [K in WriteNamesOf<A>]: { readonly action: `${N}.${K}` } & Fill<
+          ResourceIdOf<S>,
+          WrittenContext<A[K]>
+        > & { readonly tx: Tx; readonly now: Temporal.Instant };
+      }[WriteNamesOf<A>]
+    : never
+  : never;
 
 /** What one saved write tells its Hooks: `also`'s context plus `action`. One variant per write Action. */
 export type HookEvent<S extends AnySchema, Tx> =
@@ -23,7 +55,8 @@ export type HookEvent<S extends AnySchema, Tx> =
           | ({ readonly action: "blocks.create" } & CreateBlockAlso<S, Tx>)
           | ({ readonly action: "blocks.update" } & UpdateBlockAlso<S, Tx>)
           | ({ readonly action: "blocks.delete" } & DeleteBlockAlso<S, Tx>)
-      : never);
+      : never)
+  | PluginWriteEvent<S, Tx>;
 
 /** The events a Hook with targets `T` sees: names by `action`, edges as `"transition"`. */
 type EventFor<
