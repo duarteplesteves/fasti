@@ -13,6 +13,7 @@ export { definePlugin } from "../framework/plugin.js";
 
 export type {
   Lock,
+  RecordChanges,
   NativeActions,
   NativeRead,
   NativeWrite,

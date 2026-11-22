@@ -2,8 +2,14 @@ import type { Adapter, GroupsOf, SchemaAdapter } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 
-/** Tags that group cases: `concurrency` cases test the lock; `backstop` cases are optional; `blocks` cases run only for a schema with `block`; `tx` cases run only with a {@link TxProbe}; `retry` cases run only with a {@link RetryProbe}. */
-export type CaseTag = "concurrency" | "backstop" | "blocks" | "tx" | "retry";
+/** Tags that group cases: `concurrency` cases test the lock; `backstop` cases are optional; `blocks` cases run only for a schema with `block`; `records` cases only for one with `conformancePlugin` installed; `tx` cases run only with a {@link TxProbe}; `retry` cases run only with a {@link RetryProbe}. */
+export type CaseTag =
+  | "concurrency"
+  | "backstop"
+  | "blocks"
+  | "records"
+  | "tx"
+  | "retry";
 
 /** A row of the developer's own, written through `tx`: proves `tx` is fasti's transaction (ADR 015). */
 export interface TxProbe<Tx> {

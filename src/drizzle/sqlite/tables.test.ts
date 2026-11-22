@@ -7,9 +7,15 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 
+import { definePlugin } from "../../framework/plugin.js";
 import { column } from "../../schema/column.js";
 import { defineSchema } from "../../schema/define-schema.js";
-import { availabilityRuleTable, blockTable, bookingTable } from "./index.js";
+import {
+  availabilityRuleTable,
+  blockTable,
+  bookingTable,
+  recordTables,
+} from "./index.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
 
@@ -181,6 +187,49 @@ describe(availabilityRuleTable, () => {
       ["effectiveFrom", "text", "SQLiteText", false, false],
       ["effectiveTo", "text", "SQLiteText", false, false],
       ["exceptions", "text", "SQLiteTextJson", true, false],
+    ]);
+  });
+});
+
+describe(recordTables, () => {
+  it("stores dates, times, JSON and dates lists as text; the id keeps its default (R4), the range only when timed", () => {
+    const schema = defineSchema({
+      plugins: [
+        definePlugin({
+          actions: {},
+          name: "shifts",
+          tables: {
+            shift: {
+              columns: {
+                days: { required: true, type: column.dates() },
+                on: { required: false, type: column.date() },
+                rule: { required: true, type: column.json() },
+                until: { required: true, type: column.time() },
+              },
+              timed: true,
+            },
+            tag: { columns: {}, timed: false },
+          },
+        }),
+      ],
+    });
+
+    const { shift, tag } = recordTables(schema);
+
+    expect(columnsOf(shift)).toStrictEqual([
+      ["id", "text", "SQLiteText", true, true],
+      ["resourceId", "text", "SQLiteText", true, false],
+      ["start", "integer", "SQLiteTimestamp", true, false],
+      ["end", "integer", "SQLiteTimestamp", true, false],
+      ["days", "text", "SQLiteTextJson", true, false],
+      ["on", "text", "SQLiteText", false, false],
+      ["rule", "text", "SQLiteTextJson", true, false],
+      ["until", "text", "SQLiteText", true, false],
+    ]);
+    expect(getTableConfig(shift).columns[0]?.defaultFn).toBeDefined();
+    expect(columnsOf(tag).map(([name]) => name)).toStrictEqual([
+      "id",
+      "resourceId",
     ]);
   });
 });

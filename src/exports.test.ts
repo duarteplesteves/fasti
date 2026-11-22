@@ -74,6 +74,7 @@ const surface = [
       "blockTable",
       "bookingTable",
       "drizzleAdapter",
+      "recordTables",
     ],
     source: "drizzle/pg/index.js",
   },
@@ -84,6 +85,7 @@ const surface = [
       "blockTable",
       "bookingTable",
       "drizzleAdapter",
+      "recordTables",
     ],
     source: "drizzle/sqlite/index.js",
   },
@@ -100,7 +102,7 @@ const surface = [
   },
   {
     module: testing,
-    names: ["conformanceCases", "runCase", "testAdapter"],
+    names: ["conformanceCases", "conformancePlugin", "runCase", "testAdapter"],
     source: "testing/index.js",
   },
 ] as const satisfies readonly Entry[];

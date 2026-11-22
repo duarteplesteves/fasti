@@ -7,9 +7,15 @@ import {
 } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
+import { definePlugin } from "../../framework/plugin.js";
 import { column } from "../../schema/column.js";
 import { defineSchema } from "../../schema/define-schema.js";
-import { backstopSql, blockTable, bookingTable } from "./index.js";
+import {
+  backstopSql,
+  blockTable,
+  bookingTable,
+  recordTables,
+} from "./index.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
 
@@ -105,6 +111,62 @@ describe(blockTable, () => {
       // @ts-expect-error a schema without `block` has no Block table
       blockTable(defineSchema({}))
     ).toThrow(TypeError);
+  });
+});
+
+describe(recordTables, () => {
+  const plugin = definePlugin({
+    actions: {},
+    name: "shifts",
+    tables: {
+      shift: {
+        columns: {
+          days: { required: true, type: column.dates() },
+          on: { required: false, type: column.date() },
+          rule: { required: true, type: column.json() },
+          until: { required: true, type: column.time() },
+        },
+        timed: true,
+      },
+      tag: {
+        columns: { label: { required: true, type: column.text() } },
+        timed: false,
+      },
+    },
+  });
+
+  const schema = defineSchema({
+    plugins: [plugin],
+    resource: { idType: column.integer<StaffId>() },
+  });
+
+  it("builds one table per Plugin table: a database id default (R4), the range only when timed", () => {
+    const { shift, tag } = recordTables(schema, { references: () => staff.id });
+    const shiftConfig = getTableConfig(shift);
+
+    expect(
+      shiftConfig.columns.map((c) => [
+        c.name,
+        `${c.getSQLType()}${"[]".repeat(c.dimensions ?? 0)}`,
+        c.notNull,
+      ])
+    ).toStrictEqual([
+      ["id", "uuid", true],
+      ["resourceId", "integer", true],
+      ["start", "timestamp (3) with time zone", true],
+      ["end", "timestamp (3) with time zone", true],
+      ["days", "date[]", true],
+      ["on", "date", false],
+      ["rule", "jsonb", true],
+      ["until", "time", true],
+    ]);
+    expect(shiftConfig.columns[0]?.default).toBeDefined();
+    expect(shiftConfig.foreignKeys[0]?.reference().foreignTable).toBe(staff);
+    expect(getTableConfig(tag).columns.map((c) => c.name)).toStrictEqual([
+      "id",
+      "resourceId",
+      "label",
+    ]);
   });
 });
 

@@ -376,7 +376,10 @@ describe("the Promise face crossing (R2)", () => {
       },
       name: "gated",
       tables: {
-        note: { columns: { text: { required: true, type: column.text() } } },
+        note: {
+          columns: { text: { required: true, type: column.text() } },
+          timed: false,
+        },
       },
     });
 
@@ -454,7 +457,10 @@ describe("the Promise face crossing (R2)", () => {
       },
       name: "throwing",
       tables: {
-        note: { columns: { text: { required: true, type: column.text() } } },
+        note: {
+          columns: { text: { required: true, type: column.text() } },
+          timed: false,
+        },
       },
     });
 
@@ -565,6 +571,109 @@ describe("a Plugin that throws", () => {
   });
 });
 
+describe("record handles on a timed table", () => {
+  const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
+  const end = start.add({ hours: 1 });
+
+  const shifts = definePlugin({
+    actions: {
+      churn: {
+        kind: "write",
+        run: (params: { readonly resourceId: PluginResourceId }, { lock }) =>
+          lock(params.resourceId, ({ records }) =>
+            Effect.gen(function* churn() {
+              const { resourceId } = params;
+
+              const first = yield* records.shift.insert({
+                end,
+                label: "first",
+                resourceId,
+                start,
+              });
+
+              const moved = yield* records.shift.update({
+                changes: { label: "moved" },
+                expected: first,
+              });
+
+              const stale = yield* records.shift.update({
+                changes: { label: "stale" },
+                expected: first,
+              });
+
+              yield* records.shift.replace({
+                records: [{ end, label: "replaced", start }],
+                resourceId,
+              });
+
+              const gone = yield* records.shift.delete(first.id);
+
+              return {
+                _tag: "Done",
+                context: {},
+                value: { gone, moved, stale },
+              } as const;
+            })
+          ),
+      },
+      during: {
+        kind: "read",
+        run: (
+          params: {
+            readonly resourceId: PluginResourceId;
+            readonly from: Temporal.Instant;
+            readonly to: Temporal.Instant;
+          },
+          { records }
+        ) =>
+          records.shift.list({
+            overlapping: { from: params.from, to: params.to },
+            resourceId: params.resourceId,
+          }),
+      },
+    },
+    name: "shifts",
+    tables: {
+      shift: {
+        columns: { label: { required: true, type: column.text() } },
+        timed: true,
+      },
+    },
+  });
+
+  it("updates by compare-and-set, replaces, deletes and lists by range", async () => {
+    const scheduler = createScheduler({
+      adapter: memoryAdapter(),
+      schema: defineSchema({
+        plugins: [shifts],
+        resource: { idType: column.uuid<StaffId>() },
+      }),
+    });
+
+    expect(
+      unwrap(await scheduler.shifts.churn({ resourceId: ann }))
+    ).toStrictEqual({
+      gone: { ok: false, reason: "missing" },
+      moved: { ok: true },
+      stale: { ok: false, reason: "changed" },
+    });
+    expect(
+      unwrap(
+        await scheduler.shifts.during({ from: start, resourceId: ann, to: end })
+      ).map(({ id: _id, ...shift }) => shift)
+    ).toStrictEqual([{ end, label: "replaced", resourceId: ann, start }]);
+    expect(
+      unwrap(
+        await scheduler.shifts.during({
+          from: end,
+          resourceId: ann,
+          to: end.add({ hours: 1 }),
+        })
+      )
+    ).toStrictEqual([]);
+  });
+});
+
 describe("installing Plugins", () => {
   it("has no Plugin Actions without Plugins", () => {
     const scheduler = createScheduler({
@@ -593,9 +702,32 @@ describe("installing Plugins", () => {
     ],
     [
       "a table named booking",
-      [{ ...notes({ max: 1 }), tables: { booking: { columns: {} } } }],
+      [
+        {
+          ...notes({ max: 1 }),
+          tables: { booking: { columns: {}, timed: false } },
+        },
+      ],
       /"booking" is fasti's own table/u,
     ],
+    ...(["start", "end"] as const).map(
+      (name) =>
+        [
+          `a column named ${name}`,
+          [
+            {
+              ...notes({ max: 1 }),
+              tables: {
+                slot: {
+                  columns: { [name]: { required: true, type: column.text() } },
+                  timed: true,
+                },
+              },
+            },
+          ],
+          new RegExp(`"${name}" is a column fasti owns`, "u"),
+        ] as const
+    ),
   ] satisfies readonly (readonly [string, readonly Plugin[], RegExp])[])(
     "throws on %s",
     (_case, plugins: readonly Plugin[], message) => {

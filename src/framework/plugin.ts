@@ -1,6 +1,13 @@
 import { Effect } from "effect";
 
-import type { StoredRecord, StoredValue } from "../adapter/contract.js";
+import type {
+  DeleteRecordResult,
+  ListRecordsQuery,
+  StoredRecord,
+  StoredValue,
+  UpdateRecordParams,
+  UpdateRecordResult,
+} from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type {
@@ -25,11 +32,24 @@ export interface TableReads<N extends string, T extends TableDef> {
   readonly get: (
     id: RecordId<N>
   ) => Effect.Effect<RecordOf<N, T> | null, AdapterError>;
-  /** Every record of the Resource, sorted by `id`. */
-  readonly list: (query: {
-    readonly resourceId: PluginResourceId;
-  }) => Effect.Effect<readonly RecordOf<N, T>[], AdapterError>;
+  /** Every record of the Resource; a timed table's sorted by `start`, then `id`, another's by `id`. */
+  readonly list: (
+    query: { readonly resourceId: PluginResourceId } & (T["timed"] extends true
+      ? {
+          /** Only the records with `start < to && end > from`. */
+          readonly overlapping?: {
+            readonly from: Temporal.Instant;
+            readonly to: Temporal.Instant;
+          };
+        }
+      : { readonly overlapping?: never })
+  ) => Effect.Effect<readonly RecordOf<N, T>[], AdapterError>;
 }
+
+/** The columns `update` may change: anything but `id` and `resourceId`, since a record never changes Resource. */
+export type RecordChanges<N extends string, T extends TableDef> = Partial<
+  Omit<RecordOf<N, T>, "id" | "resourceId">
+>;
 
 /** Typed writes on Plugin table `T` named `N`: only on a unit of work. */
 export interface TableWrites<N extends string, T extends TableDef> {
@@ -37,6 +57,20 @@ export interface TableWrites<N extends string, T extends TableDef> {
   readonly insert: (
     record: Omit<RecordOf<N, T>, "id">
   ) => Effect.Effect<RecordOf<N, T>, AdapterError>;
+  /** Change a record if it still equals `expected` (compare-and-set); `changed` when it doesn't, or is gone. */
+  readonly update: (params: {
+    readonly expected: RecordOf<N, T>;
+    readonly changes: RecordChanges<N, T>;
+  }) => Effect.Effect<UpdateRecordResult, AdapterError>;
+  /** Remove a record; `missing` when there was none. */
+  readonly delete: (
+    id: RecordId<N>
+  ) => Effect.Effect<DeleteRecordResult, AdapterError>;
+  /** Replace every record of this table on one Resource; fasti mints the ids. */
+  readonly replace: (params: {
+    readonly resourceId: PluginResourceId;
+    readonly records: readonly Omit<RecordOf<N, T>, "id" | "resourceId">[];
+  }) => Effect.Effect<void, AdapterError>;
 }
 
 /** Reads on every table in `T`, by name. */
@@ -252,14 +286,31 @@ function handles<S extends AnySchema, Tx>(
       table,
       {
         get: (id: string) => reads.getRecord(table, id),
-        list: ({ resourceId }: { readonly resourceId: ResourceIdOf<S> }) =>
-          reads.listRecords(table, { resourceId }),
+        list: (query: ListRecordsQuery<S>) => reads.listRecords(table, query),
         ...(locked && {
+          delete: (id: string) => locked.deleteRecord(table, id),
           insert: (fields: Readonly<Record<string, StoredValue>>) => {
             const record: StoredRecord = { ...fields, id: uuidV7() };
 
             return Effect.as(locked.insertRecord(table, record), record);
           },
+          replace: ({
+            records,
+            resourceId,
+          }: {
+            readonly resourceId: ResourceIdOf<S>;
+            readonly records: readonly Readonly<Record<string, StoredValue>>[];
+          }) =>
+            locked.replaceRecords(table, {
+              records: records.map((fields) => ({
+                ...fields,
+                id: uuidV7(),
+                resourceId,
+              })),
+              resourceId,
+            }),
+          update: (params: UpdateRecordParams) =>
+            locked.updateRecord(table, params),
         }),
       },
     ])

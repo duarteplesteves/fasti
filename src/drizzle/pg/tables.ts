@@ -16,17 +16,18 @@ import {
 import type { ResourceIdOf } from "../../adapter/records.js";
 import type { Recurrence } from "../../core/types.js";
 import { sqlLiteral } from "../../schema/backstop-sql.js";
-import type { AnyColumn } from "../../schema/column.js";
+import type { RecordColumn } from "../../schema/column.js";
 import type {
   AnySchema,
   AvailabilityRuleColumn,
   BlockColumn,
   BlockSchema,
   BookingColumn,
-  Fields,
 } from "../../schema/define-schema.js";
 import type { Accepts } from "../../schema/references.js";
 import { statusCodec } from "../../schema/status-codec.js";
+import { tablesOf } from "../../schema/table.js";
+import type { Columns, TableDef, TableNamesOf } from "../../schema/table.js";
 
 /**
  * Options of {@link bookingTable}.
@@ -41,9 +42,28 @@ export interface TableOptions<S extends AnySchema, C extends AnyPgColumn> {
   readonly references?: () => C & Accepts<C["_"]["data"], ResourceIdOf<S>>;
 }
 
-/** A Postgres column of a schema column kind. Instants are `timestamptz` to the millisecond (I7). */
-function pgColumn(type: AnyColumn, name: string) {
+/**
+ * A Postgres column of a schema column kind. Instants are `timestamptz` to the millisecond (I7);
+ * dates are `date` strings, times `time`, JSON `jsonb` (compared by value), dates lists `date[]`.
+ */
+function pgColumn(type: RecordColumn, name: string) {
   switch (type.kind) {
+    case "date": {
+      return date(name, { mode: "string" });
+    }
+
+    case "time": {
+      return time(name);
+    }
+
+    case "json": {
+      return jsonb(name);
+    }
+
+    case "dates": {
+      return date(name, { mode: "string" }).array();
+    }
+
     case "text": {
       return text(name);
     }
@@ -89,9 +109,9 @@ function resourceIdColumn<S extends AnySchema, C extends AnyPgColumn>(
   return col;
 }
 
-/** One column per Developer Field, keyed by logical name; `NOT NULL` when required. */
+/** One column per Developer Field or Plugin table column, keyed by logical name; `NOT NULL` when required. */
 function fieldColumns(
-  fields: Fields,
+  fields: Columns,
   names: Readonly<Partial<Record<string, string>>>
 ) {
   return Object.fromEntries(
@@ -183,4 +203,45 @@ export function availabilityRuleTable<
     effectiveTo: date(names.effectiveTo, { mode: "string" }),
     exceptions: date(names.exceptions, { mode: "string" }).array().notNull(),
   });
+}
+
+/** One Plugin table: `id` (fasti mints it; the database default stays, as on 0.6's rule table, R4), `resourceId`, a timed table's range, then its columns. */
+function pluginTable<S extends AnySchema, C extends AnyPgColumn>(
+  schema: S,
+  name: string,
+  { columns, timed }: TableDef,
+  options: TableOptions<S, C>
+) {
+  return pgTable(name, {
+    id: uuid("id").primaryKey().defaultRandom(),
+    resourceId: resourceIdColumn(schema, "resourceId", options),
+    ...(timed && {
+      start: pgColumn({ kind: "instant" }, "start").notNull(),
+      end: pgColumn({ kind: "instant" }, "end").notNull(),
+    }),
+    ...fieldColumns(columns, {}),
+  });
+}
+
+/**
+ * The tables of every Plugin `schema` installs, by logical name, for your drizzle-kit schema file.
+ * Table and column names are the logical ones. `references` gives each its Resource foreign key.
+ */
+export function recordTables<
+  S extends AnySchema,
+  C extends AnyPgColumn = AnyPgColumn,
+>(
+  schema: S,
+  options: TableOptions<S, C> = {}
+): Readonly<
+  Record<TableNamesOf<S["plugins"]>, ReturnType<typeof pluginTable<S, C>>>
+> {
+  // SAFETY: one entry per table the Plugins declare, which is all of TableNamesOf.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries can't keep the key type.
+  return Object.fromEntries(
+    Object.entries(tablesOf(schema.plugins)).map(([name, def]) => [
+      name,
+      pluginTable(schema, name, def, options),
+    ])
+  );
 }

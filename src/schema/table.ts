@@ -1,9 +1,30 @@
 import type { FieldValues } from "../adapter/records.js";
-import type { Fields } from "./define-schema.js";
+import type { RecordColumn } from "./column.js";
 
-/** A Plugin table: Developer Fields as columns, beside the fasti-owned `id` and `resourceId`. */
-export interface TableDef<C extends Fields = Fields> {
-  /** The table's own columns; `required` maps to `NOT NULL`. */
+/** A Plugin table column. */
+export interface ColumnDef {
+  /** The column type. */
+  readonly type: RecordColumn;
+  /** Whether a value is required; an optional column reads as `null` when unset. */
+  readonly required: boolean;
+}
+
+/** Plugin table columns by logical name. */
+export type Columns = Readonly<Record<string, ColumnDef>>;
+
+/**
+ * A Plugin table: its own columns, beside the fasti-owned `id` and `resourceId`, and on a timed table `start` and `end`.
+ *
+ * @typeParam C - Its columns.
+ * @typeParam Tm - Whether it is timed.
+ */
+export interface TableDef<
+  C extends Columns = Columns,
+  Tm extends boolean = boolean,
+> {
+  /** `true`: each record has a half-open `start`/`end` range, owned by fasti, and lists can take `overlapping`. */
+  readonly timed: Tm;
+  /** The table's own columns; `required` maps to `NOT NULL`. None can be named `id`, `resourceId`, `start` or `end`. */
   readonly columns: C;
 }
 
@@ -31,7 +52,13 @@ export interface PluginResourceId {
 export type RecordOf<N extends string, T extends TableDef> = {
   readonly id: RecordId<N>;
   readonly resourceId: PluginResourceId;
-} & Readonly<FieldValues<T["columns"]>>;
+} & (T["timed"] extends true
+  ? { readonly start: Temporal.Instant; readonly end: Temporal.Instant }
+  : unknown) &
+  Readonly<FieldValues<T["columns"]>>;
+
+/** The columns fasti owns on every Plugin table: no table can declare one. */
+const ownColumns = ["id", "resourceId", "start", "end"] as const;
 
 /**
  * A Plugin, as `definePlugin` builds it and `defineSchema({ plugins })` installs it.
@@ -99,7 +126,12 @@ export type InstallablePlugins<
       : never
   : unknown;
 
-/** Throw when two Plugins share a name, a Plugin takes a scheduler key, or two tables (or one and `booking`) share a name. */
+/** Every table the Plugins declare, by logical name. */
+export function tablesOf(plugins: readonly Plugin[]): Tables {
+  return Object.fromEntries(plugins.flatMap((p) => Object.entries(p.tables)));
+}
+
+/** Throw when two Plugins share a name, a Plugin takes a scheduler key, two tables (or one and `booking`) share a name, or a table declares a column fasti owns. */
 export function checkPlugins(plugins: readonly Plugin[]): void {
   const names = new Set<string>();
   const tables = new Set<string>();
@@ -129,6 +161,16 @@ export function checkPlugins(plugins: readonly Plugin[]): void {
       }
 
       tables.add(table);
+
+      const taken = ownColumns.find((c) =>
+        Object.hasOwn(own[table]?.columns ?? {}, c)
+      );
+
+      if (taken !== undefined) {
+        throw new Error(
+          `defineSchema: table "${table}" can't declare a column "${taken}"; "${taken}" is a column fasti owns.`
+        );
+      }
     }
   }
 }

@@ -20,9 +20,12 @@ import {
 import { defineAdapter } from "../../adapter/contract.js";
 import { createScheduler } from "../../framework/create-scheduler.js";
 import { noOverlapConstraint } from "../../schema/backstop-sql.js";
+import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
-  pluginFree,
+  recordsResources,
+  recordsSchema,
+  runsOn,
   integerIdResources,
   integerIdSchema,
   textIdResources,
@@ -30,7 +33,6 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../../test-utils/conformance-schemas.js";
-import type { PluginFreeSchema } from "../../test-utils/conformance-schemas.js";
 import { postgresUrl, testDatabase } from "../../test-utils/postgres.js";
 import type { TestDatabase } from "../../test-utils/postgres.js";
 import { unwrap } from "../../test-utils/results.js";
@@ -45,6 +47,7 @@ import {
   blockTable,
   bookingTable,
   drizzleAdapter,
+  recordTables,
 } from "./index.js";
 
 const concurrencyCases = conformanceCases.filter((c) =>
@@ -90,6 +93,9 @@ const tables = {
   uuidBlock: blockTable(uuidIdSchema, { references: () => testRooms.id }),
   uuidBooking: bookingTable(uuidIdSchema),
   uuidRule: availabilityRuleTable(uuidIdSchema),
+  recordsBooking: bookingTable(recordsSchema),
+  recordsRule: availabilityRuleTable(recordsSchema),
+  ...recordTables(recordsSchema),
 };
 
 /** A statement that raises `code` from the database, as a driver error. */
@@ -109,7 +115,7 @@ function at(hour: number): Temporal.Instant {
 let database: TestDatabase;
 
 /** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
-function suite<S extends PluginFreeSchema>(
+function suite<S extends AnySchema>(
   schema: S,
   booking: AnyPgTable,
   others: readonly AnyPgTable[],
@@ -121,7 +127,7 @@ function suite<S extends PluginFreeSchema>(
       retry: { transient: () => ({ code: "40001" }) },
       tx: probe,
     },
-    makeAdapter: () => pluginFree<S, Tx>(drizzleAdapter(database.db)),
+    makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       await database.db.execute(
         sql`truncate ${sql.join(
@@ -178,22 +184,19 @@ function suite<S extends PluginFreeSchema>(
 
     // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
     // Run without the backstop, which would refuse the overlap a missing lock lets through and so mask it.
-    // Blocks cases are skipped without `block`, so a failure there would prove nothing.
-    it.fails.each(
-      concurrencyCases.filter(
-        (c) => schema.block !== null || !c.tags.includes("blocks")
-      )
-    )("[lock off] $name", async (c) => {
-      await expect(
-        runCase(c, {
-          ...params,
-          makeAdapter: () =>
-            pluginFree<S, Tx>(
-              createDrizzleAdapter(database.db, { lock: false })
-            ),
-        })
-      ).resolves.toBeUndefined();
-    });
+    // Cases skipped for this schema are left out too, so a failure there would prove nothing.
+    it.fails.each(concurrencyCases.filter((c) => runsOn(c, schema)))(
+      "[lock off] $name",
+      async (c) => {
+        await expect(
+          runCase(c, {
+            ...params,
+            makeAdapter: () =>
+              createDrizzleAdapter(database.db, { lock: false }),
+          })
+        ).resolves.toBeUndefined();
+      }
+    );
 
     it("a driver error rejects with the driver's error as cause", async () => {
       await params.reset();
@@ -250,6 +253,12 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
     tables.integerBooking,
     [tables.integerRule],
     integerIdResources
+  );
+  suite(
+    recordsSchema,
+    tables.recordsBooking,
+    [tables.recordsRule, tables.conformanceTimed, tables.conformanceUntimed],
+    recordsResources
   );
 
   it("a Block whose Resource id breaks the foreign key gives AdapterError with the driver's cause", async () => {

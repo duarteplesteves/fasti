@@ -1,5 +1,5 @@
 import type { BlockId, BookingId } from "../core/types.js";
-import type { AnyColumn, TypeOf } from "../schema/column.js";
+import type { Json, RecordColumn, TypeOf } from "../schema/column.js";
 import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
 import type { HasTables } from "../schema/table.js";
 import type {
@@ -43,9 +43,16 @@ export type GroupsOf<S extends AnySchema> =
   | (HasTables<S> extends true ? "records" : never);
 
 /** A value in a Plugin record's column. */
-export type StoredValue = TypeOf<AnyColumn> | null;
+export type StoredValue = TypeOf<RecordColumn> | null;
 
-/** A Plugin record as it crosses the Adapter seam: logical column names, `id` and `resourceId` included. */
+/** Whether `v` is a list: a `dates` value or a JSON array. Internal; `Array.isArray` doesn't narrow readonly arrays. */
+export function isList(
+  v: StoredValue | undefined
+): v is readonly Temporal.PlainDate[] | readonly Json[] {
+  return Array.isArray(v);
+}
+
+/** A Plugin record as it crosses the Adapter seam: logical column names; `id` and `resourceId` included, and on a timed table `start` and `end`. */
 export type StoredRecord = Readonly<Record<string, StoredValue>> & {
   readonly id: string;
 };
@@ -54,6 +61,11 @@ export type StoredRecord = Readonly<Record<string, StoredValue>> & {
 export interface ListRecordsQuery<S extends AnySchema> {
   /** The Resource whose records to list. */
   readonly resourceId: ResourceIdOf<S>;
+  /** Timed tables only (the Framework never passes it on another): a record matches when `start < to && end > from`. */
+  readonly overlapping?: {
+    readonly from: Temporal.Instant;
+    readonly to: Temporal.Instant;
+  };
 }
 
 /** The Plugin record reads, inside and outside a unit of work; `table` is the table's logical name. */
@@ -63,17 +75,58 @@ export interface RecordReads<S extends AnySchema> {
     table: string,
     id: string
   ) => Promise<StoredRecord | null>;
-  /** Every record of the Resource, sorted by `id`. */
+  /** Every record of the Resource (overlapping the range, when given). A timed table's sorted by `start`, then `id`; another's by `id`. */
   readonly listRecords: (
     table: string,
     query: ListRecordsQuery<S>
   ) => Promise<StoredRecord[]>;
 }
 
-/** The Plugin record writes, only inside a unit of work. */
-export interface RecordWrites {
-  /** Store a new record; its id is minted by fasti. Any failure rejects. */
+/** What `updateRecord` can return. `changed`: the stored record no longer equals `expected`, or is gone. */
+export type UpdateRecordResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "changed" };
+
+/** What `deleteRecord` can return. `missing`: there was no record with that id. */
+export type DeleteRecordResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "missing" };
+
+/** Params of {@link RecordWrites.updateRecord}. The id comes from `expected`. */
+export interface UpdateRecordParams {
+  /** The record as last read; the update applies only if the stored one still equals it. JSON compares by value, not key order. */
+  readonly expected: StoredRecord;
+  /** The columns to change; never `id` or `resourceId`. */
+  readonly changes: Readonly<Record<string, StoredValue>>;
+}
+
+/** Params of {@link RecordWrites.replaceRecords}. */
+export interface ReplaceRecordsParams<S extends AnySchema> {
+  /** The Resource whose records of the table are all replaced. */
+  readonly resourceId: ResourceIdOf<S>;
+  /** The new records, ids minted by fasti; each has this `resourceId`. */
+  readonly records: readonly StoredRecord[];
+}
+
+/** The Plugin record writes, only inside a unit of work. Any failure not in a result type rejects. */
+export interface RecordWrites<S extends AnySchema> {
+  /** Store a new record; its id is minted by fasti. */
   readonly insertRecord: (table: string, record: StoredRecord) => Promise<void>;
+  /** Change a record, if it still equals `expected` (compare-and-set). */
+  readonly updateRecord: (
+    table: string,
+    params: UpdateRecordParams
+  ) => Promise<UpdateRecordResult>;
+  /** Remove a record. */
+  readonly deleteRecord: (
+    table: string,
+    id: string
+  ) => Promise<DeleteRecordResult>;
+  /** Replace every record of the table on one Resource; other Resources' records stay. */
+  readonly replaceRecords: (
+    table: string,
+    params: ReplaceRecordsParams<S>
+  ) => Promise<void>;
 }
 
 /** A `listBlocks` query: one Resource, one half-open range. */
@@ -161,7 +214,7 @@ export type LockedAdapter<
   G extends VerbGroup = never,
 > = AdapterReads<S> &
   With<G, "blocks", BlockReads<S> & BlockWrites<S>> &
-  With<G, "records", RecordReads<S> & RecordWrites> & {
+  With<G, "records", RecordReads<S> & RecordWrites<S>> & {
     /** The ORM's own transaction, for the developer's writes (ADR 015). */
     readonly tx: Tx;
     /** Store a new Booking. */

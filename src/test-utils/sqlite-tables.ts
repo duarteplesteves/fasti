@@ -4,9 +4,11 @@ import {
   availabilityRuleTable,
   blockTable,
   bookingTable,
+  recordTables,
 } from "../drizzle/sqlite/index.js";
 import {
   integerIdSchema,
+  recordsSchema,
   textIdSchema,
   uuidIdSchema,
 } from "./conformance-schemas.js";
@@ -42,3 +44,9 @@ export const uuidBlock = blockTable(uuidIdSchema, {
 
 export const uuidBooking = bookingTable(uuidIdSchema);
 export const uuidRule = availabilityRuleTable(uuidIdSchema);
+
+export const recordsBooking = bookingTable(recordsSchema);
+export const recordsRule = availabilityRuleTable(recordsSchema);
+
+export const { conformanceTimed, conformanceUntimed } =
+  recordTables(recordsSchema);

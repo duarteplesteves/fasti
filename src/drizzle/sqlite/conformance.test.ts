@@ -10,16 +10,18 @@ import { drizzle as nodeSqlite } from "drizzle-orm/node-sqlite";
 import type { AnySQLiteTable } from "drizzle-orm/sqlite-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import type { AnySchema } from "../../schema/define-schema.js";
 import {
-  pluginFree,
   integerIdResources,
   integerIdSchema,
+  recordsResources,
+  recordsSchema,
+  runsOn,
   textIdResources,
   textIdSchema,
   uuidIdResources,
   uuidIdSchema,
 } from "../../test-utils/conformance-schemas.js";
-import type { PluginFreeSchema } from "../../test-utils/conformance-schemas.js";
 import * as tables from "../../test-utils/sqlite-tables.js";
 import { sqliteTestDatabase } from "../../test-utils/sqlite.js";
 import type { SqliteTestDatabase } from "../../test-utils/sqlite.js";
@@ -52,7 +54,7 @@ const probe: TxProbe<Tx> = {
 let database: SqliteTestDatabase;
 
 /** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
-function suite<S extends PluginFreeSchema>(
+function suite<S extends AnySchema>(
   schema: S,
   fastiTables: readonly AnySQLiteTable[],
   resources: TestAdapterParams<S, Tx>["resources"]
@@ -60,7 +62,7 @@ function suite<S extends PluginFreeSchema>(
   const params: TestAdapterParams<S, Tx> = {
     // SQLite has no exclusion constraint, so no backstop.
     groups: { backstop: false, retry: null, tx: probe },
-    makeAdapter: () => pluginFree<S, Tx>(drizzleAdapter(database.db)),
+    makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       for (const t of [...fastiTables, tables.testProbe]) {
         // oxlint-disable-next-line no-await-in-loop -- a few tables, setup only.
@@ -75,30 +77,26 @@ function suite<S extends PluginFreeSchema>(
     testAdapter(params);
 
     // Negative control: without the lock each concurrency case must fail, or the suite can't catch a missing lock.
-    // Blocks cases are skipped without `block`, so a failure there would prove nothing.
-    it.fails.each(
-      concurrencyCases.filter(
-        (c) => schema.block !== null || !c.tags.includes("blocks")
-      )
-    )("[lock off] $name", async (c) => {
-      // Its own client, closed after: a unit whose write lost the race can leave its connection
-      // on a stale snapshot, which would break the next case's reset on a shared client.
-      const client = createClient({ url: database.url });
+    it.fails.each(concurrencyCases.filter((c) => runsOn(c, schema)))(
+      "[lock off] $name",
+      async (c) => {
+        // Its own client, closed after: a unit whose write lost the race can leave its connection
+        // on a stale snapshot, which would break the next case's reset on a shared client.
+        const client = createClient({ url: database.url });
 
-      try {
-        await expect(
-          runCase(c, {
-            ...params,
-            makeAdapter: () =>
-              pluginFree<S, Tx>(
-                createDrizzleAdapter(drizzle({ client }), { lock: false })
-              ),
-          })
-        ).resolves.toBeUndefined();
-      } finally {
-        client.close();
+        try {
+          await expect(
+            runCase(c, {
+              ...params,
+              makeAdapter: () =>
+                createDrizzleAdapter(drizzle({ client }), { lock: false }),
+            })
+          ).resolves.toBeUndefined();
+        } finally {
+          client.close();
+        }
       }
-    });
+    );
 
     it("a driver error rejects with the driver's error as cause", async () => {
       await params.reset();
@@ -158,6 +156,16 @@ describe("drizzleAdapter on SQLite (libsql)", () => {
     integerIdSchema,
     [tables.integerBooking, tables.integerRule],
     integerIdResources
+  );
+  suite(
+    recordsSchema,
+    [
+      tables.recordsBooking,
+      tables.recordsRule,
+      tables.conformanceTimed,
+      tables.conformanceUntimed,
+    ],
+    recordsResources
   );
 
   it("completes a burst of more units than libsql's 20 pooled connections", async () => {
