@@ -1,4 +1,4 @@
-import { isList } from "../adapter/contract.js";
+import { canonical, isList } from "../adapter/contract.js";
 import type { StoredRecord, StoredValue } from "../adapter/contract.js";
 import type {
   BlockChanges,
@@ -148,23 +148,6 @@ export function decodeRule(row: RuleRow): RuleRecord {
 
 /** A Plugin record row as Drizzle reads and writes it: `Date`s for Instants, ISO strings for dates and times, JSON as is. */
 export type RecordRow = Readonly<Record<string, Date | Json>>;
-
-/** `value` with every object's keys sorted: stored as text (SQLite), equal values then have equal text, so compare-and-set holds (R3). */
-function canonical(value: Json): Json {
-  if (Array.isArray(value)) {
-    return value.map(canonical);
-  }
-
-  if (value instanceof Object) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .toSorted(([a], [b]) => (a < b ? -1 : Number(a > b)))
-        .map(([k, v]) => [k, canonical(v)])
-    );
-  }
-
-  return value;
-}
 
 /** One value → its row value: Instants to `Date`s (milliseconds, I7), PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical. */
 function encodeValue(value: StoredValue): Date | Json {

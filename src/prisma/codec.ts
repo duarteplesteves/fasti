@@ -1,3 +1,5 @@
+import { canonical, isList } from "../adapter/contract.js";
+import type { StoredRecord, StoredValue } from "../adapter/contract.js";
 import type {
   BlockChanges,
   BlockRecord,
@@ -5,18 +7,13 @@ import type {
   BookingRecord,
   RuleRecord,
 } from "../adapter/records.js";
+import type { ColumnKind, Json } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
+import type { TableDef } from "../schema/table.js";
 
 /** A value as the contract's codecs read and write it: Instants stay `Temporal.Instant` (`DateTime(as: temporal)`). */
-export type PrismaValue =
-  | string
-  | number
-  | boolean
-  | Temporal.Instant
-  | RuleRecord["recurrence"]
-  | readonly string[]
-  | null;
+export type PrismaValue = Temporal.Instant | RuleRecord["recurrence"] | Json;
 
 /** A row of a fasti table, keyed by physical column name, as the SQL builder reads and writes it. */
 export type PrismaRow = Readonly<Record<string, PrismaValue>>;
@@ -160,4 +157,95 @@ export function decodeRule(names: ColumnNames, row: PrismaRow): RuleRecord {
   }
 
   return rule;
+}
+
+/** One Plugin record value → its row value: PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical, Instants as they are. */
+function encodeValue(value: StoredValue): PrismaValue {
+  if (value instanceof Temporal.Instant) {
+    return value;
+  }
+
+  if (
+    value instanceof Temporal.PlainDate ||
+    value instanceof Temporal.PlainTime
+  ) {
+    return value.toString();
+  }
+
+  if (isList(value)) {
+    return value.map((v) =>
+      v instanceof Temporal.PlainDate ? v.toString() : canonical(v)
+    );
+  }
+
+  return canonical(value);
+}
+
+/** Plugin record → row, column by column (physical names are the logical ones); works on a partial record (an update's changes) too. */
+export function encodeStored(
+  record: Readonly<Record<string, StoredValue>>
+): PrismaRow {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key, encodeValue(value)])
+  );
+}
+
+/** One row value of a column of `kind` → its value; `kind` is `undefined` for fasti's own columns. */
+function decodeValue(
+  kind: ColumnKind | undefined,
+  value: PrismaValue
+): StoredValue {
+  if (value === null || value instanceof Temporal.Instant) {
+    return value;
+  }
+
+  switch (kind) {
+    case "date": {
+      // SAFETY: prismaModels makes a `date` column `date`, read as an ISO string.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+      return Temporal.PlainDate.from(value as string);
+    }
+
+    case "time": {
+      // SAFETY: prismaModels makes a `time` column `time`, read as an ISO string.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+      return Temporal.PlainTime.from(value as string);
+    }
+
+    case "dates": {
+      // SAFETY: prismaModels makes a `dates` column `date[]`, read as ISO strings.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+      return (value as readonly string[]).map((d) =>
+        Temporal.PlainDate.from(d)
+      );
+    }
+
+    case "text":
+    case "uuid":
+    case "integer":
+    case "boolean":
+    case "instant":
+    case "json":
+    case undefined: {
+      // SAFETY: a Plugin table's other columns read as their kind's value; JSON as stored, never a rule's recurrence.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+      return value as StoredValue;
+    }
+
+    default: {
+      throw new Error(`Unknown column kind: ${String(kind)}`);
+    }
+  }
+}
+
+/** Row → Plugin record of `table`, column by column. */
+export function decodeStored(table: TableDef, row: PrismaRow): StoredRecord {
+  // SAFETY: the row comes from the model prismaModels builds for `table`: `id`, `resourceId`, and one column per declared one, of its kind.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
+  return Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      decodeValue(table.columns[key]?.type.kind, value),
+    ])
+  ) as StoredRecord;
 }

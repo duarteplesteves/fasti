@@ -6,7 +6,7 @@ import type {
 } from "@prisma/orm-postgres/contract-builder";
 
 import { sqlLiteral } from "../schema/backstop-sql.js";
-import type { AnyColumn } from "../schema/column.js";
+import type { ColumnKind } from "../schema/column.js";
 import type {
   AnySchema,
   AvailabilityRuleColumn,
@@ -17,6 +17,8 @@ import type {
 } from "../schema/define-schema.js";
 import type { Accepts } from "../schema/references.js";
 import { statusCodec } from "../schema/status-codec.js";
+import { tablesOf } from "../schema/table.js";
+import type { Columns, TableDef, TableNamesOf } from "../schema/table.js";
 
 /** The helpers `defineContract`'s callback receives. */
 export type ContractHelpers = Parameters<
@@ -117,18 +119,38 @@ function tableModel(
 /** A contract model of any fasti table. */
 type PrismaModel = ReturnType<typeof tableModel>;
 
-/** One model per fasti table, keyed by its physical table name. The Block model only when `S` declares `block`. */
+/** One model per fasti table, keyed by its physical table name. The Block model only when `S` declares `block`; one per Plugin table. */
 export type PrismaModels<S extends AnySchema> = Record<
-  S["names"]["tables"]["booking"] | S["names"]["tables"]["availabilityRule"],
+  | S["names"]["tables"]["booking"]
+  | S["names"]["tables"]["availabilityRule"]
+  | TableNamesOf<S["plugins"]>,
   PrismaModel
 > &
   (HasBlocks<S> extends true
     ? Record<S["names"]["tables"]["block"], PrismaModel>
     : unknown);
 
-/** The Prisma column type of a schema column kind. Instants are `timestamptz(3)` read as `Temporal.Instant` (I7). */
-function columnType({ type }: ContractHelpers, kind: AnyColumn["kind"]) {
+/**
+ * The Prisma column type of a schema column kind. Instants are `timestamptz(3)` read as `Temporal.Instant` (I7);
+ * dates are `date` strings, times `time`, JSON `jsonb`, as on Drizzle Postgres. A `dates` list is {@link column}'s.
+ */
+function columnType(
+  { type }: ContractHelpers,
+  kind: Exclude<ColumnKind, "dates">
+) {
   switch (kind) {
+    case "date": {
+      return type.Date();
+    }
+
+    case "time": {
+      return type.Time();
+    }
+
+    case "json": {
+      return type.Jsonb();
+    }
+
     case "text": {
       return type.String();
     }
@@ -155,19 +177,20 @@ function columnType({ type }: ContractHelpers, kind: AnyColumn["kind"]) {
   }
 }
 
-/** A `NOT NULL` column of a schema column kind. */
-function column(
-  helpers: ContractHelpers,
-  kind: AnyColumn["kind"],
-  name: string
-) {
-  return helpers.field.column(columnType(helpers, kind)).column(name);
+/** A `NOT NULL` column of a schema column kind; `dates` is `date[]`, as on Drizzle Postgres. */
+function column(helpers: ContractHelpers, kind: ColumnKind, name: string) {
+  return kind === "dates"
+    ? helpers.field
+        .column(helpers.type.Date())
+        .many({ elementsNullable: true })
+        .column(name)
+    : helpers.field.column(columnType(helpers, kind)).column(name);
 }
 
-/** One field per Developer Field, keyed by logical name; nullable unless required. */
+/** One field per Developer Field or Plugin table column, keyed by logical name; nullable unless required. */
 function fieldColumns(
   helpers: ContractHelpers,
-  fields: Fields,
+  fields: Columns,
   names: Readonly<Partial<Record<string, string>>>
 ) {
   return Object.fromEntries(
@@ -299,9 +322,41 @@ function availabilityRuleModel(
   );
 }
 
+/** One Plugin table, named logically as on Drizzle: `id` (fasti mints it; the database default stays, R4), `resourceId`, a timed table's range, then its columns. */
+function pluginModel(
+  schema: AnySchema,
+  name: string,
+  { columns, timed }: TableDef,
+  helpers: ContractHelpers,
+  references: TargetFieldRef | undefined
+) {
+  const { field, type } = helpers;
+
+  return tableModel(
+    helpers,
+    name,
+    {
+      id: field
+        .column(type.Uuid())
+        .id()
+        .default(sql`gen_random_uuid()`)
+        .column("id"),
+      resourceId: column(helpers, schema.resource.idType.kind, "resourceId"),
+      ...(timed && {
+        start: column(helpers, "instant", "start"),
+        end: column(helpers, "instant", "end"),
+      }),
+      ...fieldColumns(helpers, columns, {}),
+    },
+    [],
+    references
+  );
+}
+
 /**
  * The fasti tables of `schema` as Prisma 8 contract models, keyed and named by your physical
- * table names, with your physical column names. Spread it into your `defineContract` models:
+ * table names, with your physical column names; each Plugin table, as on Drizzle, by its logical names.
+ * Spread it into your `defineContract` models:
  * `defineContract({}, (helpers) => ({ models: { ...mine, ...prismaModels(schema, helpers) } }))`.
  * Pass `{ references: { model: staff, field: "id" } }` for a foreign key to your Resource model.
  *
@@ -338,7 +393,14 @@ export function prismaModels<
     ]);
   }
 
-  // SAFETY: the keys are S's physical table names, the Block one exactly when S declares `block`.
+  for (const [name, def] of Object.entries(tablesOf(schema.plugins))) {
+    models.push([
+      name,
+      pluginModel(schema, name, def, helpers, resourceIdTarget),
+    ]);
+  }
+
+  // SAFETY: the keys are S's physical table names, the Block one exactly when S declares `block`, and one per Plugin table.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
   return Object.fromEntries(models) as PrismaModels<S>;
 }

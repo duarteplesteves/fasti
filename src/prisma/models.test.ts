@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AnySchema } from "../schema/define-schema.js";
 import {
   integerIdSchema,
+  recordsSchema,
   textIdSchema,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
@@ -114,6 +115,63 @@ describe(prismaModels, () => {
         nullable: true,
       },
     });
+  });
+});
+
+describe("prismaModels Plugin tables", () => {
+  /** Every column kind of the conformance Plugin, required and optional, by logical name. */
+  const kinds = {
+    boolean: { codecId: "pg/bool@1", nullable: false },
+    booleanOpt: { codecId: "pg/bool@1", nullable: true },
+    date: { dataType: "pg/date", nullable: false },
+    dateOpt: { dataType: "pg/date", nullable: true },
+    dates: {
+      dataType: "pg/date",
+      many: { elementNullable: true },
+      nullable: false,
+    },
+    datesOpt: {
+      dataType: "pg/date",
+      many: { elementNullable: true },
+      nullable: true,
+    },
+    instant: { codecId: "pg/timestamptz-temporal@1", nullable: false },
+    instantOpt: { codecId: "pg/timestamptz-temporal@1", nullable: true },
+    integer: { codecId: "pg/int4@1", nullable: false },
+    integerOpt: { codecId: "pg/int4@1", nullable: true },
+    json: { dataType: "pg/jsonb", nullable: false },
+    jsonOpt: { dataType: "pg/jsonb", nullable: true },
+    text: { codecId: "pg/text@1", nullable: false },
+    textOpt: { codecId: "pg/text@1", nullable: true },
+    time: { dataType: "pg/time", nullable: false },
+    timeOpt: { dataType: "pg/time", nullable: true },
+    uuid: { codecId: "pg/uuid@1", nullable: false },
+    uuidOpt: { codecId: "pg/uuid@1", nullable: true },
+  };
+
+  it("adds one table per Plugin table, named logically: id with a database default (R4), resourceId, the range only when timed", () => {
+    const tables = tablesOf(recordsSchema);
+
+    const own = {
+      id: { dataType: "pg/uuid", nullable: false },
+      resourceId: { codecId: "pg/text@1", nullable: false },
+    };
+
+    const range = {
+      end: { codecId: "pg/timestamptz-temporal@1", nullable: false },
+      start: { codecId: "pg/timestamptz-temporal@1", nullable: false },
+    };
+
+    expect(tables["conformanceTimed"]).toMatchObject({
+      ...own,
+      ...range,
+      ...kinds,
+    });
+    expect(tables["conformanceUntimed"]).toMatchObject({ ...own, ...kinds });
+    expect(
+      Object.keys(tables["conformanceUntimed"] ?? {}).toSorted()
+    ).toStrictEqual(["id", "resourceId", ...Object.keys(kinds)].toSorted());
+    expect(tables["conformanceTimed"]?.["id"]).toHaveProperty("default");
   });
 });
 

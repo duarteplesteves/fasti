@@ -152,9 +152,15 @@ export const integerIdSchema = defineSchema({
 /** Two existing Resources for {@link integerIdSchema}. */
 export const integerIdResources = [1, 2] as const;
 
-/** Text ids and the conformance Plugin, so the `records` cases run too. Booking and rule tables renamed. */
+/**
+ * Text ids and the conformance Plugin, so the `records` cases run too. Booking and rule tables renamed, and the
+ * Status column: Prisma reserves `<table>_status_check`, the name prismaModels gives its check, for a column `status`.
+ */
 export const recordsSchema = defineSchema({
-  names: { tables: { availabilityRule: "r_hours", booking: "r_bookings" } },
+  names: {
+    columns: { booking: { status: "r_state" } },
+    tables: { availabilityRule: "r_hours", booking: "r_bookings" },
+  },
   plugins: [conformancePlugin],
   resource: { idType: column.text() },
 });

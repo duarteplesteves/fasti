@@ -20,8 +20,10 @@ import { drizzleAdapter } from "../drizzle/pg/index.js";
 import { createScheduler } from "../framework/create-scheduler.js";
 import { backstopSql, noOverlapConstraint } from "../schema/backstop-sql.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import { tablesOf } from "../schema/table.js";
 import {
-  pluginFree,
+  recordsResources,
+  recordsSchema,
   runsOn,
   integerIdResources,
   integerIdSchema,
@@ -30,7 +32,6 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
-import type { PluginFreeSchema } from "../test-utils/conformance-schemas.js";
 import { postgresUrl } from "../test-utils/postgres.js";
 import { prismaTestDatabase } from "../test-utils/prisma.js";
 import { unwrap } from "../test-utils/results.js";
@@ -42,7 +43,7 @@ import { createPrismaAdapter, prismaAdapter } from "./prisma-adapter.js";
 const url = postgresUrl();
 
 /**
- * The three Conformance schemas' tables, a scratch table of the developer's own for the `tx` probe,
+ * The four Conformance schemas' tables, a scratch table of the developer's own for the `tx` probe,
  * and the developer's own Resource table, which the integer-id schema references.
  */
 const contract = defineContract({}, (helpers) => {
@@ -58,6 +59,7 @@ const contract = defineContract({}, (helpers) => {
     models: {
       ...prismaModels(textIdSchema, helpers),
       ...prismaModels(uuidIdSchema, helpers),
+      ...prismaModels(recordsSchema, helpers),
       ...prismaModels(integerIdSchema, helpers, {
         references: { field: "id", model: testStaff },
       }),
@@ -204,6 +206,7 @@ async function truncate(schema: AnySchema): Promise<void> {
     tables.booking,
     tables.availabilityRule,
     ...(schema.block === null ? [] : [tables.block]),
+    ...Object.keys(tablesOf(schema.plugins)).map((t) => `"${t}"`),
     "test_probe",
   ];
 
@@ -244,7 +247,7 @@ function raise(tx: Tx, code: "40001" | "P0001") {
 }
 
 /** Register the Conformance Suite and the negative control for one schema, each case on emptied tables. */
-function suite<S extends PluginFreeSchema>(
+function suite<S extends AnySchema>(
   schema: S,
   resources: TestAdapterParams<S, Tx>["resources"]
 ): void {
@@ -254,7 +257,7 @@ function suite<S extends PluginFreeSchema>(
       retry: { transient: () => ({ code: "40001" }) },
       tx: probe,
     },
-    makeAdapter: () => pluginFree<S, Tx>(prismaAdapter(database.db)),
+    makeAdapter: () => prismaAdapter(database.db),
     reset: async () => {
       await truncate(schema);
     },
@@ -285,9 +288,7 @@ function suite<S extends PluginFreeSchema>(
           runCase(c, {
             ...params,
             makeAdapter: () =>
-              pluginFree<S, Tx>(
-                createPrismaAdapter(database.db, { lock: false })
-              ),
+              createPrismaAdapter(database.db, { lock: false }),
           })
         ).resolves.toBeUndefined();
       }
@@ -302,6 +303,7 @@ function adapterTests(): void {
     suite(uuidIdSchema, uuidIdResources);
     // No `block`: no Block table exists for it, and none is needed.
     suite(integerIdSchema, integerIdResources);
+    suite(recordsSchema, recordsResources);
 
     it("a driver error gives AdapterError with the Prisma error as cause", async () => {
       await truncate(uuidIdSchema);
