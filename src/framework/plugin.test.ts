@@ -376,7 +376,10 @@ describe("the Promise face crossing (R2)", () => {
       },
       name: "gated",
       tables: {
-        note: { columns: { text: { required: true, type: column.text() } } },
+        note: {
+          columns: { text: { required: true, type: column.text() } },
+          timed: false,
+        },
       },
     });
 
@@ -454,7 +457,10 @@ describe("the Promise face crossing (R2)", () => {
       },
       name: "throwing",
       tables: {
-        note: { columns: { text: { required: true, type: column.text() } } },
+        note: {
+          columns: { text: { required: true, type: column.text() } },
+          timed: false,
+        },
       },
     });
 

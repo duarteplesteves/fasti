@@ -44,7 +44,10 @@ export function promiseNotes({ max }: { readonly max: number }) {
     },
     name: "notes",
     tables: {
-      note: { columns: { text: { required: true, type: column.text() } } },
+      note: {
+        columns: { text: { required: true, type: column.text() } },
+        timed: false,
+      },
     },
   });
 }
