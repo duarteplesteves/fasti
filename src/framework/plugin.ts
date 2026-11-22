@@ -23,14 +23,25 @@ import { uuidV7 } from "./booking-id.js";
 import type { EffectLocked, EffectReads } from "./effect-adapter.js";
 import type { AdapterError, ConflictingBooking, Vetoed } from "./errors.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
+import type { Committed, HookEvent, WrittenContext } from "./hook.js";
 import { conflictsAt } from "./occupancy.js";
 import type { BusySource } from "./occupancy.js";
 import type { LoadArgs, RunnablePolicy } from "./policy-pass.js";
 import type { Candidate } from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
-import type { BookingActionName } from "./target.js";
+import {
+  isBookingActionName,
+  isNamedTarget,
+  matchesTarget,
+  pluginWriteNames,
+} from "./target.js";
+import type {
+  BookingActionName,
+  CalledTarget,
+  WriteNamesOf,
+} from "./target.js";
 import { writeUnit } from "./write-unit.js";
-import type { EffectAlso, Outcome } from "./write-unit.js";
+import type { EffectAlso, Outcome, RunnableHook } from "./write-unit.js";
 
 /** What `list` on Plugin table `T` takes: a Resource, and on a timed table an optional range. */
 export type ListQuery<T extends TableDef> = {
@@ -196,6 +207,99 @@ export interface NativeBusy<T extends Tables> {
   }) => Effect.Effect<readonly BusyRange[], AdapterError>;
 }
 
+/**
+ * What a Plugin Hook can apply to: `"*"`, or at least one Booking Action or write Action of its own, as
+ * `<plugin>.<action>`. Its Action names are checked when it's defined, not by type: naming them by type would fix the
+ * Actions' type before `definePlugin` infers it.
+ */
+export type PluginHookTargets<N extends string> =
+  | "*"
+  | readonly [
+      BookingActionName | `${N}.${string}`,
+      ...(BookingActionName | `${N}.${string}`)[],
+    ];
+
+/**
+ * What a Plugin Hook observes: a Booking Action or Transition (over any schema, since a Plugin knows none), or one of
+ * its own write Actions with its `also` context. Narrow it by `action`. It never sees another Plugin's writes.
+ */
+export type PluginHookEvent<N extends string, A> =
+  | Extract<
+      HookEvent<AnySchema, unknown>,
+      { readonly action: BookingActionName | "transition" }
+    >
+  | {
+      [K in WriteNamesOf<A>]: {
+        readonly action: `${N}.${K}`;
+        readonly tx: unknown;
+        readonly now: Temporal.Instant;
+      } & WrittenContext<A[K]>;
+    }[WriteNamesOf<A>];
+
+/**
+ * A Plugin Hook, natively. It runs before the app's Hooks: `"inTransaction"` on the unit, after `also`, where it can
+ * write its tables through `records` and a failure rolls the whole write back; `"afterCommit"` once, after the
+ * commit, where a failure is logged.
+ */
+export type NativeHook<N extends string, A, T extends Tables> =
+  | {
+      readonly when: "inTransaction";
+      readonly appliesTo: PluginHookTargets<N>;
+      // oxlint-disable-next-line typescript/method-signature-style -- method syntax is bivariant, so a narrowed `run` is assignable.
+      run(
+        event: PluginHookEvent<N, A> & { readonly records: RecordStoreOf<T> }
+      ): Effect.Effect<void>;
+    }
+  | {
+      readonly when: "afterCommit";
+      readonly appliesTo: PluginHookTargets<N>;
+      // oxlint-disable-next-line typescript/method-signature-style -- as above.
+      run(
+        event: Committed<PluginHookEvent<N, A>> & {
+          readonly records: RecordReadsOf<T>;
+        }
+      ): Effect.Effect<void>;
+    };
+
+/** Whether a Plugin with write Actions `own` may observe `called`: a Booking Action, a Transition edge, or one of its own. */
+function observable(own: readonly string[], called: CalledTarget): boolean {
+  return (
+    !isNamedTarget(called) ||
+    isBookingActionName(called) ||
+    own.includes(called)
+  );
+}
+
+/** Throws unless each Hook of Plugin `name` applies to `"*"`, or to Booking Actions and its own write Actions only: plain-JS callers can pass what the types refuse. */
+export function checkPluginHooks(
+  name: string,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- the Plugin's Actions, either style.
+  actions: unknown,
+  hooks: readonly { readonly appliesTo: "*" | readonly string[] }[]
+): void {
+  const own = pluginWriteNames({ actions, name });
+
+  for (const { appliesTo } of hooks) {
+    if (appliesTo === "*") {
+      continue;
+    }
+
+    if (appliesTo.length === 0) {
+      throw new Error(
+        `fasti: a Hook of Plugin ${name} applies to nothing: name at least one target, or "*"`
+      );
+    }
+
+    const wrong = appliesTo.find((t) => !observable(own, t));
+
+    if (wrong !== undefined) {
+      throw new Error(
+        `fasti: a Hook of Plugin ${name} applies to ${wrong}, which is neither a Booking Action nor one of its write Actions`
+      );
+    }
+  }
+}
+
 /** The Policies in tuple `P`, as a union; `never` when it's only the constraint (no `policies` given). */
 export type PluginPolicies<P extends readonly { readonly name: string }[]> =
   string extends P[number]["name"] ? never : P[number];
@@ -265,14 +369,20 @@ export function definePlugin<
   readonly policies?: P;
   /** Its busy time; leave out for none. */
   readonly busy?: B;
+  /** Its Hooks, run before the app's; leave out for none. */
+  readonly hooks?: readonly NativeHook<NoInfer<N>, NoInfer<A>, NoInfer<T>>[];
 }): Plugin<N, T, A, PluginPolicies<P>, BusyConflict<B>> {
   // SAFETY: T falls back to its default, `{}`, exactly when `tables` is absent.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the default can't be tied to absence in the signature.
   const tables = (def.tables ?? {}) as T;
+  const hooks = def.hooks ?? [];
+
+  checkPluginHooks(def.name, def.actions, hooks);
 
   return {
     actions: def.actions,
     busy: def.busy ?? null,
+    hooks,
     name: def.name,
     policies: def.policies ?? [],
     tables,
@@ -551,4 +661,51 @@ export function pluginPolicies<S extends AnySchema>(
       name,
     }))
   );
+}
+
+/**
+ * Every installed Plugin's Hooks, in install order, as `writeUnit` runs them: each sees its Plugin's tables (written on
+ * the unit in a transaction, read through `reads` after the commit), and only Booking Actions, Transitions and its own
+ * write Actions, even on `"*"`.
+ */
+export function pluginHooks<S extends AnySchema, Tx>(
+  plugins: S["plugins"],
+  reads: EffectReads<S>
+): readonly RunnableHook<S, Tx>[] {
+  return plugins.flatMap((plugin) => {
+    const tables = Object.keys(plugin.tables);
+    const own = pluginWriteNames(plugin);
+
+    return plugin.hooks.map(({ appliesTo, run, when }): RunnableHook<S, Tx> => {
+      // SAFETY: `run` was written against its Plugin's event and tables, which the event below carries; a NativeHook never fails.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion, anti-slop/no-object-parameters -- the Hook is erased here.
+      const erased = run as (event: object) => Effect.Effect<void>;
+
+      // Even on "*": a Plugin never sees another Plugin's writes, nor the app's own `availability.set` or `blocks.*`.
+      function applies(called: CalledTarget): boolean {
+        return (
+          observable(own, called) &&
+          (appliesTo === "*" || appliesTo.some((t) => matchesTarget(t, called)))
+        );
+      }
+
+      return when === "inTransaction"
+        ? {
+            applies,
+            run: (event, locked) =>
+              erased({
+                ...event,
+                records: handles(tables, locked, locked),
+                tx: locked.tx,
+              }),
+            when,
+          }
+        : {
+            applies,
+            run: (event) =>
+              erased({ ...event, records: handles(tables, reads, null) }),
+            when,
+          };
+    });
+  });
 }

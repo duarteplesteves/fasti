@@ -10,7 +10,8 @@ import type {
   SchedulerService,
   TableDef,
 } from "../effect/index.js";
-import { column, createScheduler, defineSchema } from "../index.js";
+import type { HookEvent } from "../framework/hook.js";
+import { column, createScheduler, defineHook, defineSchema } from "../index.js";
 import type {
   AdapterError,
   RecordId,
@@ -18,6 +19,7 @@ import type {
   Vetoed,
   Violation,
 } from "../index.js";
+import { memoryAdapter } from "../memory/index.js";
 import type { Column } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { holidays } from "../test-utils/holidays-plugin.js";
@@ -320,5 +322,68 @@ describe("a Plugin's busy time and Policies, as the app sees them", () => {
     expectTypeOf<Parameters<PromiseBook>[0]["relax"]>().toEqualTypeOf<
       readonly ("availability" | "holidayEve")[] | undefined
     >();
+  });
+});
+
+/** Never called: only the types are checked. Each would throw at runtime. */
+function unknownTargets() {
+  const adapter = memoryAdapter();
+
+  return [
+    defineHook(schema, adapter, {
+      // @ts-expect-error -- `list` reads.
+      appliesTo: ["notes.list"],
+      run: () => {},
+      when: "afterCommit",
+    }),
+    defineHook(schema, adapter, {
+      // @ts-expect-error -- notes has no `remove`.
+      appliesTo: ["notes.remove"],
+      run: () => {},
+      when: "afterCommit",
+    }),
+    defineHook(schema, adapter, {
+      // @ts-expect-error -- no Plugin named memos is installed.
+      appliesTo: ["memos.add"],
+      run: () => {},
+      when: "afterCommit",
+    }),
+  ];
+}
+
+describe("Hook targets on Plugin Actions", () => {
+  const adapter = memoryAdapter();
+
+  it('narrows a `"notes.add"` Hook to its `also` context plus `action`, in both styles', () => {
+    for (const each of [schema, promiseSchema]) {
+      defineHook(each, adapter, {
+        appliesTo: ["notes.add"],
+        run: (event) => {
+          expectTypeOf(event).toEqualTypeOf<
+            { readonly action: "notes.add" } & { readonly note: AppNote } & {
+              readonly tx: undefined;
+              readonly now: Temporal.Instant;
+            }
+          >();
+        },
+        when: "inTransaction",
+      });
+    }
+  });
+
+  it('has every Plugin write Action, never a read, under `"*"`', () => {
+    expectTypeOf<HookEvent<S, undefined>["action"]>().toEqualTypeOf<
+      | "book"
+      | "reschedule"
+      | "cancel"
+      | "transition"
+      | "availability.set"
+      | "notes.add"
+      | "notes.noop"
+    >();
+  });
+
+  it("refuses an unknown Plugin target", () => {
+    expectTypeOf(unknownTargets).toBeFunction();
   });
 });

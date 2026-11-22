@@ -6,7 +6,7 @@ import type { ChangeAlso } from "./booking.js";
 import type { EffectLocked } from "./effect-adapter.js";
 import type { AdapterError, Vetoed } from "./errors.js";
 import { hookApplies } from "./hook.js";
-import type { Committed, HookEvent } from "./hook.js";
+import type { AnyHookOf, Committed, HookEvent } from "./hook.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type { CalledTarget } from "./target.js";
 
@@ -42,6 +42,57 @@ export type WriteEffect<V, E, R> = Effect.Effect<
 export interface WriteSite<S extends AnySchema> {
   readonly action: string;
   readonly resourceId: ResourceIdOf<S>;
+}
+
+/** A Hook as `writeUnit` runs it, app or Plugin: `event` is the Action's Done context with `action` and `now`. */
+export type RunnableHook<S extends AnySchema, Tx> =
+  | {
+      readonly when: "inTransaction";
+      readonly applies: (called: CalledTarget) => boolean;
+      readonly run: (
+        // oxlint-disable-next-line anti-slop/no-object-parameters -- the Action's event, typed where the Hook is written.
+        event: object,
+        locked: EffectLocked<S, Tx>
+      ) => Effect.Effect<void>;
+    }
+  | {
+      readonly when: "afterCommit";
+      readonly applies: (called: CalledTarget) => boolean;
+      // oxlint-disable-next-line anti-slop/no-object-parameters -- as above.
+      readonly run: (event: object) => Effect.Effect<void>;
+    };
+
+/** An app Hook as `writeUnit` runs it: a throw or rejection is a defect. */
+export function appHook<S extends AnySchema, Tx>(
+  hook: AnyHookOf<S, Tx>
+): RunnableHook<S, Tx> {
+  function applies(called: CalledTarget): boolean {
+    return hookApplies(hook, called);
+  }
+
+  if (hook.when === "inTransaction") {
+    return {
+      applies,
+      run: (event, locked) =>
+        Effect.promise(async () => {
+          // SAFETY: `event` with `tx` is the Action's HookEvent; the generic C in writeUnit can't be tied to the Action's name.
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+          await hook.run({ ...event, tx: locked.tx } as HookEvent<S, Tx>);
+        }),
+      when: hook.when,
+    };
+  }
+
+  return {
+    applies,
+    run: (event) =>
+      Effect.promise(async () => {
+        // SAFETY: `event` is the Action's HookEvent without `tx` (see above).
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+        await hook.run(event as Committed<HookEvent<S, Tx>>);
+      }),
+    when: hook.when,
+  };
 }
 
 /** The target a call matches: its Action, or for a `transition` the edge it moved along. */
@@ -103,23 +154,17 @@ export function writeUnit<S extends AnySchema, Tx, V, C extends object, E, R>(
             );
 
       const called = calledTarget(site.action, outcome.context);
-      const applying = ctx.hooks.filter((hook) => hookApplies(hook, called));
+      // The Plugins' Hooks come first in ctx.hooks.
+      const applying = ctx.hooks.filter((hook) => hook.applies(called));
 
       // Each Action's Done context is its `also` context without `tx`/`now`: with these, its HookEvent minus `tx`.
-      // oxlint-disable-next-line anti-slop/no-known-value-widening -- C can't be tied to the Action's name; the Hook calls below assert the event's type.
-      const event: object = { ...outcome.context, action: site.action, now };
+      const event = { ...outcome.context, action: site.action, now };
 
       // A throw is a defect: it rolls the unit back, and the Action rejects with it.
       yield* pipe(
         applying,
         Effect.forEach((hook) =>
-          hook.when === "inTransaction"
-            ? Effect.promise(async () => {
-                // SAFETY: `event` with `tx` is the Action's HookEvent (see above); the generic C can't be tied to the Action's name.
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-                await hook.run({ ...event, tx: locked.tx } as HookEvent<S, Tx>);
-              })
-            : Effect.void
+          hook.when === "inTransaction" ? hook.run(event, locked) : Effect.void
         )
       );
 
@@ -128,11 +173,7 @@ export function writeUnit<S extends AnySchema, Tx, V, C extends object, E, R>(
         applying,
         Effect.forEach((hook) =>
           hook.when === "afterCommit"
-            ? Effect.promise(async () => {
-                // SAFETY: `event` is the Action's HookEvent without `tx` (see above).
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-                await hook.run(event as Committed<HookEvent<S, Tx>>);
-              }).pipe(
+            ? hook.run(event).pipe(
                 Effect.catchCause((cause) =>
                   // An interrupt isn't the Hook failing: let it stop the rest.
                   Cause.hasInterrupts(cause)

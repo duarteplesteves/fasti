@@ -21,11 +21,46 @@ export type BookingActionName = (typeof bookingActions)[number];
 /** @deprecated Use {@link BookingActionName}. */
 export type ActionTarget = BookingActionName;
 
-/** The write Actions named by name, what a Hook can name: `blocks.*` only when the schema has `block`. `transition` is named by its edges. */
+/** The names of the write Actions in Plugin Actions `A`. */
+export type WriteNamesOf<A> = {
+  [K in keyof A & string]: A[K] extends { readonly kind: "write" } ? K : never;
+}[keyof A & string];
+
+/** Every installed Plugin's write Actions, as `<plugin>.<action>`. */
+export type PluginWriteName<S extends AnySchema> =
+  S["plugins"][number] extends infer Pl
+    ? Pl extends {
+        readonly name: infer N extends string;
+        readonly actions: infer A;
+      }
+      ? `${N}.${WriteNamesOf<A>}`
+      : never
+    : never;
+
+/** The write Actions named by name, what a Hook can name: `blocks.*` only when the schema has `block`, and each Plugin's as `<plugin>.<action>`. `transition` is named by its edges. */
 export type WriteActionName<S extends AnySchema> =
   | BookingActionName
   | "availability.set"
-  | (HasBlocks<S> extends true ? (typeof blockActions)[number] : never);
+  | (HasBlocks<S> extends true ? (typeof blockActions)[number] : never)
+  | PluginWriteName<S>;
+
+/** The write Actions of one Plugin, as `<plugin>.<action>`; its Actions are erased on AnySchema. */
+export function pluginWriteNames({
+  actions,
+  name,
+}: {
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a Plugin's Actions, either style.
+  readonly actions: unknown;
+  readonly name: string;
+}): readonly string[] {
+  // SAFETY: definePlugin stores each Action with its `kind`.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Plugin keeps its Actions as written, typed `unknown` on AnySchema.
+  const erased = actions as Readonly<Record<string, { readonly kind: string }>>;
+
+  return Object.entries(erased)
+    .filter(([, action]) => action.kind === "write")
+    .map(([action]) => `${name}.${action}`);
+}
 
 /** The write Actions `schema` has, by name: the runtime twin of {@link WriteActionName}. `transition` is named by its edges. */
 export function writeActionNames<S extends AnySchema>(
@@ -35,9 +70,10 @@ export function writeActionNames<S extends AnySchema>(
     ...bookingActions,
     "availability.set",
     ...(schema.block === null ? [] : blockActions),
+    ...schema.plugins.flatMap(pluginWriteNames),
   ];
 
-  // SAFETY: `blocks.*` is listed exactly when HasBlocks<S> is true.
+  // SAFETY: `blocks.*` is listed exactly when HasBlocks<S> is true, and each Plugin's write Actions as PluginWriteName lists them.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't be narrowed from `schema.block`.
   return names as readonly WriteActionName<S>[];
 }

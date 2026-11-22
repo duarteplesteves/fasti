@@ -41,7 +41,7 @@ interface Known {
 }
 
 /** The Adapter with its record verbs. Records cases only run for a schema with the conformance Plugin, where GroupsOf<S> is "records". */
-function withRecords<S extends AnySchema, Tx>({
+export function withRecords<S extends AnySchema, Tx>({
   adapter,
   schema,
 }: CaseContext<S, Tx>): SchemaAdapter<S, Tx, "records"> {
@@ -111,7 +111,7 @@ function recordValue(type: RecordColumn): StoredValue {
 }
 
 /** A new record of `table` on `resourceId`; optional columns `null` unless `set`; `dates`, `json` and a timed record's range from `values`. */
-function newRecord<S extends AnySchema>(
+export function newRecord<S extends AnySchema>(
   table: Table,
   resourceId: ResourceIdOf<S>,
   optional: "set" | "null",

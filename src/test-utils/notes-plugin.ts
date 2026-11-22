@@ -10,8 +10,17 @@ export interface NoteLimit {
   readonly max: number;
 }
 
-/** A test-only third-party Plugin, written natively in Effect against public entry points only: notes on a Resource, at most `max` each. */
-export function notes({ max }: { readonly max: number }) {
+/**
+ * A test-only third-party Plugin, written natively in Effect against public entry points only: notes on a Resource, at
+ * most `max` each. With a `trace`, its Hooks run on `notes.add`, pushing what ran; the in-transaction one adds an echo note.
+ */
+export function notes({
+  max,
+  trace = null,
+}: {
+  readonly max: number;
+  readonly trace?: string[] | null;
+}) {
   return definePlugin({
     actions: {
       add: {
@@ -50,7 +59,42 @@ export function notes({ max }: { readonly max: number }) {
         run: (params: { readonly resourceId: PluginResourceId }, { records }) =>
           records.note.list({ resourceId: params.resourceId }),
       },
+      noop: {
+        kind: "write",
+        run: (params: { readonly resourceId: PluginResourceId }, { lock }) =>
+          lock(params.resourceId, () =>
+            Effect.succeed({ _tag: "NoOp", value: null } as const)
+          ),
+      },
     },
+    hooks:
+      trace === null
+        ? []
+        : [
+            {
+              appliesTo: ["notes.add"],
+              run: (event) =>
+                Effect.gen(function* echo() {
+                  trace.push(`plugin inTransaction ${event.action}`);
+
+                  if (event.action === "notes.add") {
+                    yield* event.records.note.insert({
+                      resourceId: event.note.resourceId,
+                      text: `${event.note.text} (echo)`,
+                    });
+                  }
+                }).pipe(Effect.orDie),
+              when: "inTransaction",
+            },
+            {
+              appliesTo: "*",
+              run: (event) =>
+                Effect.sync(() => {
+                  trace.push(`plugin afterCommit ${event.action}`);
+                }),
+              when: "afterCommit",
+            },
+          ],
     name: "notes",
     tables: {
       note: {

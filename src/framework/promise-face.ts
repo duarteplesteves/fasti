@@ -8,6 +8,7 @@ import type { AnySchema } from "../schema/define-schema.js";
 import type {
   BusyRange,
   InstalledBusy,
+  InstalledHook,
   InstalledPolicy,
   Plugin,
   PluginResourceId,
@@ -19,9 +20,13 @@ import type {
 import { exitToResult } from "./create-scheduler.js";
 import { AdapterError } from "./errors.js";
 import type { ConflictingBooking, Vetoed } from "./errors.js";
+import type { Committed } from "./hook.js";
+import { checkPluginHooks } from "./plugin.js";
 import type {
   BusyConflict,
   ListQuery,
+  PluginHookEvent,
+  PluginHookTargets,
   PluginPolicies,
   NativeRead,
   NativeWrite,
@@ -180,6 +185,33 @@ export interface PromiseBusy<T extends Tables> {
     };
   }) => Promise<readonly BusyRange[]>;
 }
+
+/**
+ * A Promise-style Plugin Hook. It runs before the app's Hooks: `"inTransaction"` on the unit, after `also`, where it
+ * can write its tables through `records` and a rejection rolls the whole write back; `"afterCommit"` once, after the
+ * commit, where a rejection is logged.
+ */
+export type PromiseHook<N extends string, A, T extends Tables> =
+  | {
+      readonly when: "inTransaction";
+      readonly appliesTo: PluginHookTargets<N>;
+      // oxlint-disable-next-line typescript/method-signature-style -- method syntax is bivariant, so a narrowed `run` is assignable.
+      run(
+        event: PluginHookEvent<N, NativeOf<T, A>> & {
+          readonly records: PromiseStoreOf<T>;
+        }
+      ): void | Promise<void>;
+    }
+  | {
+      readonly when: "afterCommit";
+      readonly appliesTo: PluginHookTargets<N>;
+      // oxlint-disable-next-line typescript/method-signature-style -- as above.
+      run(
+        event: Committed<PluginHookEvent<N, NativeOf<T, A>>> & {
+          readonly records: PromiseReadsOf<T>;
+        }
+      ): void | Promise<void>;
+    };
 
 /** Promise-style Actions `A` as the native Actions `promiseFace` makes of them: the app types both alike. */
 export type NativeOf<T extends Tables, A> = {
@@ -458,6 +490,8 @@ export function definePlugin<
   readonly policies?: P;
   /** Its busy time; leave out for none. */
   readonly busy?: B;
+  /** Its Hooks, run before the app's; leave out for none. */
+  readonly hooks?: readonly PromiseHook<NoInfer<N>, NoInfer<A>, NoInfer<T>>[];
 }): Plugin<N, T, NativeOf<T, A>, PluginPolicies<P>, BusyConflict<B>> {
   // SAFETY: T falls back to its default, `{}`, exactly when `tables` is absent.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the default can't be tied to absence in the signature.
@@ -480,5 +514,16 @@ export function definePlugin<
     ? { kind: def.busy.kind, list: nativeRead(def.busy.list) }
     : null;
 
-  return { actions, busy, name: def.name, policies, tables };
+  const promiseHooks = def.hooks ?? [];
+
+  checkPluginHooks(def.name, def.actions, promiseHooks);
+
+  const hooks = promiseHooks.map((hook): InstalledHook => {
+    const run = nativeRead(hook.run);
+
+    // A rejection is a defect, as an app Hook's throw is.
+    return { ...hook, run: (event: never) => Effect.orDie(run(event)) };
+  });
+
+  return { actions, busy, hooks, name: def.name, policies, tables };
 }

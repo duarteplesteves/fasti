@@ -86,6 +86,16 @@ export interface InstalledBusy {
   readonly list: (ctx: never) => unknown;
 }
 
+/** A Plugin Hook as a Plugin stores it: native, its types erased. */
+export interface InstalledHook {
+  readonly when: "inTransaction" | "afterCommit";
+  /** `"*"`, or Booking Action names and the Plugin's own write Actions as `<plugin>.<action>`. */
+  readonly appliesTo: "*" | readonly string[];
+  // An Effect that never fails, by NativeHook: erased as in InstalledPolicy.
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- see above.
+  readonly run: (event: never) => unknown;
+}
+
 declare const pluginTypes: unique symbol;
 
 /**
@@ -111,6 +121,8 @@ export interface Plugin<
   readonly policies: readonly InstalledPolicy[];
   /** Its busy time, natively, or `null`; `C` types its Conflicts for the app. */
   readonly busy: InstalledBusy | null;
+  /** Its Hooks, natively: they run before the app's. */
+  readonly hooks: readonly InstalledHook[];
   /** `P` and `C`, as types only. */
   readonly [pluginTypes]?: { readonly policies: P; readonly conflict: C };
 }
