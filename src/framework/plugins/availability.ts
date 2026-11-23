@@ -4,6 +4,7 @@ import type { RuleRecord } from "../../adapter/records.js";
 import { availableWindows, fitsInSomeWindow } from "../../core/availability.js";
 import { checkRules } from "../../core/checks.js";
 import { checked } from "../../core/result.js";
+import type { InvalidParams } from "../../core/result.js";
 import type { AvailabilityRule, InstantRange } from "../../core/types.js";
 import { column } from "../../schema/column.js";
 import type { PluginResourceId, RecordOf } from "../../schema/table.js";
@@ -28,7 +29,7 @@ export interface SetAvailabilityValue {
 }
 
 /** What `availability.set`'s `also` gets, beside `tx` and `now`: the rules after and before, `previous` read under the lock. */
-export interface SetAvailabilityContext {
+export interface SetAvailabilityAlso {
   /** The Resource whose rules were replaced. */
   readonly resourceId: PluginResourceId;
   /** The rules as just stored. */
@@ -36,6 +37,12 @@ export interface SetAvailabilityContext {
   /** The rules as they were. */
   readonly previous: readonly RuleRecord[];
 }
+
+/** Every way `availability.set` can fail. */
+export type SetAvailabilityError = InvalidParams | AdapterError;
+
+/** Every way `availability.get` can fail. */
+export type GetAvailabilityError = AdapterError;
 
 /** Params of `availability.get`. */
 export interface GetAvailabilityParams {
@@ -104,6 +111,7 @@ function toColumns(rule: RuleRecord) {
 /**
  * Availability Rules on `scheduler.availability`, and the `availability` Policy: a Booking must fit inside one of its
  * Resource's availability windows (ADR 014). Without this Plugin, all time outside Bookings and busy time is bookable.
+ * Install it first in `plugins`: Policies run in install order, so its Violation then comes first (R6).
  * Its table is `0.6`'s `availabilityRule`, so installing it needs no migration.
  */
 export function availability() {
@@ -152,7 +160,7 @@ export function availability() {
                 resourceId,
               });
 
-              const context: SetAvailabilityContext = {
+              const context: SetAvailabilityAlso = {
                 previous,
                 resourceId,
                 rules: stored,

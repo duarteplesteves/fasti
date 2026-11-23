@@ -61,7 +61,9 @@ import type {
 import type { FindSlotsError, Slot } from "./find-slots.js";
 import type { Fill } from "./plugin.js";
 import type {
+  GetAvailabilityError,
   GetAvailabilityParams,
+  SetAvailabilityError,
   SetAvailabilityParams,
   SetAvailabilityValue,
 } from "./plugins/availability.js";
@@ -79,11 +81,6 @@ const defaultSchema = defineSchema({ plugins: [availability()] });
 
 /** A Plugin Action's types as an app over text ids sees them. */
 type App<X> = Fill<string, X>;
-
-/** What `availability.set` and `availability.get` fail with. */
-type SetAvailabilityError = InvalidParams | AdapterError;
-
-type GetAvailabilityError = AdapterError;
 
 type NoFields = BookParams<typeof uuidIdSchema>;
 

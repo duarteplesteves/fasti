@@ -101,21 +101,19 @@ export interface ListBlocksParams {
 }
 
 /** What `blocks.create`'s `also` gets, beside `tx` and `now`: the new Block. */
-export interface CreateBlockContext<F extends Fields> {
+export interface CreateBlockAlso<F extends Fields> {
   /** The Block just stored. */
   readonly block: Block<F>;
 }
 
 /** What `blocks.update`'s `also` gets: the Block after and before; the same object when nothing changed. */
-export interface UpdateBlockContext<
-  F extends Fields,
-> extends CreateBlockContext<F> {
+export interface UpdateBlockAlso<F extends Fields> extends CreateBlockAlso<F> {
   /** The Block as it was. */
   readonly previous: Block<F>;
 }
 
 /** What `blocks.delete`'s `also` gets: the Block that was removed. */
-export interface DeleteBlockContext<F extends Fields> {
+export interface DeleteBlockAlso<F extends Fields> {
   /** The Block as it was. */
   readonly previous: Block<F>;
 }
@@ -146,7 +144,7 @@ export interface BlockActions<F extends Fields> {
     BlockTables<F>,
     CreateBlockParams<F>,
     Block<F>,
-    CreateBlockContext<F>,
+    CreateBlockAlso<F>,
     CreateBlockError | Vetoed<unknown>
   >;
   /** Move, resize or re-annotate a Block. A new range mustn't overlap a blocking Booking. */
@@ -154,7 +152,7 @@ export interface BlockActions<F extends Fields> {
     BlockTables<F>,
     UpdateBlockParams<F>,
     Block<F>,
-    UpdateBlockContext<F>,
+    UpdateBlockAlso<F>,
     UpdateBlockError | Vetoed<unknown>
   >;
   /** Remove a Block, freeing its time. */
@@ -163,7 +161,7 @@ export interface BlockActions<F extends Fields> {
     DeleteBlockParams,
     // oxlint-disable-next-line typescript/no-invalid-void-type -- `blocks.delete` resolves with nothing.
     void,
-    DeleteBlockContext<F>,
+    DeleteBlockAlso<F>,
     DeleteBlockError | Vetoed<unknown>
   >;
   /** The Resource's Blocks overlapping the range, sorted by start, then id. */

@@ -158,14 +158,10 @@ describe("package export surface", () => {
     expectTypeOf<root.CancelParams<S>>().toHaveProperty("id");
     expectTypeOf<root.BookAlso<S, "tx">["tx"]>().toEqualTypeOf<"tx">();
     expectTypeOf<root.ChangeAlso<S, "tx">>().toHaveProperty("previous");
-    expectTypeOf<root.SetAvailabilityContext>().toHaveProperty("rules");
-    expectTypeOf<root.CreateBlockContext<NoFields>>().toHaveProperty("block");
-    expectTypeOf<root.UpdateBlockContext<NoFields>>().toHaveProperty(
-      "previous"
-    );
-    expectTypeOf<root.DeleteBlockContext<NoFields>>().toHaveProperty(
-      "previous"
-    );
+    expectTypeOf<root.SetAvailabilityAlso>().toHaveProperty("rules");
+    expectTypeOf<root.CreateBlockAlso<NoFields>>().toHaveProperty("block");
+    expectTypeOf<root.UpdateBlockAlso<NoFields>>().toHaveProperty("previous");
+    expectTypeOf<root.DeleteBlockAlso<NoFields>>().toHaveProperty("previous");
   });
 
   it("the package's only runtime dependency is effect (ADR 012)", () => {
