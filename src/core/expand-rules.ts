@@ -1,4 +1,4 @@
-import { checkRules } from "./checks.js";
+import { MAX_EXPAND_DAYS, checkDate, checkRules } from "./checks.js";
 import { occursOn } from "./recurrence.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
@@ -85,17 +85,24 @@ export function expandRules(
 ): Result<ExpandedWindow[], InvalidParams> {
   const { from, rules, to } = params;
 
-  const issues = [
-    ...checkRules(rules),
-    ...(Temporal.PlainDate.compare(from, to) > 0
-      ? [
-          {
-            message: `to (${to.toString()}) must be on or after from (${from.toString()}).`,
-            path: ["to"],
-          },
-        ]
-      : []),
-  ];
+  const dateIssues = [...checkDate(from, ["from"]), ...checkDate(to, ["to"])];
+  const issues = [...checkRules(rules), ...dateIssues];
+
+  if (dateIssues.length === 0) {
+    const days = from.until(to).days + 1;
+
+    if (days < 1) {
+      issues.push({
+        message: `to (${to.toString()}) must be on or after from (${from.toString()}).`,
+        path: ["to"],
+      });
+    } else if (days > MAX_EXPAND_DAYS) {
+      issues.push({
+        message: `The range covers ${days} days; the limit is ${MAX_EXPAND_DAYS}. Split it into smaller ranges.`,
+        path: ["to"],
+      });
+    }
+  }
 
   return checked(issues, () => expandRulesUnchecked(params));
 }

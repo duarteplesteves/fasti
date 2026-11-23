@@ -1,4 +1,11 @@
-export { checkRule } from "./checks.js";
+export {
+  MAX_DURATION_MINUTES,
+  MAX_EXCEPTIONS,
+  MAX_EXPAND_DAYS,
+  MAX_GRID_TIMES,
+  MAX_RULES,
+  checkRule,
+} from "./checks.js";
 
 export { detectConflicts } from "./detect-conflicts.js";
 

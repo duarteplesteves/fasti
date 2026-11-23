@@ -44,7 +44,7 @@ describe(isSlotValid, () => {
           bookings: [],
           resourceId: "doc-1",
           rules: [tuesdayMorning],
-          slot: slotAt("2026-05-12T08:30:00Z", "+050000-01-01T00:00:00Z"),
+          slot: slotAt("2026-05-12T08:30:00Z", "9999-12-31T00:00:00Z"),
         })
       )
     ).toBeFalsy();

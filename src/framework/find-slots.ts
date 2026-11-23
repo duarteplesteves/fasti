@@ -100,7 +100,7 @@ export function findSlots<S extends AnySchema, Tx>(
   const policies = applicable(ctx, target);
   const relaxed = parseRelax(policies, target, params);
 
-  // Checked before any Adapter call (Invariant 5), so `to.add(duration)` below can't throw.
+  // Checked before any Adapter call (Invariant 5). `to` is before year 10000 and `duration` at most 31 days (ADR 019), so `to.add(duration)` below can't throw.
   const valid = checked(
     [
       ...checkSearch({ duration, from, interval, timezone, to }),

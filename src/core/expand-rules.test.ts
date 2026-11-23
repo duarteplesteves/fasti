@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { unwrap, issuePaths } from "../test-utils/results.js";
-import { expandRules } from "./expand-rules.js";
+import { expandRules, expandRulesUnchecked } from "./expand-rules.js";
 import type { AvailabilityRule } from "./types.js";
 
 describe(expandRules, () => {
@@ -53,13 +53,12 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    const result = unwrap(
-      expandRules({
-        from: Temporal.PlainDate.from("2000-01-01"),
-        rules: [rule],
-        to: Temporal.PlainDate.from("+050000-01-01"),
-      })
-    );
+    // Unchecked: the internal path `windowsFor` takes; a direct call is capped at 366 days.
+    const result = expandRulesUnchecked({
+      from: Temporal.PlainDate.from("2000-01-01"),
+      rules: [rule],
+      to: Temporal.PlainDate.from("9999-12-31"),
+    });
 
     expect(result.map((w) => w.start.toPlainDate().toString())).toStrictEqual([
       "2026-05-11",

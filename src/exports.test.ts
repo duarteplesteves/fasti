@@ -59,6 +59,11 @@ const surface = [
   {
     module: core,
     names: [
+      "MAX_DURATION_MINUTES",
+      "MAX_EXCEPTIONS",
+      "MAX_EXPAND_DAYS",
+      "MAX_GRID_TIMES",
+      "MAX_RULES",
       "checkRule",
       "detectConflicts",
       "expandRules",

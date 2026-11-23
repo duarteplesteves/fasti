@@ -138,6 +138,7 @@ if (!result.ok) {
 - `reschedule({ id, start, end, resourceId?, fields? })` moves a blocking Booking in time, or to another Resource when you pass `resourceId`. It ignores the Booking itself in the overlap check and takes the lock on the destination only. A Booking in a non-blocking Status (e.g. `cancelled`) gives `StatusMismatch { id, status }`.
 - `findSlots({ ..., excludeBookingId })` leaves that Booking out of the overlap check and judges each slot with the `reschedule` Policies, so a UI can offer only the times `reschedule` accepts. An id that names no Booking is `BookingNotFound`.
 - Given an [`also`](#your-writes-in-the-same-transaction-also), every write Action can also fail with `Vetoed`.
+- Work is bounded ([ADR 019](./docs/adr/019-bounded-work-and-a-supported-date-range.md)). Every date must fall in the years 0001–9999. A `findSlots` search covers at most 10,000 Grid times (its span in minutes ÷ `interval`), with a `duration` of at most 31 days. `availability.set` takes at most 100 rules, each with at most 1,000 exceptions. Going over is `InvalidParams`, never a truncated list: page a longer search, since the slots of `[a, b)` and `[b, c)` together are those of `[a, c)`.
 
 ## Effect
 
@@ -689,6 +690,8 @@ The Actions are built on the Core: pure functions over rules and Bookings you pa
 | `checkRule`        | Check one `AvailabilityRule` on its own, e.g. before saving it |
 
 Every function except `checkRule` returns a `Result`: `{ ok: true, value }`, or `{ ok: false, error }` where `error` is an `InvalidParams` listing every problem in the input, each with a `path`. Invalid input is never thrown ([ADR 011](./docs/adr/011-effect-free-core-returns-results.md)). `checkRule` returns the issue list directly, empty when the rule is valid.
+
+The same limits apply ([ADR 019](./docs/adr/019-bounded-work-and-a-supported-date-range.md)), exported as constants: `MAX_GRID_TIMES` per `findFreeSlots` search, `MAX_DURATION_MINUTES`, `MAX_EXPAND_DAYS` per `expandRules` call, `MAX_RULES` and `MAX_EXCEPTIONS` per rule. Every date must fall in the years 0001–9999.
 
 ### Usage
 
