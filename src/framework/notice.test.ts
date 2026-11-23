@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { createScheduler, defineSchema, notice } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { unwrap } from "../test-utils/results.js";
-import { replaceRules } from "../testing/plugin-stores.js";
 
 /** `booked → done`; `done` doesn't block. */
 const schema = defineSchema({
@@ -13,17 +12,6 @@ const schema = defineSchema({
     transitions: { booked: ["done"], cancelled: ["booked"] },
   },
 });
-
-/** Weekdays 09:00–17:00 in Lisbon. */
-const weekdays = {
-  exceptions: [],
-  recurrence: { daysOfWeek: [1, 2, 3, 4, 5], frequency: "weekly", interval: 1 },
-  timeWindow: {
-    end: Temporal.PlainTime.from("17:00"),
-    start: Temporal.PlainTime.from("09:00"),
-  },
-  timezone: "Europe/Lisbon",
-} as const;
 
 /** Monday 1 June 2020, 10:00–11:00 Lisbon: in the past. */
 const past = {
@@ -39,13 +27,9 @@ const future = {
   start: Temporal.Instant.from("2030-06-03T09:00:00Z"),
 } as const;
 
-/** A memory Adapter with `weekdays` on `room` and a Booking booked (with no Policies) at `slot`. */
+/** A memory Adapter with a Booking booked (with no Policies) at `slot`. */
 async function seeded(slot: typeof past | typeof future) {
   const adapter = memoryAdapter();
-
-  await adapter(schema).withResourceLock("room", async (locked) => {
-    await replaceRules(locked, { resourceId: "room", rules: [weekdays] });
-  });
 
   const booking = unwrap(
     await createScheduler({ adapter, policies: [], schema }).book(slot)

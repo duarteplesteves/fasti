@@ -20,7 +20,6 @@ import {
 } from "../test-utils/conformance-schemas.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
-import { blockVerbs, replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import { mintBlockId } from "./plugins/blocks.js";
 
@@ -46,9 +45,12 @@ const end = Temporal.Instant.from("2030-06-03T10:00:00Z");
 async function seeded() {
   const adapter = memoryAdapter();
 
-  await adapter(schema).withResourceLock(room, async (locked) => {
-    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
-  });
+  unwrap(
+    await createScheduler({ adapter, policies: [], schema }).availability.set({
+      resourceId: room,
+      rules: [weekdays],
+    })
+  );
 
   return adapter;
 }
@@ -210,15 +212,21 @@ describe("race safety", () => {
     ) => {
       const adapter = memoryAdapter();
 
-      await adapter(schema).withResourceLock(room, async (locked) => {
-        await replaceRules(locked, {
+      unwrap(
+        await createScheduler({
+          adapter,
+          policies: [],
+          schema,
+        }).availability.set({
           resourceId: room,
           rules: rules.map(({ resourceId: _, ...r }) => ({
             ...r,
             exceptions: [],
           })),
-        });
+        })
+      );
 
+      await adapter(schema).withResourceLock(room, async (locked) => {
         // Seed only states the Framework can reach: blocking Bookings never overlap (the Invariant).
         const kept: typeof bookings = [];
 
@@ -253,7 +261,7 @@ describe("race safety", () => {
         // Blocks may overlap anything stored outside fasti; they only take time away.
         await Promise.all(
           blocks.map(async (b) => {
-            await blockVerbs(locked).insertBlock({
+            await locked.insertRecord("block", {
               end: b.end,
               id: mintBlockId(),
               resourceId: room,

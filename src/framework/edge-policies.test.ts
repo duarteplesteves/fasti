@@ -16,7 +16,6 @@ import type {
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdSchema } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
-import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import type { TransitionCandidate } from "./policy.js";
 
@@ -36,17 +35,6 @@ const schema = defineSchema({
     },
   },
 });
-
-/** Weekdays 09:00–17:00 in Lisbon (UTC+1 in June). */
-const weekdays = {
-  exceptions: [],
-  recurrence: { daysOfWeek: [1, 2, 3, 4, 5], frequency: "weekly", interval: 1 },
-  timeWindow: {
-    end: Temporal.PlainTime.from("17:00"),
-    start: Temporal.PlainTime.from("09:00"),
-  },
-  timezone: "Europe/Lisbon",
-} as const;
 
 /** Monday 3 June 2030, 10:00–11:00 Lisbon. */
 const slot = {
@@ -82,13 +70,9 @@ const noShowOnly = definePolicy(schema, {
   name: "noShowOnly",
 });
 
-/** A memory Adapter with `weekdays` on `room` and one booked Booking in `slot`. */
+/** A memory Adapter with one booked Booking in `slot`. */
 async function seeded() {
   const adapter = memoryAdapter();
-
-  await adapter(schema).withResourceLock("room", async (locked) => {
-    await replaceRules(locked, { resourceId: "room", rules: [weekdays] });
-  });
 
   const booking = unwrap(
     await createScheduler({ adapter, policies: [], schema }).book(slot)

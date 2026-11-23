@@ -11,7 +11,6 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
-import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 
 const schema = uuidIdSchema;
@@ -110,9 +109,11 @@ describe("book", () => {
   it("stores Instants floored to the millisecond, and refuses a range that flooring empties", async () => {
     const adapter = memoryAdapter();
 
-    await adapter(schema).withResourceLock(room, async (locked) => {
-      await replaceRules(locked, { resourceId: room, rules: [weekdays] });
-    });
+    unwrap(
+      await createScheduler({ adapter, policies: [], schema }).availability.set(
+        { resourceId: room, rules: [weekdays] }
+      )
+    );
 
     const scheduler = createScheduler({ policies: [], adapter, schema });
 
@@ -175,9 +176,13 @@ describe("book", () => {
     async function setUp(rules: readonly (typeof weekdays)[] = [weekdays]) {
       const adapter = memoryAdapter();
 
-      await adapter(textIdSchema).withResourceLock(staff, async (locked) => {
-        await replaceRules(locked, { resourceId: staff, rules });
-      });
+      unwrap(
+        await createScheduler({
+          adapter,
+          policies: [],
+          schema: textIdSchema,
+        }).availability.set({ resourceId: staff, rules })
+      );
 
       return {
         adapter,

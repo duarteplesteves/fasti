@@ -4,8 +4,8 @@ import type { LockedAdapter } from "../../adapter/contract.js";
 import type { BookingChanges } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
-import { insert, newBooking } from "../fixtures.js";
-import { installs, ruleStore } from "../plugin-stores.js";
+import { insert, newBooking, ruleRow } from "../fixtures.js";
+import { installs, pluginRecords } from "../plugin-stores.js";
 
 const rule = {
   exceptions: [],
@@ -35,7 +35,7 @@ async function throwAfter<S extends AnySchema, Tx>(
 /** Undo on failure (ADR 008): a unit of work that rejects leaves nothing behind and releases the lock. */
 export const rollbackCases: readonly ConformanceCase[] = [
   {
-    name: "a throw after an insert, an update or a replaceRules leaves nothing behind, keeps the reason, and the next unit of work runs",
+    name: "a throw after an insert, an update or a replace of rules leaves nothing behind, keeps the reason, and the next unit of work runs",
     async run(ctx) {
       const { adapter, resources, schema } = ctx;
 
@@ -69,16 +69,23 @@ export const rollbackCases: readonly ConformanceCase[] = [
 
       // With availability(), a replace of its records too.
       if (installs(schema, "availability")) {
-        const rules = ruleStore(ctx);
+        const records = pluginRecords(ctx, "availability");
         const reason = new Error("work failed");
 
         await expect(
-          rules.withResourceLock(resources[0], async (l) => {
-            await l.replaceRules({ resourceId: resources[0], rules: [rule] });
+          records.withResourceLock(resources[0], async (l) => {
+            await l.replaceRecords("availabilityRule", {
+              records: [ruleRow(resources[0], rule)],
+              resourceId: resources[0],
+            });
             throw reason;
           })
         ).rejects.toBe(reason);
-        expect(await rules.getRules(resources[0])).toStrictEqual([]);
+        expect(
+          await records.listRecords("availabilityRule", {
+            resourceId: resources[0],
+          })
+        ).toStrictEqual([]);
       }
 
       expect(await adapter.getBooking(fresh.id)).toBeNull();

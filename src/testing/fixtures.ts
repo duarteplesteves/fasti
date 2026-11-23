@@ -2,18 +2,19 @@ import { randomInt, randomUUID } from "node:crypto";
 
 import { expect } from "vitest";
 
-import type { SchemaAdapter } from "../adapter/contract.js";
+import type { SchemaAdapter, StoredRecord } from "../adapter/contract.js";
 import type {
   BookingRecord,
   ResourceIdOf,
   StatusOf,
 } from "../adapter/records.js";
 import type { BlockId, BookingId } from "../core/types.js";
+import { uuidV7 } from "../framework/booking-id.js";
+import type { RuleRecord } from "../framework/plugins/availability.js";
 import type { AnyColumn } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { Columns } from "../schema/table.js";
 import { blockFieldsOf } from "./plugin-stores.js";
-import type { BlockRecord, BlockStore } from "./plugin-stores.js";
 
 /** A fresh Booking id (a UUID, as the Framework will mint). */
 export function bookingId(): BookingId {
@@ -131,6 +132,14 @@ export async function insert<S extends AnySchema, Tx>(
   expect(result).toStrictEqual({ ok: true });
 }
 
+/** A `blocks()` `block` row, Developer Fields untyped. */
+export type BlockRow<S extends AnySchema> = StoredRecord & {
+  readonly id: BlockId;
+  readonly resourceId: ResourceIdOf<S>;
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
+};
+
 /** Params of {@link newBlock}. */
 export interface NewBlockParams<S extends AnySchema> {
   readonly resourceId: ResourceIdOf<S>;
@@ -144,7 +153,7 @@ export interface NewBlockParams<S extends AnySchema> {
 export function newBlock<S extends AnySchema>(
   schema: S,
   { optionalFields, resourceId, start = instant() }: NewBlockParams<S>
-): BlockRecord<S> {
+): BlockRow<S> {
   return {
     ...fieldValues(blockFieldsOf(schema), optionalFields),
     end: start.add({ hours: 1 }),
@@ -155,11 +164,33 @@ export function newBlock<S extends AnySchema>(
 }
 
 /** Insert a Block in its own unit of work. */
-export async function insertBlock<S extends AnySchema, Tx>(
-  adapter: BlockStore<S, Tx>,
-  block: BlockRecord<S>
+export async function storeBlock<S extends AnySchema, Tx>(
+  adapter: SchemaAdapter<S, Tx, "records">,
+  block: BlockRow<S>
 ): Promise<void> {
   await adapter.withResourceLock(block.resourceId, async (locked) => {
-    await locked.insertBlock(block);
+    await locked.insertRecord("block", block);
   });
+}
+
+/** `rule` as a new `availability()` `availabilityRule` row on `resourceId`; unset effective dates stored as `null`. */
+export function ruleRow<S extends AnySchema>(
+  resourceId: ResourceIdOf<S>,
+  rule: RuleRecord
+): StoredRecord {
+  // SAFETY: the recurrence is plain JSON data.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- an interface has no index signature.
+  const recurrence = rule.recurrence as unknown as StoredRecord[string];
+
+  return {
+    effectiveFrom: rule.effectiveFrom ?? null,
+    effectiveTo: rule.effectiveTo ?? null,
+    exceptions: rule.exceptions,
+    id: uuidV7(),
+    recurrence,
+    resourceId,
+    timezone: rule.timezone,
+    windowEnd: rule.timeWindow.end,
+    windowStart: rule.timeWindow.start,
+  };
 }
