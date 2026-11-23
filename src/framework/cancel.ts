@@ -42,7 +42,11 @@ export type CancelError<S extends AnySchema> =
   | TransitionNotDeclared<StatusOf<S>>
   | AdapterError;
 
-/** Set a Booking's status to `cancelled` under its Resource's lock, along a declared Transition, keeping every Policy that applies to `cancel` (ADR 014). Idempotent: a repeat writes nothing and runs no Policy. */
+/**
+ * Set a Booking's status to `cancelled` under its Resource's lock, along a declared Transition, keeping every Policy that applies to `cancel` (ADR 014). Idempotent: a repeat writes nothing and runs no Policy.
+ *
+ * @returns An Effect of the cancelled Booking and whether it already was, with `also`'s value merged in when one ran; it fails with `InvalidParams`, `BookingNotFound`, `TransitionNotDeclared`, `PolicyViolation`, `Vetoed` or `AdapterError`.
+ */
 export function cancel<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: CancelParams<S> &

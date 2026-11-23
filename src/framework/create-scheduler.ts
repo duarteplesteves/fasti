@@ -33,7 +33,11 @@ export type Scheduler<
   P extends readonly AnyPolicyOf<S>[],
 > = SchedulerActions<S, Tx, P, "plain">;
 
-/** A typed failure becomes `error`; a defect or interruption is thrown, so the promise rejects. */
+/**
+ * A typed failure becomes `error`; a defect or interruption is thrown, so the promise rejects.
+ *
+ * @returns The success as `{ ok: true, value }`, or the typed failure as `{ ok: false, error }`.
+ */
 export function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
   if (Exit.isSuccess(exit)) {
     return { ok: true, value: exit.value };
@@ -59,7 +63,11 @@ type PlainAlso = (
   ctx: unknown
 ) => Result<unknown, ErasedError> | Promise<Result<unknown, ErasedError>>;
 
-/** `params` with a plain `also` swapped for its Effect form, typed as they came: the Action's own type, not this swap, owns the params'. A throw or rejection inside `also` becomes a defect. */
+/**
+ * `params` with a plain `also` swapped for its Effect form, typed as they came: the Action's own type, not this swap, owns the params'. A throw or rejection inside `also` becomes a defect.
+ *
+ * @returns `params`, or a copy with the Effect form of `also`.
+ */
 function effectParams<P>(params: P): P {
   // Plain-JS callers may pass anything as params.
   if (!Predicate.hasProperty(params, "also")) {
@@ -82,7 +90,11 @@ function effectParams<P>(params: P): P {
   };
 }
 
-/** `action` in plain form: runs its Effect, with a plain `also` swapped in, and maps the Exit. */
+/**
+ * `action` in plain form: runs its Effect, with a plain `also` swapped in, and maps the Exit.
+ *
+ * @returns The plain-form Action, resolving to a `Result`.
+ */
 function plain<P, A, E>(
   action: (params: P) => Effect.Effect<A, E>
 ): (params: P) => Promise<Result<A, E>> {
@@ -92,6 +104,8 @@ function plain<P, A, E>(
 
 /**
  * The scheduler over the developer's schema and Adapter, plain form.
+ *
+ * @returns The scheduler: its Actions, including each installed Plugin's under the Plugin's name, resolve to a `Result`.
  *
  * @example
  * ```ts

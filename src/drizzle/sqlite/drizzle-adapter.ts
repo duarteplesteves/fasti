@@ -43,7 +43,11 @@ type RecordTable = SharedRecordTable<SQLiteTable>;
 /** One line of units per Drizzle database object, shared by every Adapter and schema on it (I-lock-sqlite). */
 const queues = new WeakMap<AnyAsyncSQLiteDatabase, Serialize>();
 
-/** The line of units on `db`, made on first use. */
+/**
+ * The line of units on `db`, made on first use.
+ *
+ * @returns The queue.
+ */
 function queueOf(db: AnyAsyncSQLiteDatabase): Serialize {
   const existing = queues.get(db);
 
@@ -58,7 +62,11 @@ function queueOf(db: AnyAsyncSQLiteDatabase): Serialize {
   return queue;
 }
 
-/** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
+/**
+ * The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`.
+ *
+ * @returns A promise of the overlapping rows.
+ */
 async function overlapping<S extends AnySchema>(
   q: AnyAsyncSQLiteDatabase,
   t: RecordTable,
@@ -79,7 +87,11 @@ async function overlapping<S extends AnySchema>(
   return rows;
 }
 
-/** The row of `t` with this id, if any. */
+/**
+ * The row of `t` with this id, if any.
+ *
+ * @returns A promise of the row, or `undefined` when there is none.
+ */
 async function byId(
   q: AnyAsyncSQLiteDatabase,
   t: RecordTable,
@@ -97,6 +109,8 @@ async function byId(
 /**
  * Compare-and-set (I4): write `changes` only if every stored column still equals `expected`, nulls included.
  * `true` when the row was updated; `false` when it changed or is gone.
+ *
+ * @returns A promise of whether the row was updated.
  */
 async function compareAndSet(
   q: AnyAsyncSQLiteDatabase,
@@ -133,7 +147,11 @@ interface PluginTable {
   readonly t: RecordTable;
 }
 
-/** The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares. */
+/**
+ * The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares.
+ *
+ * @returns The lookup from a logical table name to its Plugin table.
+ */
 function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
   const defs = tablesOf(schema.plugins);
   const tables: Readonly<Record<string, SQLiteTable>> = recordTables(schema);
@@ -150,7 +168,11 @@ function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
   };
 }
 
-/** The record reads over `q`. */
+/**
+ * The record reads over `q`.
+ *
+ * @returns The record reads.
+ */
 function recordReads<S extends AnySchema>(
   q: AnyAsyncSQLiteDatabase,
   pluginTable: (table: string) => PluginTable
@@ -193,7 +215,11 @@ function recordReads<S extends AnySchema>(
   };
 }
 
-/** The record writes on `tx`. */
+/**
+ * The record writes on `tx`.
+ *
+ * @returns The record writes.
+ */
 function recordWrites<S extends AnySchema>(
   tx: AnyAsyncSQLiteDatabase,
   pluginTable: (table: string) => PluginTable
@@ -253,7 +279,11 @@ function recordWrites<S extends AnySchema>(
   };
 }
 
-/** The Drizzle SQLite Adapter, with the lock switchable for the negative control. Internal: use {@link drizzleAdapter}. */
+/**
+ * The Drizzle SQLite Adapter, with the lock switchable for the negative control. Internal: use {@link drizzleAdapter}.
+ *
+ * @returns The Adapter.
+ */
 export function createDrizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
   db: DB,
   { lock }: CreateDrizzleAdapterParams
@@ -289,7 +319,11 @@ export function createDrizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
         };
       }
 
-      /** One unit in its own transaction: `BEGIN IMMEDIATE` takes SQLite's writer slot up front, `deferred` only on first write. */
+      /**
+       * One unit in its own transaction: `BEGIN IMMEDIATE` takes SQLite's writer slot up front, `deferred` only on first write.
+       *
+       * @returns A promise of `work`'s value, once the transaction commits.
+       */
       async function unit<T>(
         work: (locked: LockedAdapter<S, TxOf<DB>, "records">) => Promise<T>
       ): Promise<T> {
@@ -357,6 +391,8 @@ export function createDrizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
  * Use a libsql *file* database on an async driver; leave libsql's `timeout` unset, as it blocks the event loop.
  * Write to the file from one process only: units in one process wait their turn, but another
  * process's writer makes a unit fail with `SQLITE_BUSY`.
+ *
+ * @returns The Adapter, to pass in `createScheduler`'s `adapter`.
  */
 export function drizzleAdapter<DB extends AnyAsyncSQLiteDatabase>(
   db: DB

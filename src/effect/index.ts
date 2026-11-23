@@ -72,6 +72,8 @@ export type SchedulerClass<
  * Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it
  * finishes, then commits or rolls back on its own outcome.
  *
+ * @returns A function taking the service id, which returns the class to extend.
+ *
  * @example
  * ```ts
  * const adapter = drizzleAdapter(db);
@@ -90,7 +92,11 @@ export function Scheduler<
     const Tag = Context.Service<Self, SchedulerService<S, Tx, P>>()(id);
 
     return class extends Tag {
-      /** Provide the Actions over `schema` and `adapter`. */
+      /**
+       * Provide the Actions over `schema` and `adapter`.
+       *
+       * @returns A Layer providing the scheduler service.
+       */
       // Not `this`, so a detached `const { layer } = AppScheduler` still works.
       static layer(params: LayerParams<S, Tx, P>): Layer.Layer<Self> {
         return Layer.succeed(Tag, makeScheduler(params));

@@ -92,7 +92,11 @@ const ruleTable = {
 /** A stored rule row. */
 type RuleRow = RecordOf<"availabilityRule", typeof ruleTable>;
 
-/** A stored row as the rule it holds; unset effective dates are absent, as `0.6` returned them. */
+/**
+ * A stored row as the rule it holds; unset effective dates are absent, as `0.6` returned them.
+ *
+ * @returns The rule.
+ */
 function toRule(row: RuleRow): RuleRecord {
   return {
     exceptions: row.exceptions,
@@ -104,7 +108,11 @@ function toRule(row: RuleRow): RuleRecord {
   };
 }
 
-/** A rule as the columns it's stored in. */
+/**
+ * A rule as the columns it's stored in.
+ *
+ * @returns The column values, unset dates as `null`.
+ */
 function toColumns(rule: RuleRecord) {
   return {
     effectiveFrom: rule.effectiveFrom ?? null,
@@ -122,6 +130,8 @@ function toColumns(rule: RuleRecord) {
  * Resource's availability windows (ADR 014). Without this Plugin, all time outside Bookings and busy time is bookable.
  * Install it first in `plugins`: Policies run in install order, so its Violation then comes first (R6).
  * Its table is `0.6`'s `availabilityRule`, so installing it needs no migration.
+ *
+ * @returns The Plugin, to install in `defineSchema`'s `plugins`.
  */
 export function availability() {
   return definePlugin({

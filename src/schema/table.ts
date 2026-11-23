@@ -202,7 +202,11 @@ export type InstallablePlugins<
       : never
   : unknown;
 
-/** The physical name of Plugin table `table` on a resolved schema; its logical name when the schema has none for it. */
+/**
+ * The physical name of Plugin table `table` on a resolved schema; its logical name when the schema has none for it.
+ *
+ * @returns The physical table name.
+ */
 export function physicalTable(
   schema: {
     readonly names: { readonly tables: Readonly<Record<string, string>> };
@@ -212,7 +216,11 @@ export function physicalTable(
   return schema.names.tables[table] ?? table;
 }
 
-/** The physical column names of Plugin table `table` on a resolved schema, by logical name; a column's logical name when it has none. */
+/**
+ * The physical column names of Plugin table `table` on a resolved schema, by logical name; a column's logical name when it has none.
+ *
+ * @returns The physical column names, by logical name.
+ */
 export function physicalColumns(
   schema: {
     readonly names: {
@@ -228,7 +236,11 @@ export function physicalColumns(
   return (column) => names?.[column] ?? column;
 }
 
-/** Table `name` of `tables`, for the deprecated aliases over `recordTables`. Throws when no installed Plugin declares it: a wiring defect at table-build time, not an expected failure. Internal. */
+/**
+ * Table `name` of `tables`, for the deprecated aliases over `recordTables`. Throws when no installed Plugin declares it: a wiring defect at table-build time, not an expected failure. Internal.
+ *
+ * @returns The table.
+ */
 export function installedTable<T>(
   tables: Readonly<Partial<Record<string, T>>>,
   name: string,
@@ -245,7 +257,11 @@ export function installedTable<T>(
   return table;
 }
 
-/** Every table the Plugins declare, by logical name. */
+/**
+ * Every table the Plugins declare, by logical name.
+ *
+ * @returns The tables, by logical name.
+ */
 export function tablesOf(plugins: readonly Plugin[]): Tables {
   return Object.fromEntries(plugins.flatMap((p) => Object.entries(p.tables)));
 }

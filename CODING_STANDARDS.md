@@ -650,48 +650,54 @@ Every exported symbol from a JavaScript or TypeScript module requires JSDoc. Pub
 
 Do not use `@inheritDoc`, `@inherit`, or similar inheritance tags. Write the required documentation explicitly on each symbol or member.
 
-Use standard JSDoc syntax:
+Use TSDoc syntax; the `tsdoc/syntax` lint rule checks it. Start with a one-line summary. Every documented function that returns a value has `@returns`, saying what comes back and, for a `Result`, what each error means. A function that returns nothing (`void`, `Promise<void>`) has none.
 
 ```ts
 /**
  * Parse an email address from untrusted input.
  *
- * @param input - The untrusted string to parse.
- * @returns A parsed email address, or `InvalidEmailAddress` when the input is invalid.
+ * @returns The parsed email address, or `InvalidEmailAddress` when the input is not one.
  */
-export function parse(input: string): Result<EmailAddress, InvalidEmailAddress>;
+export function parseEmail(input: string): Result<EmailAddress, InvalidEmailAddress>;
 ```
 
-For generics:
-
-```ts
-/**
- * Map the success value of a result.
- *
- * @template T - The original success type.
- * @template U - The mapped success type.
- * @template E - The error type.
- * @param result - The result to map.
- * @param fn - The function applied to the success value.
- * @returns A result with the mapped success value, or the original error.
- */
-export function map<T, U, E>(result: Result<T, E>, fn: (value: T) => U): Result<U, E>;
-```
-
-Use `@throws` only for unrecoverable defects, framework-required behavior, or temporary `notYetImplemented` paths. Do not document expected typed errors as throws.
-
-For complex exported object types, document fields when helpful:
+Document a params object's fields on its interface, not with `@param`: the editor shows each field's documentation as the caller writes that key. Add `@param` only when a positional parameter needs more than its name and type say.
 
 ```ts
 /** Input required to create a user. */
-export type CreateUserInput = {
+export interface CreateUserParams {
   /** The actor creating the user. */
   readonly actor: AdminUser;
 
   /** The parsed email address for the new user. */
   readonly email: EmailAddress;
-};
+}
+
+/**
+ * Create a user, unless one already has the email address.
+ *
+ * @returns The new user, or `EmailTaken` when another user has `email`.
+ */
+export function createUser(params: CreateUserParams): Promise<Result<User, EmailTaken>>;
 ```
+
+Document type parameters with `@typeParam`; TSDoc doesn't define `@template`.
+
+```ts
+/**
+ * Map the success value of a result.
+ *
+ * @typeParam T - The original success type.
+ * @typeParam U - The mapped success type.
+ * @typeParam E - The error type.
+ * @returns A result with the mapped success value, or the original error.
+ */
+export function map<T, U, E>(result: Result<T, E>, fn: (value: T) => U): Result<U, E>;
+```
+
+Use `@throws` only for unrecoverable defects, framework-required behavior, or temporary `notYetImplemented` paths. Do not document expected typed errors as throws. Write it without a `{Type}`, which TSDoc doesn't allow.
+
+Test files and test helpers are exempt from these rules.
 
 ## Configuration and resources
 
@@ -721,5 +727,5 @@ Before coding:
 - Preserve existing observability/error mechanics.
 - Test through public interfaces and real seams.
 - Use `fast-check` arbitraries for generated test data when practical.
-- Add JSDoc for exported symbols.
+- Add JSDoc for exported symbols, with `@returns` on every function that returns a value.
 - Add an ADR only for a lasting architectural boundary, shared pattern, provider strategy, or deliberate exception discovered through the Adapter/Application Service reuse audit.

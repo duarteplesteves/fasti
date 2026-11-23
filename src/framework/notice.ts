@@ -27,6 +27,8 @@ export interface NoticeDetail {
  * The start is the candidate's on `book` and `reschedule`, the stored Booking's on `cancel` and Transition edges.
  * Throws when `minimum` isn't a whole number of minutes, at least 0.
  *
+ * @returns The Policy, to pass in `createScheduler`'s `policies`.
+ *
  * @example
  * ```ts
  * const bookingNotice = notice(schema, { name: "bookingNotice", minimum: 120, appliesTo: ["book", "reschedule"] });

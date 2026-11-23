@@ -43,6 +43,8 @@ export interface TableOptions<S extends AnySchema, C extends AnyPgColumn> {
 /**
  * A Postgres column of a schema column kind. Instants are `timestamptz` to the millisecond (I7);
  * dates are `date` strings, times `time`, JSON `jsonb` (compared by value), dates lists `date[]`.
+ *
+ * @returns The column builder.
  */
 function pgColumn(type: RecordColumn, name: string) {
   switch (type.kind) {
@@ -92,7 +94,11 @@ function pgColumn(type: RecordColumn, name: string) {
   }
 }
 
-/** The `NOT NULL` Resource id column, with its foreign key when `references` is given. */
+/**
+ * The `NOT NULL` Resource id column, with its foreign key when `references` is given.
+ *
+ * @returns The column builder.
+ */
 function resourceIdColumn<S extends AnySchema, C extends AnyPgColumn>(
   schema: S,
   name: string,
@@ -107,7 +113,11 @@ function resourceIdColumn<S extends AnySchema, C extends AnyPgColumn>(
   return col;
 }
 
-/** One column per Developer Field or Plugin table column, keyed by logical name; `NOT NULL` when required. */
+/**
+ * One column per Developer Field or Plugin table column, keyed by logical name; `NOT NULL` when required.
+ *
+ * @returns The column builders, by logical name.
+ */
 function fieldColumns(
   fields: Columns,
   names: Readonly<Partial<Record<string, string>>>
@@ -125,6 +135,8 @@ function fieldColumns(
  * The Booking table of `schema`, with your physical names, for your drizzle-kit schema file.
  * Columns are keyed by logical name. Status is `text` with a `CHECK` over its stored values,
  * so declaring a Status changes the table: generate a migration, and re-run `backstopSql` if it blocks.
+ *
+ * @returns The Drizzle table.
  */
 export function bookingTable<
   S extends AnySchema,
@@ -152,7 +164,11 @@ export function bookingTable<
   ]);
 }
 
-/** One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. */
+/**
+ * One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns.
+ *
+ * @returns The Drizzle table.
+ */
 function pluginTable<S extends AnySchema, C extends AnyPgColumn>(
   schema: S,
   name: string,
@@ -179,6 +195,8 @@ function pluginTable<S extends AnySchema, C extends AnyPgColumn>(
 /**
  * The tables of every Plugin `schema` installs, by logical name, for your drizzle-kit schema file.
  * Table and column names are your physical ones; columns are keyed by logical name. `references` gives each its Resource foreign key.
+ *
+ * @returns The Drizzle tables, by logical name.
  */
 export function recordTables<
   S extends AnySchema,
@@ -201,6 +219,7 @@ export function recordTables<
 /**
  * `blocks()`'s Block table: `recordTables(schema).block`.
  *
+ * @returns The Drizzle table.
  * @deprecated Use `recordTables(schema).block`; this alias goes in a later minor.
  * @throws When `schema` doesn't install `blocks()`.
  */
@@ -218,6 +237,7 @@ export function blockTable<
 /**
  * `availability()`'s AvailabilityRule table: `recordTables(schema).availabilityRule`.
  *
+ * @returns The Drizzle table.
  * @deprecated Use `recordTables(schema).availabilityRule`; this alias goes in a later minor.
  * @throws When `schema` doesn't install `availability()`.
  */

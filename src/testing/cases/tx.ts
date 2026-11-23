@@ -8,7 +8,11 @@ import type {
 } from "../conformance-case.js";
 import { newBooking } from "../fixtures.js";
 
-/** The probe. `tx` cases only run with one. */
+/**
+ * The probe. `tx` cases only run with one.
+ *
+ * @returns The probe.
+ */
 function probeOf<S extends AnySchema, Tx>({
   probe,
 }: CaseContext<S, Tx>): TxProbe<Tx> {
@@ -19,7 +23,11 @@ function probeOf<S extends AnySchema, Tx>({
   return probe;
 }
 
-/** A Booking and a probe row written in one unit of work, through `locked` and `locked.tx`. */
+/**
+ * A Booking and a probe row written in one unit of work, through `locked` and `locked.tx`.
+ *
+ * @returns A promise of the probe's row count before the unit, and the Booking it wrote.
+ */
 async function writeBoth<S extends AnySchema, Tx>(
   ctx: CaseContext<S, Tx>,
   ending: "resolve" | "reject"

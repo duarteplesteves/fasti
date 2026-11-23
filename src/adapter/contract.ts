@@ -35,14 +35,22 @@ export type GroupsOf<S extends AnySchema> =
 /** A value in a Plugin record's column. */
 export type StoredValue = TypeOf<RecordColumn> | null;
 
-/** Whether `v` is a list: a `dates` value or a JSON array. Internal; `Array.isArray` doesn't narrow readonly arrays. */
+/**
+ * Whether `v` is a list: a `dates` value or a JSON array. Internal; `Array.isArray` doesn't narrow readonly arrays.
+ *
+ * @returns `true` when `v` is an array.
+ */
 export function isList(
   v: StoredValue | undefined
 ): v is readonly Temporal.PlainDate[] | readonly Json[] {
   return Array.isArray(v);
 }
 
-/** `value` with every object's keys sorted: stored as text (SQLite), equal values then have equal text, so compare-and-set holds (R3). Internal. */
+/**
+ * `value` with every object's keys sorted: stored as text (SQLite), equal values then have equal text, so compare-and-set holds (R3). Internal.
+ *
+ * @returns A copy of `value` with sorted keys.
+ */
 export function canonical(value: Json): Json {
   if (Array.isArray(value)) {
     return value.map(canonical);
@@ -221,7 +229,11 @@ export type Adapter<Tx, G extends VerbGroup = never> = <S extends AnySchema>(
   schema: S
 ) => SchemaAdapter<S, Tx, G>;
 
-/** Declare an Adapter. Identity at runtime; it infers the schema-dependent types for you. */
+/**
+ * Declare an Adapter. Identity at runtime; it infers the schema-dependent types for you.
+ *
+ * @returns `make`, unchanged.
+ */
 export function defineAdapter<Tx, G extends VerbGroup = never>(
   make: Adapter<Tx, G>
 ): Adapter<Tx, G> {

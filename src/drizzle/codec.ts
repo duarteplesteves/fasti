@@ -18,6 +18,8 @@ export type Row = Readonly<Record<string, RowValue>>;
 /**
  * Record → row: Instants become `Date`s (milliseconds, I7), everything else as is.
  * Keys left `undefined` (an update's changes leave them out) are dropped, giving a partial row.
+ *
+ * @returns The row.
  */
 export function encodeRow<S extends AnySchema>(
   record: BookingRecord<S> | BookingChanges<S>
@@ -35,7 +37,11 @@ export function encodeRow<S extends AnySchema>(
   );
 }
 
-/** Row → record values: `Date`s become Instants. */
+/**
+ * Row → record values: `Date`s become Instants.
+ *
+ * @returns The record values, by column key.
+ */
 export function decodeRow(row: Row): Readonly<Record<string, RecordValue>> {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [
@@ -47,7 +53,11 @@ export function decodeRow(row: Row): Readonly<Record<string, RecordValue>> {
   );
 }
 
-/** Booking record → row: {@link encodeRow}, and the Status its stored value. */
+/**
+ * Booking record → row: {@link encodeRow}, and the Status its stored value.
+ *
+ * @returns The row.
+ */
 export function encodeBooking<S extends AnySchema>(
   codec: StatusCodec<string>,
   record: BookingRecord<S> | BookingChanges<S>
@@ -59,7 +69,11 @@ export function encodeBooking<S extends AnySchema>(
     : { ...row, status: codec.toStored(record.status) };
 }
 
-/** Row → Booking record. A stored Status the schema doesn't know throws, so the read rejects. */
+/**
+ * Row → Booking record. A stored Status the schema doesn't know throws, so the read rejects.
+ *
+ * @returns The Booking record.
+ */
 export function decodeBooking<S extends AnySchema>(
   codec: StatusCodec<string>,
   row: Row
@@ -81,7 +95,11 @@ export function decodeBooking<S extends AnySchema>(
 /** A Plugin record row as Drizzle reads and writes it: `Date`s for Instants, ISO strings for dates and times, JSON as is. */
 export type RecordRow = Readonly<Record<string, Date | Json>>;
 
-/** Plugin record → row, column by column; works on a partial record (an update's changes) too. */
+/**
+ * Plugin record → row, column by column; works on a partial record (an update's changes) too.
+ *
+ * @returns The row.
+ */
 export function encodeRecord(
   record: Readonly<Record<string, StoredValue>>
 ): RecordRow {
@@ -99,7 +117,11 @@ export function encodeRecord(
   );
 }
 
-/** Row → Plugin record of `table`, column by column. */
+/**
+ * Row → Plugin record of `table`, column by column.
+ *
+ * @returns The Plugin record.
+ */
 export function decodeRecord(table: TableDef, row: RecordRow): StoredRecord {
   // SAFETY: the row comes from recordTables(schema): `id`, `resourceId`, and one column per declared one, of its kind.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.

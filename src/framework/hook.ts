@@ -121,6 +121,8 @@ export type AnyHookOf<S extends AnySchema, Tx> =
  * The `adapter` only types `tx`; it is never called.
  * Throws on an empty `appliesTo`, an unknown name, a name in a group the schema lacks (`blocks.*` without `blocks()`), an undeclared edge, or an edge into `cancelled`.
  *
+ * @returns The Hook, to pass in `createScheduler`'s `hooks`.
+ *
  * @example
  * ```ts
  * const confirm = defineHook(schema, adapter, {
@@ -178,7 +180,11 @@ export function defineHook<
   return params;
 }
 
-/** Whether a Hook with targets `appliesTo` runs on a call to `called`. */
+/**
+ * Whether a Hook with targets `appliesTo` runs on a call to `called`.
+ *
+ * @returns `true` when the Hook runs on `called`.
+ */
 export function hookApplies(
   { appliesTo }: { readonly appliesTo: HookTargets<AnySchema> },
   called: CalledTarget

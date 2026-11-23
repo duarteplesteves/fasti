@@ -19,7 +19,11 @@ import { tablesOf } from "../schema/table.js";
 /** A stored row as plain values: every column, Developer Fields included. */
 type Row = Readonly<Record<string, StoredValue>>;
 
-/** Whether `v` is a JSON object. */
+/**
+ * Whether `v` is a JSON object.
+ *
+ * @returns `true` when `v` is a JSON object: not a list or a Temporal value.
+ */
 function isJsonObject(
   v: StoredValue | undefined
 ): v is Readonly<Record<string, Json>> {
@@ -35,6 +39,8 @@ function isJsonObject(
 /**
  * Deep equality over stored values: Temporal values (no enumerable fields) compare with `equals`,
  * lists in order, JSON objects by key whatever their order, as Postgres's `jsonb` does.
+ *
+ * @returns `true` when `x` and `y` are equal.
  */
 function same(x: StoredValue | undefined, y: StoredValue | undefined): boolean {
   if (x instanceof Temporal.Instant) {
@@ -67,7 +73,11 @@ function same(x: StoredValue | undefined, y: StoredValue | undefined): boolean {
   return x === y;
 }
 
-/** Field-by-field {@link same}; an absent field and an `undefined` one are equal. */
+/**
+ * Field-by-field {@link same}; an absent field and an `undefined` one are equal.
+ *
+ * @returns `true` when every field of `a` and `b` is equal.
+ */
 function sameRecord(a: Row, b: Row): boolean {
   return [...new Set([...Object.keys(a), ...Object.keys(b)])].every((k) =>
     same(a[k], b[k])
@@ -81,7 +91,11 @@ interface Store {
   readonly records: Map<string, Map<string, StoredRecord>>;
 }
 
-/** A copy of `store` a unit of work can change without touching it. */
+/**
+ * A copy of `store` a unit of work can change without touching it.
+ *
+ * @returns The copy.
+ */
 function draftOf(store: Store): Store {
   return {
     bookings: new Map(store.bookings),
@@ -113,7 +127,11 @@ function byStart(a: Ranged, b: Ranged): number {
   return Temporal.Instant.compare(a.start, b.start) || byId(a, b);
 }
 
-/** The records of one Resource overlapping the half-open range, sorted by `start`, then `id`. */
+/**
+ * The records of one Resource overlapping the half-open range, sorted by `start`, then `id`.
+ *
+ * @returns The overlapping records.
+ */
 function overlapping<R extends Ranged>(
   records: Iterable<R>,
   { overlapping: { from, to }, resourceId }: ListBookingsQuery<AnySchema>
@@ -128,7 +146,11 @@ function overlapping<R extends Ranged>(
     .toSorted(byStart);
 }
 
-/** The Plugin records of `table` on `resourceId`, in `store`. */
+/**
+ * The Plugin records of `table` on `resourceId`, in `store`.
+ *
+ * @returns The records.
+ */
 function recordsOn(
   store: Store,
   table: string,
@@ -139,7 +161,11 @@ function recordsOn(
   );
 }
 
-/** The reads, over whichever store `current` returns; `timed` names the timed Plugin tables. */
+/**
+ * The reads, over whichever store `current` returns; `timed` names the timed Plugin tables.
+ *
+ * @returns The Booking and record reads.
+ */
 function readsOf<S extends AnySchema>(
   current: () => Store,
   timed: ReadonlySet<string>
@@ -173,12 +199,20 @@ function readsOf<S extends AnySchema>(
   };
 }
 
-/** The handle over a draft: reads and writes both go to it. */
+/**
+ * The handle over a draft: reads and writes both go to it.
+ *
+ * @returns The locked handle.
+ */
 function lockedOn<S extends AnySchema>(
   draft: Store,
   timed: ReadonlySet<string>
 ): LockedAdapter<S, undefined, "records"> {
-  /** The draft's records of `table`, made on first use. */
+  /**
+   * The draft's records of `table`, made on first use.
+   *
+   * @returns The table's records, by id.
+   */
   function rowsOf(table: string): Map<string, StoredRecord> {
     const rows = draft.records.get(table) ?? new Map<string, StoredRecord>();
 
@@ -254,7 +288,11 @@ function lockedOn<S extends AnySchema>(
   };
 }
 
-/** The in-memory Adapter, with the lock switchable for the negative control. Internal: use {@link memoryAdapter}. */
+/**
+ * The in-memory Adapter, with the lock switchable for the negative control. Internal: use {@link memoryAdapter}.
+ *
+ * @returns The Adapter.
+ */
 export function createMemoryAdapter({
   lock,
 }: CreateMemoryAdapterParams): Adapter<undefined, "records"> {
@@ -306,7 +344,11 @@ export function createMemoryAdapter({
   );
 }
 
-/** An Adapter that keeps everything in memory, for tests. `tx` is `undefined`: there is no transaction to join. */
+/**
+ * An Adapter that keeps everything in memory, for tests. `tx` is `undefined`: there is no transaction to join.
+ *
+ * @returns The Adapter, to pass in `createScheduler`'s `adapter`.
+ */
 export function memoryAdapter(): Adapter<undefined, "records"> {
   return createMemoryAdapter({ lock: true });
 }

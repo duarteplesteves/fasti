@@ -1,7 +1,11 @@
 import { DrizzleQueryError, getColumns } from "drizzle-orm";
 import type { Columns, Table } from "drizzle-orm";
 
-/** Run a verb's queries; a driver failure rejects with the driver's own error as `cause`. */
+/**
+ * Run a verb's queries; a driver failure rejects with the driver's own error as `cause`.
+ *
+ * @returns A promise of `run`'s value; it rejects with an Error naming `verb` when `run` does.
+ */
 export async function query<T>(
   verb: string,
   run: () => Promise<T>
@@ -23,12 +27,20 @@ export interface RecordTable<T extends Table> {
   readonly columns: T["_"]["columns"];
 }
 
-/** A Booking or Block table and its columns, keyed by logical name. */
+/**
+ * A Booking or Block table and its columns, keyed by logical name.
+ *
+ * @returns The table, with its columns by logical name.
+ */
 export function recordTable<T extends Table>(table: T): RecordTable<T> {
   return { columns: getColumns(table), table };
 }
 
-/** A logical column of a record table; every record table has `id`, `resourceId`, `start`, `end`. */
+/**
+ * A logical column of a record table; every record table has `id`, `resourceId`, `start`, `end`.
+ *
+ * @returns The column.
+ */
 export function col(
   { columns }: RecordTable<Table>,
   key: string

@@ -5,7 +5,11 @@ import type { StoredValue } from "./contract.js";
 /** A Plugin record value as a SQL Adapter writes and reads it: Instants as they are, everything else JSON. Each Adapter maps Instants to its driver's type. */
 export type ColumnValue = Temporal.Instant | Json;
 
-/** One Plugin record value → its column value: PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical, Instants as they are. */
+/**
+ * One Plugin record value → its column value: PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical, Instants as they are.
+ *
+ * @returns The column value.
+ */
 export function encodeValue(value: StoredValue): ColumnValue {
   if (value instanceof Temporal.Instant) {
     return value;
@@ -27,7 +31,11 @@ export function encodeValue(value: StoredValue): ColumnValue {
   return canonical(value);
 }
 
-/** One column value of a column of `kind` → its Plugin record value; `kind` is `undefined` for fasti's own columns. */
+/**
+ * One column value of a column of `kind` → its Plugin record value; `kind` is `undefined` for fasti's own columns.
+ *
+ * @returns The Plugin record value.
+ */
 export function decodeValue(
   kind: ColumnKind | undefined,
   value: ColumnValue

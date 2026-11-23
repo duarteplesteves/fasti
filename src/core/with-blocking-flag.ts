@@ -10,6 +10,8 @@ import type { Booking } from "./types.js";
  * matches, by `nonBlocking` if it matches, otherwise by `default`. A status
  * listed in both is reported as invalid.
  *
+ * @returns The bookings with `isBlocking` set, in input order, or `InvalidParams` when a status is in both `blocking` and `nonBlocking`.
+ *
  * @example
  * ```ts
  * const result = withBlockingFlag(rawBookings, {

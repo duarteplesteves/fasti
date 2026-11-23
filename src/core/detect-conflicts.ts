@@ -12,7 +12,11 @@ export interface DetectConflictsParams<Id extends string = string> {
   excludeBookingId?: NoInfer<Id>;
 }
 
-/** Whether `booking` is blocking, not excluded, and overlaps `range`. */
+/**
+ * Whether `booking` is blocking, not excluded, and overlaps `range`.
+ *
+ * @returns `true` when `booking` blocks `range`.
+ */
 function blocks<Id extends string>(
   booking: Booking<Id>,
   range: InstantRange,
@@ -27,7 +31,11 @@ function blocks<Id extends string>(
   );
 }
 
-/** Whether any Booking but `excludeBookingId` blocks `range`. For Core functions that already checked their params. */
+/**
+ * Whether any Booking but `excludeBookingId` blocks `range`. For Core functions that already checked their params.
+ *
+ * @returns `true` when some Booking blocks `range`.
+ */
 export function overlapsBlockingBooking<Id extends string>(
   bookings: readonly Booking<Id>[],
   range: InstantRange,
@@ -36,7 +44,11 @@ export function overlapsBlockingBooking<Id extends string>(
   return bookings.some((b) => blocks(b, range, excludeBookingId));
 }
 
-/** The blocking Bookings that overlap `candidate`, sorted by start. */
+/**
+ * The blocking Bookings that overlap `candidate`, sorted by start.
+ *
+ * @returns The conflicting Bookings, empty when there are none, or `InvalidParams` when a Booking or `candidate` is malformed or on another Resource.
+ */
 export function detectConflicts<Id extends string = string>(
   params: DetectConflictsParams<Id>
 ): Result<Booking<Id>[], InvalidParams> {

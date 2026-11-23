@@ -115,6 +115,8 @@ export type TransitionError<S extends AnySchema> =
 /**
  * Move a Booking from `from` to `to` along a declared Transition, compare-and-set on `from` (ADR 009).
  * Into a blocking Status from a non-blocking one, it re-checks overlap; then the Policies on the edge run (never availability).
+ *
+ * @returns An Effect of the moved Booking, with `also`'s value merged in when one ran; it fails with `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `PolicyViolation`, `Vetoed` or `AdapterError`.
  */
 export function transition<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,

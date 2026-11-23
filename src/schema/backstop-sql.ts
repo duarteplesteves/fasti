@@ -1,17 +1,29 @@
 import type { AnySchema } from "./define-schema.js";
 import { statusCodec } from "./status-codec.js";
 
-/** A SQL string literal, for DDL, where values can't be parameters. */
+/**
+ * A SQL string literal, for DDL, where values can't be parameters.
+ *
+ * @returns `value` in single quotes, its own single quotes doubled.
+ */
 export function sqlLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-/** A quoted SQL identifier. */
+/**
+ * A quoted SQL identifier.
+ *
+ * @returns `name` in double quotes, its own double quotes doubled.
+ */
 function identifier(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
 }
 
-/** The name of the backstop constraint on the Booking table of `schema`. */
+/**
+ * The name of the backstop constraint on the Booking table of `schema`.
+ *
+ * @returns The constraint name.
+ */
 export function noOverlapConstraint(schema: AnySchema): string {
   return `${schema.names.tables.booking}_no_overlap`;
 }
@@ -26,6 +38,8 @@ export function noOverlapConstraint(schema: AnySchema): string {
  * Correct for capacity 1 only: it forbids any overlap of blocking Bookings on a Resource.
  * drizzle-kit doesn't track the constraint: later generated migrations neither include nor drop it.
  * It lists the blocking Statuses, so when you add, remove or flip a blocking Status, drop the constraint and re-run these statements in a new migration.
+ *
+ * @returns The SQL statements, in the order to run them.
  */
 export function backstopSql(schema: AnySchema): readonly string[] {
   const columns = schema.names.columns.booking;

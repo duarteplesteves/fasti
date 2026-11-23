@@ -11,7 +11,11 @@ export interface ExpandRulesParams {
   to: Temporal.PlainDate;
 }
 
-/** `expandRules` without checks, for Core functions that already checked their params. */
+/**
+ * `expandRules` without checks, for Core functions that already checked their params.
+ *
+ * @returns The expanded windows, sorted by start then `resourceId`.
+ */
 export function expandRulesUnchecked(
   params: ExpandRulesParams
 ): ExpandedWindow[] {
@@ -73,6 +77,8 @@ export function expandRulesUnchecked(
 /**
  * One ExpandedWindow per rule per matching date in `[from, to]`, in each rule's
  * timezone: unmerged, multi-resource, sorted by start then `resourceId`.
+ *
+ * @returns The expanded windows, or `InvalidParams` when a rule is malformed or `from` is after `to`.
  */
 export function expandRules(
   params: ExpandRulesParams

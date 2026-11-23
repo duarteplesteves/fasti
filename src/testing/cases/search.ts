@@ -10,7 +10,11 @@ function at(iso: string): Temporal.Instant {
   return Temporal.Instant.from(iso);
 }
 
-/** A Booking on 2030-03-04 between two "HH:MM" times. */
+/**
+ * A Booking on 2030-03-04 between two "HH:MM" times.
+ *
+ * @returns The Booking record, not yet stored.
+ */
 function bookingAt<S extends AnySchema, Tx>(
   { resources, schema }: CaseContext<S, Tx>,
   {

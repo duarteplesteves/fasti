@@ -31,7 +31,11 @@ export type WriteActionName<S extends AnySchema> =
   | BookingActionName
   | PluginWriteName<S>;
 
-/** The write Actions of one Plugin, as `<plugin>.<action>`; its Actions are erased on AnySchema. */
+/**
+ * The write Actions of one Plugin, as `<plugin>.<action>`; its Actions are erased on AnySchema.
+ *
+ * @returns The names, as `<plugin>.<action>`.
+ */
 export function pluginWriteNames({
   actions,
   name,
@@ -48,7 +52,11 @@ export function pluginWriteNames({
     .map(([action]) => `${name}.${action}`);
 }
 
-/** The write Actions `schema` has, by name: the runtime twin of {@link WriteActionName}. `transition` is named by its edges. */
+/**
+ * The write Actions `schema` has, by name: the runtime twin of {@link WriteActionName}. `transition` is named by its edges.
+ *
+ * @returns The names.
+ */
 export function writeActionNames<S extends AnySchema>(
   schema: S
 ): readonly WriteActionName<S>[] {
@@ -65,14 +73,22 @@ export function writeActionNames<S extends AnySchema>(
 /** A target as stored, its schema erased. */
 type AnyTarget = string | { readonly from?: string; readonly to: string };
 
-/** Whether `target` is named (an Action) rather than a Transition edge; it doesn't check the name exists. */
+/**
+ * Whether `target` is named (an Action) rather than a Transition edge; it doesn't check the name exists.
+ *
+ * @returns `true` when `target` is a string.
+ */
 export function isNamedTarget(
   target: string | { readonly to: string }
 ): target is string {
   return typeof target === "string";
 }
 
-/** Whether `target` names an Action that changes a Booking. */
+/**
+ * Whether `target` names an Action that changes a Booking.
+ *
+ * @returns `true` when `target` is `book`, `reschedule` or `cancel`.
+ */
 export function isBookingActionName(
   target: AnyTarget
 ): target is BookingActionName {
@@ -99,7 +115,11 @@ export type CalledTarget =
   | string
   | { readonly from: string; readonly to: string };
 
-/** Whether target `t` names `called`: an Action by name, an edge by `{ to }` or by `{ from, to }`. */
+/**
+ * Whether target `t` names `called`: an Action by name, an edge by `{ to }` or by `{ from, to }`.
+ *
+ * @returns `true` when `t` names `called`.
+ */
 export function matchesTarget(t: AnyTarget, called: CalledTarget): boolean {
   return isNamedTarget(t) || isNamedTarget(called)
     ? t === called

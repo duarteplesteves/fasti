@@ -52,7 +52,11 @@ export interface LockedByIdParams<
   readonly also: EffectAlso<C, Tx, R> | undefined;
 }
 
-/** Run `work` on a row addressed by id, under its Resource's lock: the one place an Action retries. */
+/**
+ * Run `work` on a row addressed by id, under its Resource's lock: the one place an Action retries.
+ *
+ * @returns An Effect of `work`'s value, with `also`'s value merged in when one ran; it fails with `notFound` when the row is missing, or with `work`'s failure, `Vetoed` or `AdapterError`.
+ */
 export function lockedById<
   S extends AnySchema,
   Tx,

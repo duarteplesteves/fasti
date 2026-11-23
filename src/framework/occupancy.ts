@@ -45,6 +45,8 @@ interface Occupants {
 /**
  * Everything occupying `resourceId` over the half-open `[from, to)` for a candidate of kind `candidate`: the one place occupants enter the Core.
  * Only a Booking candidate sees the busy sources: busy time may overlap busy time (ADR 016). Internal.
+ *
+ * @returns An Effect of the overlapping Bookings and busy time; it fails with `AdapterError`.
  */
 export function occupants<S extends AnySchema, Tx>(
   { busy, codec }: OccupancyContext<S, Tx>,
@@ -92,7 +94,11 @@ export function occupants<S extends AnySchema, Tx>(
   );
 }
 
-/** The Core's hits as Conflicts, sorted by start, then id. Ids, kinds and times only: no Developer Fields. */
+/**
+ * The Core's hits as Conflicts, sorted by start, then id. Ids, kinds and times only: no Developer Fields.
+ *
+ * @returns The Conflicts.
+ */
 export function toConflicts(
   hits: readonly Booking[],
   kindById: ReadonlyMap<string, Kind>
@@ -118,6 +124,8 @@ export function toConflicts(
 /**
  * What a candidate `[start, end)` on `resourceId` would overlap, as Conflicts: the overlap Invariant's one check (ADR 014, ADR 016).
  * `kind` is the candidate's: any but `booking` (a Plugin's busy time) conflicts with blocking Bookings only.
+ *
+ * @returns An Effect of the Conflicts, empty when the range is free; it fails with `AdapterError`.
  */
 export function conflictsAt<S extends AnySchema, Tx>(
   ctx: OccupancyContext<S, Tx>,
@@ -169,7 +177,11 @@ export interface CheckOverlapParams<S extends AnySchema> {
   readonly excludeBookingId: BookingId | null;
 }
 
-/** The overlap Invariant for a Booking at `[start, end)`: fails `SlotConflict` if it would overlap a blocking Booking or busy time, ignoring `excludeBookingId` (ADR 014). */
+/**
+ * The overlap Invariant for a Booking at `[start, end)`: fails `SlotConflict` if it would overlap a blocking Booking or busy time, ignoring `excludeBookingId` (ADR 014).
+ *
+ * @returns An Effect that succeeds when the range is free; it fails with `SlotConflict` or `AdapterError`.
+ */
 export function checkOverlap<S extends AnySchema, Tx>(
   ctx: OccupancyContext<S, Tx>,
   reads: EffectReads<S>,

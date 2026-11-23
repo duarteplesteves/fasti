@@ -50,12 +50,20 @@ const rules: readonly [RuleRecord, RuleRecord, RuleRecord] = [
   },
 ];
 
-/** Rows have no order to keep: compare them sorted by id. */
+/**
+ * Rows have no order to keep: compare them sorted by id.
+ *
+ * @returns The rows, sorted by id.
+ */
 function byId(rows: readonly StoredRecord[]): StoredRecord[] {
   return rows.toSorted((a, b) => (a.id < b.id ? -1 : Number(a.id > b.id)));
 }
 
-/** Replace `resourceId`'s rules with `next` in one unit of work; the rows as written. */
+/**
+ * Replace `resourceId`'s rules with `next` in one unit of work; the rows as written.
+ *
+ * @returns A promise of the rows as written.
+ */
 async function replace<S extends AnySchema, Tx>(
   adapter: SchemaAdapter<S, Tx, "records">,
   resourceId: ResourceIdOf<S>,
@@ -70,7 +78,11 @@ async function replace<S extends AnySchema, Tx>(
   return records;
 }
 
-/** `resourceId`'s rule rows, sorted by id. */
+/**
+ * `resourceId`'s rule rows, sorted by id.
+ *
+ * @returns A promise of the rows, sorted by id.
+ */
 async function rowsOf<S extends AnySchema, Tx>(
   adapter: SchemaAdapter<S, Tx, "records">,
   resourceId: ResourceIdOf<S>

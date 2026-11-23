@@ -39,7 +39,11 @@ type TxOf<DB extends AnyPgDatabase> = Parameters<
 /** A Booking or Plugin table of this dialect. */
 type RecordTable = SharedRecordTable<PgTable>;
 
-/** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
+/**
+ * The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`.
+ *
+ * @returns A promise of the overlapping rows.
+ */
 async function overlapping<S extends AnySchema>(
   q: AnyPgDatabase,
   t: RecordTable,
@@ -62,7 +66,11 @@ async function overlapping<S extends AnySchema>(
   return rows as Row[];
 }
 
-/** The row of `t` with this id, if any. */
+/**
+ * The row of `t` with this id, if any.
+ *
+ * @returns A promise of the row, or `undefined` when there is none.
+ */
 async function byId(
   q: AnyPgDatabase,
   t: RecordTable,
@@ -82,6 +90,8 @@ async function byId(
 /**
  * Compare-and-set (I4): write `changes` only if every stored column still equals `expected`, nulls included.
  * `true` when the row was updated; `false` when it changed or is gone.
+ *
+ * @returns A promise of whether the row was updated.
  */
 async function compareAndSet(
   q: AnyPgDatabase,
@@ -117,7 +127,11 @@ interface PluginTable {
   readonly t: RecordTable;
 }
 
-/** The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares. */
+/**
+ * The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares.
+ *
+ * @returns The lookup from a logical table name to its Plugin table.
+ */
 function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
   const defs = tablesOf(schema.plugins);
   const tables: Readonly<Record<string, PgTable>> = recordTables(schema);
@@ -134,7 +148,11 @@ function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
   };
 }
 
-/** The record reads over `q`. */
+/**
+ * The record reads over `q`.
+ *
+ * @returns The record reads.
+ */
 function recordReads<S extends AnySchema>(
   q: AnyPgDatabase,
   pluginTable: (table: string) => PluginTable
@@ -179,7 +197,11 @@ function recordReads<S extends AnySchema>(
   };
 }
 
-/** The record writes on `tx`. */
+/**
+ * The record writes on `tx`.
+ *
+ * @returns The record writes.
+ */
 function recordWrites<S extends AnySchema>(
   tx: AnyPgDatabase,
   pluginTable: (table: string) => PluginTable
@@ -239,7 +261,11 @@ function recordWrites<S extends AnySchema>(
   };
 }
 
-/** The Drizzle Postgres Adapter, with the lock switchable for the negative control. Internal: use {@link drizzleAdapter}. */
+/**
+ * The Drizzle Postgres Adapter, with the lock switchable for the negative control. Internal: use {@link drizzleAdapter}.
+ *
+ * @returns The Adapter.
+ */
 export function createDrizzleAdapter<DB extends AnyPgDatabase>(
   db: DB,
   { lock }: CreateDrizzleAdapterParams
@@ -287,7 +313,11 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
               });
             }
 
-            /** Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable. */
+            /**
+             * Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable.
+             *
+             * @returns A promise of the write's value, or `"conflict"` when the backstop refused it.
+             */
             async function backstopped<T>(
               verb: string,
               write: (sp: typeof tx) => Promise<T>
@@ -378,6 +408,8 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
  * The Drizzle Postgres Adapter, over your tables made with {@link bookingTable},
  * and {@link recordTables} if its Plugins declare tables (`availability()`'s and `blocks()`'s among them).
  * `tx` is Drizzle's own transaction, for your writes in the same unit of work.
+ *
+ * @returns The Adapter, to pass in `createScheduler`'s `adapter`.
  */
 export function drizzleAdapter<DB extends AnyPgDatabase>(
   db: DB

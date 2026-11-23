@@ -10,7 +10,11 @@ import { conformancePlugin } from "../conformance-plugin.js";
 import { newBooking } from "../fixtures.js";
 import { newRecord, withRecords } from "./records.js";
 
-/** Book one hour on the first Resource through a scheduler with `hooks`, waiving `availability` so no rules are needed. */
+/**
+ * Book one hour on the first Resource through a scheduler with `hooks`, waiving `availability` so no rules are needed.
+ *
+ * @returns A promise of `book`'s result.
+ */
 async function bookWith<S extends AnySchema, Tx>(
   { resources, schema, unbound }: CaseContext<S, Tx>,
   hooks: readonly AnyHookOf<S, Tx>[]
@@ -37,7 +41,11 @@ async function bookWith<S extends AnySchema, Tx>(
   return await scheduler.book(params);
 }
 
-/** An in-transaction Hook on `book` that records the Booking's id, then runs `then`. */
+/**
+ * An in-transaction Hook on `book` that records the Booking's id, then runs `then`.
+ *
+ * @returns The Hook.
+ */
 function seeing<S extends AnySchema, Tx>(
   seen: BookingId[],
   then: (tx: Tx) => void | Promise<void>
@@ -54,7 +62,11 @@ function seeing<S extends AnySchema, Tx>(
   };
 }
 
-/** A Hook that throws `reason`. */
+/**
+ * A Hook that throws `reason`.
+ *
+ * @returns The Hook.
+ */
 function throwing<S extends AnySchema, Tx>(reason: Error): AnyHookOf<S, Tx> {
   return {
     appliesTo: ["book"],
@@ -65,7 +77,11 @@ function throwing<S extends AnySchema, Tx>(reason: Error): AnyHookOf<S, Tx> {
   };
 }
 
-/** `conformance.insert` on a scheduler over `ctx` with `hooks`: its types are erased, as the schema is generic here. */
+/**
+ * `conformance.insert` on a scheduler over `ctx` with `hooks`: its types are erased, as the schema is generic here.
+ *
+ * @returns The plain-form `conformance.insert`.
+ */
 function insertWith<S extends AnySchema, Tx>(
   { schema, unbound }: CaseContext<S, Tx>,
   hooks: readonly AnyHookOf<S, Tx>[]
@@ -92,7 +108,11 @@ function insertWith<S extends AnySchema, Tx>(
   return conformance.insert;
 }
 
-/** The one Booking id an in-transaction Hook saw. */
+/**
+ * The one Booking id an in-transaction Hook saw.
+ *
+ * @returns The id.
+ */
 function onlyId(seen: readonly BookingId[]): BookingId {
   const [id, ...rest] = seen;
 
@@ -101,7 +121,11 @@ function onlyId(seen: readonly BookingId[]): BookingId {
   return id;
 }
 
-/** The probe or retry value. Cases of its group only run with one. */
+/**
+ * The probe or retry value. Cases of its group only run with one.
+ *
+ * @returns `value`, when it isn't `null`.
+ */
 function required<T>(value: T | null, group: string): T {
   if (value === null) {
     throw new Error(`a ${group} case ran without its probe`);

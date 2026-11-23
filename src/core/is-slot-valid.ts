@@ -15,7 +15,11 @@ export interface IsSlotValidParams<Id extends string = string> {
   excludeBookingId?: NoInfer<Id>;
 }
 
-/** Whether `slot` fits inside an availability window and overlaps no blocking Booking. */
+/**
+ * Whether `slot` fits inside an availability window and overlaps no blocking Booking.
+ *
+ * @returns `true` when `slot` is bookable, or `InvalidParams` when a rule, Booking or `slot` is malformed.
+ */
 export function isSlotValid<Id extends string = string>(
   params: IsSlotValidParams<Id>
 ): Result<boolean, InvalidParams> {
