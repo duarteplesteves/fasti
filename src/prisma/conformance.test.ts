@@ -400,42 +400,55 @@ function adapterTests(): void {
       });
     });
 
-    it("units through the Drizzle Postgres Adapter and the Prisma Adapter on one Resource never interleave", async () => {
-      const [resource] = textIdResources;
+    // Each Adapter gets its own spelling: a uuid's spellings are one Resource, so they must share the lock.
+    it.each([
+      {
+        drizzleId: textIdResources[0],
+        prismaId: textIdResources[0],
+        schema: textIdSchema,
+      },
+      {
+        drizzleId: uuidIdResources[0],
+        prismaId: `{${uuidIdResources[0].toUpperCase()}}`,
+        schema: uuidIdSchema,
+      },
+    ])(
+      "units through the Drizzle Postgres Adapter ($drizzleId) and the Prisma Adapter ($prismaId) on one Resource never interleave",
+      async ({ drizzleId, prismaId, schema }) => {
+        const viaDrizzle = drizzleAdapter(drizzle({ client: database.pool }))(
+          schema
+        );
 
-      const viaDrizzle = drizzleAdapter(drizzle({ client: database.pool }))(
-        textIdSchema
-      );
+        const viaPrisma = prismaAdapter(database.db)(schema);
+        const log: string[] = [];
 
-      const viaPrisma = prismaAdapter(database.db)(textIdSchema);
-      const log: string[] = [];
+        /** A unit that logs its entry and exit, with time between for another unit to slip in. */
+        async function logged(name: string): Promise<void> {
+          log.push(`enter ${name}`);
+          await sleep(2);
+          log.push(`exit ${name}`);
+        }
 
-      /** A unit that logs its entry and exit, with time between for another unit to slip in. */
-      async function logged(name: string): Promise<void> {
-        log.push(`enter ${name}`);
-        await sleep(2);
-        log.push(`exit ${name}`);
+        await Promise.all(
+          Array.from({ length: 10 }, async (_, i) => {
+            await Promise.all([
+              viaDrizzle.withResourceLock(drizzleId, async () => {
+                await logged(`drizzle ${i}`);
+              }),
+              viaPrisma.withResourceLock(prismaId, async () => {
+                await logged(`prisma ${i}`);
+              }),
+            ]);
+          })
+        );
+
+        expect(log).toHaveLength(40);
+
+        for (let i = 0; i < log.length; i += 2) {
+          expect(log[i + 1]).toBe(log[i]?.replace("enter", "exit"));
+        }
       }
-
-      await Promise.all(
-        Array.from({ length: 10 }, async (_, i) => {
-          await Promise.all([
-            viaDrizzle.withResourceLock(resource, async () => {
-              await logged(`drizzle ${i}`);
-            }),
-            viaPrisma.withResourceLock(resource, async () => {
-              await logged(`prisma ${i}`);
-            }),
-          ]);
-        })
-      );
-
-      expect(log).toHaveLength(40);
-
-      for (let i = 0; i < log.length; i += 2) {
-        expect(log[i + 1]).toBe(log[i]?.replace("enter", "exit"));
-      }
-    });
+    );
 
     it("an overlap the backstop refuses names fasti's constraint on Prisma's error", async () => {
       await truncate(textIdSchema);

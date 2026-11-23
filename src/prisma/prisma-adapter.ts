@@ -428,6 +428,7 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
       const codec = statusCodec(schema);
       const noOverlap = noOverlapConstraint(schema);
       const pluginTable = pluginTablesOf(schema);
+      const uuidIds = schema.resource.idType.kind === "uuid";
 
       const bookings: PhysicalTable = {
         name: tables.booking,
@@ -467,9 +468,14 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
             if (lock) {
               // The Resource Lock (I2, I-lock-pg): the unit's first statement, held until COMMIT or ROLLBACK.
               await query("withResourceLock", async () => {
+                // A uuid hashes in Postgres's spelling: `A0EE…` and `a0ee…` are one Resource, so one lock.
                 await tx.execute(
-                  tx.raw
-                    .sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${String(lockedId)}::text))`
+                  (uuidIds
+                    ? tx.raw
+                        .sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext((${String(lockedId)}::uuid)::text))`
+                    : tx.raw
+                        .sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${String(lockedId)}::text))`
+                  )
                     .affectedCount()
                     .build()
                 );

@@ -277,6 +277,7 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
       const codec = statusCodec(schema);
       const noOverlap = noOverlapConstraint(schema);
       const pluginTable = pluginTablesOf(schema);
+      const uuidIds = schema.resource.idType.kind === "uuid";
 
       function reads(q: AnyPgDatabase): AdapterReads<S> & RecordReads<S> {
         return {
@@ -307,8 +308,13 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
             if (lock) {
               // The Resource Lock (I2): held until COMMIT or ROLLBACK, so the transaction ending releases it.
               await query("withResourceLock", async () => {
+                // A uuid hashes in Postgres's spelling: `A0EE…` and `a0ee…` are one Resource, so one lock.
+                const key = uuidIds
+                  ? sql`(${String(lockedId)}::uuid)::text`
+                  : sql`${String(lockedId)}::text`;
+
                 await tx.execute(
-                  sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${String(lockedId)}::text))`
+                  sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${key}))`
                 );
               });
             }

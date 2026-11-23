@@ -279,13 +279,24 @@ function observable(own: readonly string[], called: CalledTarget): boolean {
   );
 }
 
-/** Throws unless each Hook of Plugin `name` applies to `"*"`, or to Booking Actions and its own write Actions only: plain-JS callers can pass what the types refuse. */
+/** Throws on a dot in Plugin `name` or an Action name, or unless each Hook applies to `"*"`, or to Booking Actions and its own write Actions only: plain-JS callers can pass what the types refuse. */
 export function checkPluginHooks(
   name: string,
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- the Plugin's Actions, either style.
   actions: unknown,
   hooks: readonly { readonly appliesTo: "*" | readonly string[] }[]
 ): void {
+  // A Hook target is `plugin.action`: a dot in either part makes two Actions one target (`a` + `b.c` = `a.b` + `c`).
+  const dotted = [name, ...Object.keys(actions ?? {})].find((n) =>
+    n.includes(".")
+  );
+
+  if (dotted !== undefined) {
+    throw new Error(
+      `fasti: Plugin ${name} can't use the name "${dotted}": Plugin and Action names have no dots`
+    );
+  }
+
   const own = pluginWriteNames({ actions, name });
 
   for (const { appliesTo } of hooks) {
