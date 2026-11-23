@@ -8,9 +8,10 @@ import type {
   UpdateRecordResult,
   VerbGroup,
 } from "../adapter/contract.js";
-import type { ResourceIdOf, RuleRecord } from "../adapter/records.js";
+import type { ResourceIdOf } from "../adapter/records.js";
 import type { BlockId } from "../core/types.js";
 import { uuidV7 } from "../framework/booking-id.js";
+import type { RuleRecord } from "../framework/plugins/availability.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { tablesOf } from "../schema/table.js";
 import type { Columns } from "../schema/table.js";

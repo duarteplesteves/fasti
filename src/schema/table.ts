@@ -228,7 +228,7 @@ export function physicalColumns(
   return (column) => names?.[column] ?? column;
 }
 
-/** Table `name` of `tables`, for the deprecated aliases over `recordTables`; throws when no installed Plugin declares it. Internal. */
+/** Table `name` of `tables`, for the deprecated aliases over `recordTables`. Throws when no installed Plugin declares it: a wiring defect at table-build time, not an expected failure. Internal. */
 export function installedTable<T>(
   tables: Readonly<Partial<Record<string, T>>>,
   name: string,

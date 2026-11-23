@@ -1,6 +1,5 @@
 import { Effect } from "effect";
 
-import type { RuleRecord } from "../../adapter/records.js";
 import { availableWindows, fitsInSomeWindow } from "../../core/availability.js";
 import { checkRules } from "../../core/checks.js";
 import { checked } from "../../core/result.js";
@@ -10,6 +9,16 @@ import { column } from "../../schema/column.js";
 import type { PluginResourceId, RecordOf } from "../../schema/table.js";
 import { AdapterError } from "../errors.js";
 import { definePlugin } from "../plugin.js";
+
+/**
+ * An AvailabilityRule as `availability()` stores and returns it: the Core rule without `resourceId` (the table keys it).
+ * An unset effective date is an absent key; `exceptions` is always present, empty when there are none.
+ */
+export type RuleRecord = Readonly<
+  Omit<AvailabilityRule, "resourceId" | "exceptions">
+> & {
+  readonly exceptions: readonly Temporal.PlainDate[];
+};
 
 /** An Availability Rule as the caller gives it: no `resourceId`, `exceptions` optional. A {@link RuleRecord} is one, so `get` feeds `set`. */
 export type AvailabilityRuleInput = Omit<AvailabilityRule, "resourceId">;

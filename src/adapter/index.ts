@@ -26,6 +26,7 @@ export type {
   BookingChanges,
   BookingRecord,
   ResourceIdOf,
-  RuleRecord,
   StatusOf,
 } from "./records.js";
+
+export type { RuleRecord } from "../framework/plugins/availability.js";

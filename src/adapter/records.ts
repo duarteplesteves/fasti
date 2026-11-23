@@ -1,4 +1,4 @@
-import type { AvailabilityRule, Booking, BookingId } from "../core/types.js";
+import type { Booking, BookingId } from "../core/types.js";
 import type { TypeOf } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
@@ -30,16 +30,6 @@ export type BookingRecord<S extends AnySchema> = {
 export type BookingChanges<S extends AnySchema> = Partial<
   Omit<BookingRecord<S>, "id">
 >;
-
-/**
- * A stored AvailabilityRule: the Core rule without `resourceId` (the verbs take it separately).
- * An unset effective date is an absent key; `exceptions` is always present, empty when there are none.
- */
-export type RuleRecord = Readonly<
-  Omit<AvailabilityRule, "resourceId" | "exceptions">
-> & {
-  readonly exceptions: readonly Temporal.PlainDate[];
-};
 
 /** The Core's view of a stored Booking: `String` Resource id, blocking derived from its Status. Internal. */
 export function toCoreBooking<S extends AnySchema>(
