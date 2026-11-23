@@ -164,6 +164,10 @@ describe("findSlots", () => {
     ["interval", { interval: Number.NaN }],
     ["timezone", { timezone: "Mars/Olympus" }],
     ["to", { to: from }],
+    ["duration", { duration: Number.MAX_SAFE_INTEGER }],
+    // 30-minute Grid: 10,001 Grid times, one over the limit (ADR 019).
+    ["to", { to: from.add({ minutes: 30 * 10_001 }) }],
+    ["from", { from: Temporal.Instant.from("-000001-01-01T00:00:00Z") }],
   ] as const)(
     "refuses an invalid %s with InvalidParams, before any Adapter call",
     async (path, change) => {

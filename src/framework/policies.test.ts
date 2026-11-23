@@ -139,7 +139,7 @@ describe("Policies on book", () => {
     const scheduler = createScheduler({ adapter, schema });
 
     const result = await scheduler.book({
-      end: Temporal.Instant.from("+050000-01-01T00:00:00Z"),
+      end: Temporal.Instant.from("9999-12-31T00:00:00Z"),
       resourceId: room,
       start,
     });

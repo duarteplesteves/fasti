@@ -1,5 +1,8 @@
 import { availableWindows, fitsInSomeWindow } from "./availability.js";
 import {
+  MAX_DURATION_MINUTES,
+  MAX_GRID_TIMES,
+  checkInstant,
   checkPositiveInteger,
   checkResourceInputs,
   checkTimeZone,
@@ -152,7 +155,8 @@ function findFreeSlotsUnchecked(
 }
 
 /**
- * The search params' issues: whole-minute `duration` and `interval`, an IANA `timezone`, `from < to`. Internal; the Framework checks these before any Adapter call.
+ * The search params' issues: whole-minute `duration` and `interval`, an IANA `timezone`, `from < to`,
+ * all within ADR 019's limits. Internal; the Framework checks these before any Adapter call.
  *
  * @returns The issues, empty when the search is valid.
  */
@@ -166,18 +170,50 @@ export function checkSearch({
   FindFreeSlotsParams,
   "duration" | "from" | "interval" | "timezone" | "to"
 >): CheckIssue[] {
+  const durationIssues = checkPositiveInteger(duration, ["duration"]);
+  const intervalIssues = checkPositiveInteger(interval, ["interval"]);
+
+  const rangeIssues = [
+    ...checkInstant(from, ["from"]),
+    ...checkInstant(to, ["to"]),
+  ];
+
+  if (rangeIssues.length === 0 && Temporal.Instant.compare(from, to) >= 0) {
+    rangeIssues.push({
+      message: `to (${to.toString()}) must be after from (${from.toString()}).`,
+      path: ["to"],
+    });
+  }
+
+  // A DST day counts as 24 hours: an estimate, off by at most an hour's Grid times a day.
+  const gridTimes =
+    intervalIssues.length === 0 && rangeIssues.length === 0
+      ? Math.ceil(
+          (to.epochMilliseconds - from.epochMilliseconds) / 60_000 / interval
+        )
+      : 0;
+
   return [
-    ...checkPositiveInteger(duration, ["duration"]),
-    ...checkPositiveInteger(interval, ["interval"]),
-    ...checkTimeZone(timezone, ["timezone"]),
-    ...(Temporal.Instant.compare(from, to) < 0
-      ? []
-      : [
+    ...durationIssues,
+    ...(durationIssues.length === 0 && duration > MAX_DURATION_MINUTES
+      ? [
           {
-            message: `to (${to.toString()}) must be after from (${from.toString()}).`,
+            message: `duration is ${duration} minutes; the limit is ${MAX_DURATION_MINUTES} (31 days).`,
+            path: ["duration"],
+          },
+        ]
+      : []),
+    ...intervalIssues,
+    ...checkTimeZone(timezone, ["timezone"]),
+    ...rangeIssues,
+    ...(gridTimes > MAX_GRID_TIMES
+      ? [
+          {
+            message: `Search covers ${gridTimes.toLocaleString("en-US")} Grid times; the limit is ${MAX_GRID_TIMES.toLocaleString("en-US")}. Split it into smaller ranges.`,
             path: ["to"],
           },
-        ]),
+        ]
+      : []),
   ];
 }
 
