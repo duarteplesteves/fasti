@@ -110,14 +110,15 @@ export type SchedulerService<
   P extends readonly AnyPolicyOf<S>[],
 > = SchedulerActions<S, Tx, P, "effect">;
 
-/** Bind the Actions to a schema, an Adapter and Policies. Throws on duplicate Policy names, across the Plugins' and the app's. */
-export function makeScheduler<
+/**
+ * The Actions bound to a schema, an Adapter and Policies, Effect form, before either form types them: the built-ins in `base`, each installed Plugin's in `plugins` by name.
+ * Throws on duplicate Policy names, across the Plugins' and the app's.
+ */
+export function bindActions<
   S extends AnySchema,
   Tx,
-  const P extends readonly AnyPolicyOf<S>[],
->(
-  registered: CreateSchedulerParams<S, Tx, P>
-): SchedulerActions<S, Tx, P, "effect"> {
+  P extends readonly AnyPolicyOf<S>[],
+>(registered: CreateSchedulerParams<S, Tx, P>) {
   const { adapter, schema } = registered;
   // Widened from the caller's P: only the types need the tuple.
   const policies: readonly AnyPolicyOf<S>[] = registered.policies ?? [];
@@ -157,11 +158,26 @@ export function makeScheduler<
     reschedule: (params: RescheduleParams<S>) => reschedule(ctx, params),
   };
 
+  return { base, plugins: pluginActions(ctx) };
+}
+
+/** Bind the Actions to a schema, an Adapter and Policies, Effect form. Throws on duplicate Policy names, across the Plugins' and the app's. */
+export function makeScheduler<
+  S extends AnySchema,
+  Tx,
+  const P extends readonly AnyPolicyOf<S>[],
+>(
+  registered: CreateSchedulerParams<S, Tx, P>
+): SchedulerActions<S, Tx, P, "effect"> {
+  const { base, plugins } = bindActions<S, Tx, P>(registered);
+
   // Plugin names never take a scheduler key (defineSchema checks), so nothing here is overwritten.
-  // SAFETY: each Action takes an optional Effect-form `also` and merges its value as WithAlso describes; the plain form's is adapted in toPlain.
+  // SAFETY: each Action takes an optional Effect-form `also` and merges its value as WithAlso describes.
   // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- an overloaded interface can't be implemented by a single-signature arrow.
-  return {
-    ...base,
-    ...pluginActions(ctx),
-  } as unknown as SchedulerActions<S, Tx, P, "effect">;
+  return { ...base, ...plugins } as unknown as SchedulerActions<
+    S,
+    Tx,
+    P,
+    "effect"
+  >;
 }
