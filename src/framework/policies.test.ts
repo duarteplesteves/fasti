@@ -421,6 +421,44 @@ describe("relax on book", () => {
       ok: false,
     });
   });
+
+  it.each([
+    [
+      "a non-array",
+      "closed",
+      { message: "relax must be an array of Policy names", path: ["relax"] },
+    ],
+    [
+      "a non-string entry",
+      [42, "closed"],
+      {
+        message: "relax: 42 is not a Policy that applies to book",
+        path: ["relax", 0],
+      },
+    ],
+  ] as const)(
+    "refuses %s relax from a plain-JS caller as InvalidParams, before any Adapter call",
+    async (_, relax, issue) => {
+      const scheduler = createScheduler({
+        adapter: noCalls,
+        policies: [closed],
+        schema,
+      });
+
+      const result = await scheduler.book({
+        end,
+        // @ts-expect-error -- a plain-JS caller gets past relax's type.
+        relax,
+        resourceId: room,
+        start,
+      });
+
+      expect(result).toStrictEqual({
+        error: { _tag: "InvalidParams", issues: [issue] },
+        ok: false,
+      });
+    }
+  );
 });
 
 /** A Policy on `reschedule` and `cancel` that always breaks, recording each candidate it sees. */

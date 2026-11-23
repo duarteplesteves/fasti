@@ -14,7 +14,8 @@ import type {
 } from "./errors.js";
 import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
-import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
+import { applicable, enforcePolicies, parseRelax } from "./policy-pass.js";
+import type { UnparsedRelax } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
   AlsoContext,
@@ -44,22 +45,20 @@ export type CancelError<S extends AnySchema> =
 /** Set a Booking's status to `cancelled` under its Resource's lock, along a declared Transition, keeping every Policy that applies to `cancel` (ADR 014). Idempotent: a repeat writes nothing and runs no Policy. */
 export function cancel<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
-  params: CancelParams<S> & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
+  params: CancelParams<S> &
+    UnparsedRelax &
+    AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
 ): WriteEffect<CancelValue<S>, CancelError<S> | PolicyViolation, R> {
   const { id } = params;
 
   const policies = applicable(ctx, "cancel");
-  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- WriteAction types `relax` for callers; the implementation takes it as data.
-  const { relax } = params as { readonly relax?: readonly string[] };
-  const [relaxIssue, ...relaxIssues] = checkRelax(policies, "cancel", relax);
+  const relaxed = parseRelax(policies, "cancel", params);
 
-  if (relaxIssue !== undefined) {
-    return Effect.fail<InvalidParams>({
-      _tag: "InvalidParams",
-      issues: [relaxIssue, ...relaxIssues],
-    });
+  if (!relaxed.ok) {
+    return Effect.fail(relaxed.error);
   }
+
+  const relax = relaxed.value;
 
   const notFound: BookingNotFound = { _tag: "BookingNotFound", id };
 

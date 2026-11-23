@@ -24,7 +24,8 @@ import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
 import type { ConflictOf } from "./occupancy.js";
-import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
+import { applicable, enforcePolicies, parseRelax } from "./policy-pass.js";
+import type { UnparsedRelax } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type {
   AlsoContext,
@@ -56,7 +57,9 @@ export type RescheduleError<S extends AnySchema> =
 /** Move a blocking Booking in time or to another Resource, keeping its id and Status (ADR 009): the Invariants first (overlap ignoring itself), then every Policy that applies to `reschedule` (ADR 014). */
 export function reschedule<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
-  params: RescheduleParams<S> & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
+  params: RescheduleParams<S> &
+    UnparsedRelax &
+    AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
 ): WriteEffect<
   Booking<S>,
   RescheduleError<S> | SlotConflict<Conflict> | PolicyViolation,
@@ -83,22 +86,13 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
   );
 
   const policies = applicable(ctx, "reschedule");
-  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- WriteAction types `relax` for callers; the implementation takes it as data.
-  const { relax } = params as { readonly relax?: readonly string[] };
+  const relaxed = parseRelax(policies, "reschedule", params);
 
-  const [relaxIssue, ...relaxIssues] = checkRelax(
-    policies,
-    "reschedule",
-    relax
-  );
-
-  if (relaxIssue !== undefined) {
-    return Effect.fail<InvalidParams>({
-      _tag: "InvalidParams",
-      issues: [relaxIssue, ...relaxIssues],
-    });
+  if (!relaxed.ok) {
+    return Effect.fail(relaxed.error);
   }
+
+  const relax = relaxed.value;
 
   const notFound: BookingNotFound = { _tag: "BookingNotFound", id };
 

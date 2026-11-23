@@ -192,6 +192,32 @@ describe("findSlots", () => {
     }
   );
 
+  it("reports a bad relax together with the search's own issues", async () => {
+    const adapter = defineAdapter<undefined, "records">(() => ({
+      getRecord: refuse,
+      getBooking: refuse,
+      listRecords: refuse,
+      listBookings: refuse,
+      withResourceLock: refuse,
+    }));
+
+    const scheduler = createScheduler({ policies: [], adapter, schema });
+
+    const result = await scheduler.findSlots({
+      ...query(Temporal.Instant.from("2030-06-03T16:00:00Z")),
+      duration: 0,
+      // @ts-expect-error -- a plain-JS caller gets past relax's type.
+      relax: "nope",
+    });
+
+    assert(!result.ok, "expected an error");
+    assert(result.error._tag === "InvalidParams", "expected InvalidParams");
+    expect(result.error.issues.map((i) => i.path)).toStrictEqual([
+      ["duration"],
+      ["relax"],
+    ]);
+  });
+
   it("reports a stored rule the Core finds invalid as AdapterError, not InvalidParams", async () => {
     const inner = await seeded();
 

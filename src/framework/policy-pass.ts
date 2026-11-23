@@ -1,6 +1,7 @@
 import { Cause, Effect, Exit } from "effect";
 
-import type { Issue } from "../core/result.js";
+import { checked } from "../core/result.js";
+import type { InvalidParams, Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectReads } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
@@ -127,34 +128,54 @@ export function loadPolicies<S extends AnySchema>(
   );
 }
 
-/** Each `relax` entry that names no Policy in `policies`, as an issue at its index; `[]` when all apply. Runs before any Adapter call. */
-export function checkRelax<S extends AnySchema>(
+/** `relax` as an Action's implementation receives it: typed for callers by the Action, unparsed here, since plain-JS callers get past the types. */
+export interface UnparsedRelax {
+  readonly relax?: unknown;
+}
+
+/** `params.relax`, parsed: `undefined` when absent, else names of Policies in `policies`; issues at `relax` or each bad index otherwise. Runs before any Adapter call. */
+export function parseRelax<S extends AnySchema>(
   policies: readonly RunnablePolicy<S>[],
   target: CalledTarget,
-  relax: readonly string[] | undefined
-): Issue[] {
+  { relax }: UnparsedRelax
+): Result<readonly string[] | undefined, InvalidParams> {
   if (relax === undefined) {
-    return [];
+    return { ok: true, value: undefined };
   }
 
-  // Plain-JS callers can get past the types.
   if (!Array.isArray(relax)) {
-    return [
-      { message: "relax must be an array of Policy names", path: ["relax"] },
-    ];
+    return {
+      error: {
+        _tag: "InvalidParams",
+        issues: [
+          {
+            message: "relax must be an array of Policy names",
+            path: ["relax"],
+          },
+        ],
+      },
+      ok: false,
+    };
   }
 
-  const names = new Set(policies.map((p) => p.name));
+  const entries: readonly unknown[] = relax;
 
-  return relax.flatMap((name: string, i: number) =>
-    names.has(name)
-      ? []
-      : [
-          {
-            message: `relax: ${name} is not a Policy that applies to ${label(target)}`,
-            path: ["relax", i],
-          },
-        ]
+  const named = entries.map(
+    (entry) => policies.find((p) => p.name === entry)?.name
+  );
+
+  return checked(
+    named.flatMap((name, i) =>
+      name === undefined
+        ? [
+            {
+              message: `relax: ${String(entries[i])} is not a Policy that applies to ${label(target)}`,
+              path: ["relax", i],
+            },
+          ]
+        : []
+    ),
+    () => named.filter((name) => name !== undefined)
   );
 }
 

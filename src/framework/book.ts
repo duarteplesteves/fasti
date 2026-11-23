@@ -16,7 +16,8 @@ import type {
 } from "./errors.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
 import type { ConflictOf } from "./occupancy.js";
-import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
+import { applicable, enforcePolicies, parseRelax } from "./policy-pass.js";
+import type { UnparsedRelax } from "./policy-pass.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
 import type { AlsoParam, WriteEffect } from "./write-unit.js";
@@ -47,6 +48,11 @@ export type BookParams<S extends AnySchema> = {
 } & FieldsParam<S["booking"]["fields"]> &
   StatusParam<S>;
 
+/** `status` as `book` receives it: typed for callers by StatusParam, unparsed here, since plain-JS callers get past the types. */
+interface UnparsedStatus {
+  readonly status?: unknown;
+}
+
 /** What `book`'s `also` gets: the new Booking, on fasti's unit of work. */
 export interface BookAlso<S extends AnySchema, Tx> {
   /** The Adapter's transaction handle: write through it to share the unit. */
@@ -66,7 +72,10 @@ export type BookError<S extends AnySchema = AnySchema> =
 /** Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and keeps every Policy that applies to `book` (ADR 014: Invariants first). */
 export function book<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
-  params: BookParams<S> & AlsoParam<{ readonly booking: Booking<S> }, Tx, R>
+  params: BookParams<S> &
+    UnparsedRelax &
+    UnparsedStatus &
+    AlsoParam<{ readonly booking: Booking<S> }, Tx, R>
 ): WriteEffect<
   Booking<S>,
   BookError | SlotConflict<Conflict> | PolicyViolation,
@@ -93,9 +102,7 @@ export function book<S extends AnySchema, Tx, R = never>(
   }
 
   const { initial } = ctx.schema;
-  // SAFETY: StatusParam<S> is `unknown` or `{ status }`; a plain-JS caller may pass anything, checked next.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't narrow inside a generic.
-  const requested = (params as { readonly status?: unknown }).status;
+  const requested = params.status;
 
   const wanted =
     requested === undefined && initial.length === 1 ? initial[0] : requested;
@@ -115,17 +122,13 @@ export function book<S extends AnySchema, Tx, R = never>(
   }
 
   const policies = applicable(ctx, "book");
-  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- WriteAction types `relax` for callers; the implementation takes it as data.
-  const { relax } = params as { readonly relax?: readonly string[] };
-  const [relaxIssue, ...relaxIssues] = checkRelax(policies, "book", relax);
+  const relaxed = parseRelax(policies, "book", params);
 
-  if (relaxIssue !== undefined) {
-    return Effect.fail<InvalidParams>({
-      _tag: "InvalidParams",
-      issues: [relaxIssue, ...relaxIssues],
-    });
+  if (!relaxed.ok) {
+    return Effect.fail(relaxed.error);
   }
+
+  const relax = relaxed.value;
 
   return writeUnit(
     ctx,

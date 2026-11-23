@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Result as EffectResult } from "effect";
+import { Cause, Effect, Exit, Predicate, Result as EffectResult } from "effect";
 
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
@@ -62,8 +62,8 @@ type PlainAlso = (
 /** Params with a plain `also` swapped for its Effect form; a throw or rejection inside it becomes a defect. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- params pass through untouched apart from `also`.
 function effectParams(params: unknown): unknown {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- plain-JS callers may pass anything as params.
-  if (typeof params !== "object" || params === null || !("also" in params)) {
+  // Plain-JS callers may pass anything as params.
+  if (!Predicate.hasProperty(params, "also")) {
     return params;
   }
 
