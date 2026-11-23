@@ -134,6 +134,25 @@ describe("Policies on book", () => {
     await expect(stored(adapter)).resolves.toStrictEqual([]);
   });
 
+  it("refuses a Booking spanning millennia on availability, without expanding the rules over it", async () => {
+    const adapter = await seeded();
+    const scheduler = createScheduler({ adapter, schema });
+
+    const result = await scheduler.book({
+      end: Temporal.Instant.from("+050000-01-01T00:00:00Z"),
+      resourceId: room,
+      start,
+    });
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "PolicyViolation",
+        violations: [{ detail: {}, policy: "availability" }],
+      },
+      ok: false,
+    });
+  });
+
   it("reports availability and a developer Policy together, availability first", async () => {
     const scheduler = createScheduler({
       adapter: await seeded(),

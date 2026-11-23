@@ -21,6 +21,24 @@ export function availableWindows(
   }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
 }
 
+/** Longer than any window: a window is one local day, under 26 hours even across a DST change. */
+const LONGEST_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The windows that could hold `slot`, so a slot of any length expands at most a few dates.
+ *
+ * @returns The open windows around `slot`, or none when `slot` is too long for any window to hold.
+ */
+export function windowsFor(
+  rules: readonly AvailabilityRule[],
+  slot: InstantRange
+): InstantRange[] {
+  return slot.end.epochMilliseconds - slot.start.epochMilliseconds >
+    LONGEST_WINDOW_MS
+    ? []
+    : availableWindows(rules, slot);
+}
+
 /**
  * Whether `range` fits fully inside one of `windows`.
  *

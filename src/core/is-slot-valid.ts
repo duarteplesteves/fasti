@@ -1,4 +1,4 @@
-import { availableWindows, fitsInSomeWindow } from "./availability.js";
+import { fitsInSomeWindow, windowsFor } from "./availability.js";
 import { checkInstantRange, checkResourceInputs } from "./checks.js";
 import { overlapsBlockingBooking } from "./detect-conflicts.js";
 import { checked } from "./result.js";
@@ -33,7 +33,7 @@ export function isSlotValid<Id extends string = string>(
   return checked(
     issues,
     () =>
-      fitsInSomeWindow(availableWindows(rules, slot), slot) &&
+      fitsInSomeWindow(windowsFor(rules, slot), slot) &&
       !overlapsBlockingBooking(bookings, slot, excludeBookingId)
   );
 }

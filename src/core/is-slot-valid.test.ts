@@ -37,6 +37,19 @@ describe(isSlotValid, () => {
     timezone: "Europe/Lisbon",
   };
 
+  it("returns false for a slot spanning millennia, without expanding the rules over it", () => {
+    expect(
+      unwrap(
+        isSlotValid({
+          bookings: [],
+          resourceId: "doc-1",
+          rules: [tuesdayMorning],
+          slot: slotAt("2026-05-12T08:30:00Z", "+050000-01-01T00:00:00Z"),
+        })
+      )
+    ).toBeFalsy();
+  });
+
   it("returns true for a slot fully inside a rule with no bookings", () => {
     // 2026-05-12 is a Tuesday. 09:30 Lisbon (WEST, UTC+1) = 08:30 UTC.
     expect(
