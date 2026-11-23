@@ -6,10 +6,12 @@ import {
   arbAvailabilityRule,
   arbBooking,
   arbBookingIn,
+  arbBookingsToExclude,
   arbDateRange,
   arbDuration,
   arbInterval,
   arbResourceId,
+  arbRulesForResource,
   arbTimezone,
 } from "../test-utils/arbitraries.js";
 import { propConfig } from "../test-utils/prop-config.js";
@@ -104,7 +106,68 @@ const arbRelaxed = arbGrid.chain((grid) =>
   })
 );
 
+/** Up to two days from a generated range's start, with up to 5 Bookings starting inside it, on `r1`. */
+const arbShortCase = arbDateRange().chain(({ from, to }) => {
+  const twoDays = from.add({ hours: 48 });
+
+  const range = {
+    from,
+    to: Temporal.Instant.compare(to, twoDays) < 0 ? to : twoDays,
+  };
+
+  return arbBookingsToExclude(range, "r1").map(({ bookings }) => ({
+    bookings,
+    range,
+  }));
+});
+
 describe(`${findFreeSlots.name} (property)`, () => {
+  test.prop(
+    [
+      arbShortCase,
+      arbRulesForResource("r1"),
+      arbDuration(),
+      integer({ max: 240, min: 15 }),
+      arbTimezone(),
+    ],
+    propConfig
+  )(
+    "returns exactly the Grid slots isSlotValid accepts",
+    ({ bookings, range }, rules, duration, interval, timezone) => {
+      const params = {
+        duration,
+        from: range.from,
+        interval,
+        resourceId: "r1",
+        rules,
+        timezone,
+        to: range.to,
+      };
+
+      // With no Bookings and availability relaxed, every Grid slot.
+      const grid = unwrap(
+        findFreeSlots({ ...params, bookings: [], relax: ["availability"] })
+      );
+
+      const expected = grid.filter(({ end, start }) =>
+        unwrap(
+          isSlotValid({
+            bookings,
+            resourceId: "r1",
+            rules,
+            slot: { end: end.toInstant(), start: start.toInstant() },
+          })
+        )
+      );
+
+      expect(
+        unwrap(findFreeSlots({ ...params, bookings })).map((s) =>
+          s.start.toString()
+        )
+      ).toStrictEqual(expected.map((s) => s.start.toString()));
+    }
+  );
+
   test.prop(
     [
       arbAvailabilityRule(),

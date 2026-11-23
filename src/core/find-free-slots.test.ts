@@ -4,6 +4,17 @@ import { unwrap, issuePaths } from "../test-utils/results.js";
 import { findFreeSlots } from "./find-free-slots.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
+/** A blocking Booking on 2026-05-12, `start` and `end` as UTC "HH:MM". */
+function blockingAt(id: string, start: string, end: string): Booking {
+  return {
+    end: Temporal.Instant.from(`2026-05-12T${end}:00Z`),
+    id,
+    isBlocking: true,
+    resourceId: "doc-1",
+    start: Temporal.Instant.from(`2026-05-12T${start}:00Z`),
+  };
+}
+
 describe(findFreeSlots, () => {
   const tuesday9to17: AvailabilityRule = {
     recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
@@ -127,6 +138,33 @@ describe(findFreeSlots, () => {
       "10:00:00"
     );
     expect(slots).toHaveLength(7);
+  });
+
+  it("drops every slot under a long booking, even after a shorter one nested inside it ends", () => {
+    // 09:00–13:00 Lisbon, and 10:00–10:30 inside it: 11:00 and 12:00 stay blocked.
+
+    const slots = unwrap(
+      findFreeSlots({
+        bookings: [
+          blockingAt("long", "08:00", "12:00"),
+          blockingAt("short", "09:00", "09:30"),
+        ],
+        duration: 60,
+        from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+        interval: 60,
+        resourceId: "doc-1",
+        rules: [tuesday9to17],
+        timezone: "Europe/Lisbon",
+        to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+      })
+    );
+
+    expect(slots.map((s) => s.start.toPlainTime().toString())).toStrictEqual([
+      "13:00:00",
+      "14:00:00",
+      "15:00:00",
+      "16:00:00",
+    ]);
   });
 
   it("keeps a slot when a blocking booking only touches its boundary", () => {
