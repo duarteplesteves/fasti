@@ -216,37 +216,30 @@ async function remove<S extends AnySchema, Tx>(
 
 /** Plugin records (the `records` verb group): save, read back, list, change, delete, replace, undo on failure. */
 export const recordCases: readonly ConformanceCase[] = [
-  {
-    name: "a record round-trips on a timed and an untimed table: every column kind, set or null",
+  ...tables.map((table): ConformanceCase => ({
+    name: `a record round-trips on ${table}: every column kind, set or null`,
     async run(ctx) {
       const { resources } = ctx;
       const adapter = withRecords(ctx);
 
-      for (const table of tables) {
-        const withValues = newRecord(table, resources[0], "set");
-        const withNulls = newRecord(table, resources[1], "null");
+      const withValues = newRecord(table, resources[0], "set");
+      const withNulls = newRecord(table, resources[1], "null");
 
-        // oxlint-disable-next-line no-await-in-loop -- two tables.
-        await insertAll(adapter, table, [withValues, withNulls]);
+      await insertAll(adapter, table, [withValues, withNulls]);
 
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, withValues.id)).toStrictEqual(
-          withValues
-        );
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, withNulls.id)).toStrictEqual(
-          withNulls
-        );
-        expect(
-          // oxlint-disable-next-line no-await-in-loop -- as above.
-          await adapter.listRecords(table, { resourceId: resources[1] })
-        ).toStrictEqual([withNulls]);
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, randomUUID())).toBeNull();
-      }
+      expect(await adapter.getRecord(table, withValues.id)).toStrictEqual(
+        withValues
+      );
+      expect(await adapter.getRecord(table, withNulls.id)).toStrictEqual(
+        withNulls
+      );
+      expect(
+        await adapter.listRecords(table, { resourceId: resources[1] })
+      ).toStrictEqual([withNulls]);
+      expect(await adapter.getRecord(table, randomUUID())).toBeNull();
     },
     tags: ["records"],
-  },
+  })),
   {
     name: "listRecords on a timed table is half-open with overlapping, keeps to one Resource, and sorts by start, then id",
     async run(ctx) {
@@ -372,131 +365,110 @@ export const recordCases: readonly ConformanceCase[] = [
     },
     tags: ["records"],
   },
-  {
-    name: "updateRecord with a matching expected applies the changes, nulls included; JSON in another key order and equal dates still match",
+  ...tables.map((table): ConformanceCase => ({
+    name: `updateRecord with a matching expected applies the changes, nulls included; JSON in another key order and equal dates still match, on ${table}`,
     async run(ctx) {
       const { resources } = ctx;
       const adapter = withRecords(ctx);
 
-      for (const table of tables) {
-        const [first, second, third] = [known(), known(), known()];
-        const record = newRecord(table, resources[0], "set", first);
+      const [first, second, third] = [known(), known(), known()];
+      const record = newRecord(table, resources[0], "set", first);
 
-        const nulled = {
-          ...record,
-          ...changesOf(newRecord(table, resources[0], "null", second)),
-        };
+      const nulled = {
+        ...record,
+        ...changesOf(newRecord(table, resources[0], "null", second)),
+      };
 
-        const refilled = {
-          ...record,
-          ...changesOf(newRecord(table, resources[0], "set", third)),
-        };
+      const refilled = {
+        ...record,
+        ...changesOf(newRecord(table, resources[0], "set", third)),
+      };
 
-        // oxlint-disable-next-line no-await-in-loop -- two tables.
-        await insertAll(adapter, table, [record]);
+      await insertAll(adapter, table, [record]);
 
-        expect(
-          // oxlint-disable-next-line no-await-in-loop -- as above.
-          await update(
-            adapter,
-            table,
-            rewritten(record, first),
-            changesOf(nulled)
-          )
-        ).toStrictEqual({ ok: true });
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, record.id)).toStrictEqual(nulled);
+      expect(
+        await update(
+          adapter,
+          table,
+          rewritten(record, first),
+          changesOf(nulled)
+        )
+      ).toStrictEqual({ ok: true });
+      expect(await adapter.getRecord(table, record.id)).toStrictEqual(nulled);
 
-        expect(
-          // oxlint-disable-next-line no-await-in-loop -- as above.
-          await update(
-            adapter,
-            table,
-            rewritten(nulled, second),
-            changesOf(refilled)
-          )
-        ).toStrictEqual({ ok: true });
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, record.id)).toStrictEqual(
-          refilled
-        );
-      }
+      expect(
+        await update(
+          adapter,
+          table,
+          rewritten(nulled, second),
+          changesOf(refilled)
+        )
+      ).toStrictEqual({ ok: true });
+      expect(await adapter.getRecord(table, record.id)).toStrictEqual(refilled);
     },
     tags: ["records"],
-  },
-  {
-    name: "updateRecord with a changed or missing expected gives changed, and the record is untouched",
+  })),
+  ...tables.map((table): ConformanceCase => ({
+    name: `updateRecord with a changed or missing expected gives changed, and the record is untouched, on ${table}`,
     async run(ctx) {
       const { resources } = ctx;
       const adapter = withRecords(ctx);
 
-      for (const table of tables) {
-        const values = known();
-        const record = newRecord(table, resources[0], "set", values);
-        const [first, second, third] = values.dates;
+      const values = known();
+      const record = newRecord(table, resources[0], "set", values);
+      const [first, second, third] = values.dates;
 
-        const stale: On<typeof ctx.schema>[] = [
-          { ...record, text: "another" },
-          { ...record, textOpt: null },
-          { ...record, json: { ...values.json, extra: 1 } },
-          { ...record, dates: [first, second] },
-          { ...record, dates: [first, second, third.add({ days: 1 })] },
-          ...(table === "conformanceTimed"
-            ? [{ ...record, start: values.start.add({ milliseconds: 1 }) }]
-            : []),
-          newRecord(table, resources[0], "set"),
-        ];
+      const stale: On<typeof ctx.schema>[] = [
+        { ...record, text: "another" },
+        { ...record, textOpt: null },
+        { ...record, json: { ...values.json, extra: 1 } },
+        { ...record, dates: [first, second] },
+        { ...record, dates: [first, second, third.add({ days: 1 })] },
+        ...(table === "conformanceTimed"
+          ? [{ ...record, start: values.start.add({ milliseconds: 1 }) }]
+          : []),
+        newRecord(table, resources[0], "set"),
+      ];
 
-        // oxlint-disable-next-line no-await-in-loop -- two tables.
-        await insertAll(adapter, table, [record]);
+      await insertAll(adapter, table, [record]);
 
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        const results = await Promise.all(
-          stale.map(
-            async (expected) =>
-              await update(adapter, table, expected, { text: "changed" })
-          )
-        );
+      const results = await Promise.all(
+        stale.map(
+          async (expected) =>
+            await update(adapter, table, expected, { text: "changed" })
+        )
+      );
 
-        expect(results).toStrictEqual(
-          stale.map(() => ({ ok: false, reason: "changed" }))
-        );
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, record.id)).toStrictEqual(record);
-      }
+      expect(results).toStrictEqual(
+        stale.map(() => ({ ok: false, reason: "changed" }))
+      );
+      expect(await adapter.getRecord(table, record.id)).toStrictEqual(record);
     },
     tags: ["records"],
-  },
-  {
-    name: "deleteRecord removes the record, and a second delete gives missing",
+  })),
+  ...tables.map((table): ConformanceCase => ({
+    name: `deleteRecord removes the record, and a second delete gives missing, on ${table}`,
     async run(ctx) {
       const { resources } = ctx;
       const adapter = withRecords(ctx);
 
-      for (const table of tables) {
-        const record = newRecord(table, resources[0], "set");
-        const kept = newRecord(table, resources[0], "set");
+      const record = newRecord(table, resources[0], "set");
+      const kept = newRecord(table, resources[0], "set");
 
-        // oxlint-disable-next-line no-await-in-loop -- two tables.
-        await insertAll(adapter, table, [record, kept]);
+      await insertAll(adapter, table, [record, kept]);
 
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await remove(adapter, table, record)).toStrictEqual({
-          ok: true,
-        });
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, record.id)).toBeNull();
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await adapter.getRecord(table, kept.id)).toStrictEqual(kept);
-        // oxlint-disable-next-line no-await-in-loop -- as above.
-        expect(await remove(adapter, table, record)).toStrictEqual({
-          ok: false,
-          reason: "missing",
-        });
-      }
+      expect(await remove(adapter, table, record)).toStrictEqual({
+        ok: true,
+      });
+      expect(await adapter.getRecord(table, record.id)).toBeNull();
+      expect(await adapter.getRecord(table, kept.id)).toStrictEqual(kept);
+      expect(await remove(adapter, table, record)).toStrictEqual({
+        ok: false,
+        reason: "missing",
+      });
     },
     tags: ["records"],
-  },
+  })),
   {
     name: "a throw after every kind of record write leaves every record as it was and keeps the reason",
     async run(ctx) {

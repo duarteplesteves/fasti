@@ -14,6 +14,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
+import { refuse } from "../test-utils/refuse.js";
 import { unwrap } from "../test-utils/results.js";
 import { mintBookingId } from "./booking-id.js";
 import type { FindSlotsError, Slot } from "./find-slots.js";
@@ -59,11 +60,6 @@ function query(to: Temporal.Instant) {
     timezone: "America/New_York",
     to,
   };
-}
-
-/** Every verb of an Adapter that must never be called. */
-async function refuse(): Promise<never> {
-  return await Promise.reject(new Error("no Adapter call expected"));
 }
 
 describe("findSlots", () => {

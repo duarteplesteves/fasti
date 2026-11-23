@@ -40,9 +40,9 @@ const freeSlot = {
 /** The original rejection every broken Adapter uses. */
 const boom = new Error("boom");
 
-// oxlint-disable-next-line require-await -- a verb must return a promise.
+/** A verb that fails with `boom`. */
 async function reject(): Promise<never> {
-  throw boom;
+  return await Promise.reject(boom);
 }
 
 /** A memory Adapter with `weekdays` and one Booking on `room`. */

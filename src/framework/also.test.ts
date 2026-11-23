@@ -320,10 +320,7 @@ describe("what the Adapter sees when a unit fails", () => {
             async (locked) =>
               await work({
                 ...locked,
-                // oxlint-disable-next-line require-await -- a verb must return a promise.
-                listRecords: async () => {
-                  throw driverError;
-                },
+                listRecords: async () => await Promise.reject(driverError),
               })
           ),
       };

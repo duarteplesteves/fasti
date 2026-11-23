@@ -1,4 +1,3 @@
-/* eslint-disable vitest/no-standalone-expect */
 import { test } from "@fast-check/vitest";
 import { integer } from "fast-check";
 import { describe, expect } from "vitest";

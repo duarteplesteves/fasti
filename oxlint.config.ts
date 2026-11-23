@@ -104,6 +104,23 @@ export default defineConfig({
         "typescript/no-unsafe-type-assertion": "off",
       },
     },
+    // A test awaits in a loop to run steps in order: each repetition its own race, a migration before the constraint
+    // that needs it, a case that sees the writes before it. Independent work is written with Promise.all.
+    {
+      files: ["**/*.test.ts", "src/testing/cases/**"],
+      rules: { "no-await-in-loop": "off" },
+    },
+    // The rule can't see that `test.prop(arbitraries)(name, fn)` is a test, so it flags every `expect` inside one.
+    {
+      files: [
+        "**/*.properties.test.ts",
+        "src/framework/race-safety.test.ts",
+        "src/framework/reschedule.test.ts",
+      ],
+      // Named again, or the vitest preset's own override, applied after this one, turns the rule back on.
+      plugins: ["vitest"],
+      rules: { "vitest/no-standalone-expect": "off" },
+    },
   ],
   rules: {
     "func-style": ["error", "declaration"],

@@ -8,27 +8,14 @@ import type {
   ResourceIdOf,
   StatusOf,
 } from "../adapter/records.js";
-import type { BlockId, BookingId } from "../core/types.js";
-import { uuidV7 } from "../framework/booking-id.js";
+import type { BlockId } from "../core/types.js";
+import { mintBookingId, uuidV7 } from "../framework/booking-id.js";
 import type { RuleRecord } from "../framework/plugins/availability.js";
+import { mintBlockId } from "../framework/plugins/blocks.js";
 import type { AnyColumn } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { Columns } from "../schema/table.js";
 import { blockFieldsOf } from "./plugin-stores.js";
-
-/** A fresh Booking id (a UUID, as the Framework will mint). */
-export function bookingId(): BookingId {
-  // SAFETY: a UUID string is a valid BookingId; the brand is type-only.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minting a branded id.
-  return randomUUID() as BookingId;
-}
-
-/** A fresh Block id. */
-export function blockId(): BlockId {
-  // SAFETY: a UUID string is a valid BlockId; the brand is type-only.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minting a branded id.
-  return randomUUID() as BlockId;
-}
 
 /** A random Instant in 2030 at millisecond precision: what every Adapter must round-trip. */
 export function instant(): Temporal.Instant {
@@ -112,7 +99,7 @@ export function newBooking<S extends AnySchema>(
   return {
     ...fields,
     end: start.add({ hours: 1 }),
-    id: bookingId(),
+    id: mintBookingId(),
     resourceId,
     start,
     status,
@@ -157,7 +144,7 @@ export function newBlock<S extends AnySchema>(
   return {
     ...fieldValues(blockFieldsOf(schema), optionalFields),
     end: start.add({ hours: 1 }),
-    id: blockId(),
+    id: mintBlockId(),
     resourceId,
     start,
   };

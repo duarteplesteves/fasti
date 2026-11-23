@@ -65,7 +65,6 @@ function suite<S extends AnySchema>(
     makeAdapter: () => drizzleAdapter(database.db),
     reset: async () => {
       for (const t of [...fastiTables, tables.testProbe]) {
-        // oxlint-disable-next-line no-await-in-loop -- a few tables, setup only.
         await database.db.delete(t);
       }
     },

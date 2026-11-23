@@ -4,9 +4,10 @@ import type {
   SchemaAdapter,
   UpdateRecordParams,
 } from "../../adapter/contract.js";
+import { mintBlockId } from "../../framework/plugins/blocks.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
-import { blockId, storeBlock, newBlock } from "../fixtures.js";
+import { storeBlock, newBlock } from "../fixtures.js";
 import type { BlockRow } from "../fixtures.js";
 import { blockFieldsOf, pluginRecords } from "../plugin-stores.js";
 
@@ -73,7 +74,7 @@ export const blockCases: readonly ConformanceCase[] = [
     name: "reading an unknown Block id returns null",
     async run(ctx) {
       expect(
-        await pluginRecords(ctx, "blocks").getRecord("block", blockId())
+        await pluginRecords(ctx, "blocks").getRecord("block", mintBlockId())
       ).toBeNull();
     },
     tags: ["blocks"],

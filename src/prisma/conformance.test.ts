@@ -222,7 +222,6 @@ function at(hour: number): Temporal.Instant {
 /** Add `schema`'s backstop, as a developer would through `prisma migration new`'s raw SQL. */
 async function applyBackstop(schema: AnySchema): Promise<void> {
   for (const statement of backstopSql(schema)) {
-    // oxlint-disable-next-line no-await-in-loop -- in order: the extension before the constraint that needs it.
     await database.pool.query(statement);
   }
 }
@@ -481,7 +480,6 @@ function adapterTests(): void {
         });
 
         for (const resourceId of uuidIdResources) {
-          // oxlint-disable-next-line no-await-in-loop -- two Resources, setup only.
           await scheduler.availability.set({
             resourceId,
             rules: [
@@ -568,7 +566,6 @@ function adapterTests(): void {
         const reads = prismaAdapter(database.db)(uuidIdSchema);
 
         for (const result of results) {
-          // oxlint-disable-next-line no-await-in-loop -- two results.
           await expect(
             reads.getBooking(unwrap(result).id)
           ).resolves.not.toBeNull();

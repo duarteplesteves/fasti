@@ -13,6 +13,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
+import { refuse } from "../test-utils/refuse.js";
 import { unwrap } from "../test-utils/results.js";
 import { mintBookingId } from "./booking-id.js";
 
@@ -57,12 +58,6 @@ async function stored(adapter: ReturnType<typeof memoryAdapter>) {
     },
     resourceId: room,
   });
-}
-
-/** A verb that must never be called. */
-// oxlint-disable-next-line require-await -- a verb must return a promise.
-async function refuse(): Promise<never> {
-  throw new Error("no Adapter call expected");
 }
 
 /** Every verb and the lock refuse: proves a call reached no Adapter. */
