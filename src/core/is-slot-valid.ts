@@ -33,7 +33,7 @@ export function isSlotValid<Id extends string = string>(
   return checked(
     issues,
     () =>
-      fitsInSomeWindow(windowsFor(rules, slot), slot) &&
+      fitsInSomeWindow(windowsFor(rules, slot, new Map()), slot) &&
       !overlapsBlockingBooking(bookings, slot, excludeBookingId)
   );
 }
