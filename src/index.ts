@@ -44,6 +44,7 @@ export type {
   PromiseTableWrites,
   PromiseUnit,
   Ran,
+  RanContext,
   ReadDef,
   WriteDef,
 } from "./framework/promise-face.js";
