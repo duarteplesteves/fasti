@@ -1,11 +1,10 @@
-import { availableWindows, fitsInSomeWindow } from "./availability.js";
+import { availableWindows } from "./availability.js";
 import {
   checkPositiveInteger,
   checkResourceInputs,
   checkTimeZone,
 } from "./checks.js";
 import type { CheckIssue } from "./checks.js";
-import { overlapsBlockingBooking } from "./detect-conflicts.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type {
@@ -14,6 +13,7 @@ import type {
   Booking,
   CorePolicy,
   CoreViolations,
+  InstantRange,
   Slot,
 } from "./types.js";
 
@@ -82,6 +82,84 @@ function* gridStarts(
   }
 }
 
+function byStart(a: InstantRange, b: InstantRange): number {
+  return Temporal.Instant.compare(a.start, b.start);
+}
+
+function later(a: Temporal.Instant | null, b: Temporal.Instant) {
+  return a === null || Temporal.Instant.compare(a, b) < 0 ? b : a;
+}
+
+/**
+ * A forward-only overlap check: call the result with ranges whose start and end never decrease, as the Grid's are.
+ * Each Booking is visited once across all calls, not once per call.
+ *
+ * @returns Whether a range overlaps a blocking Booking other than `excludeBookingId`.
+ */
+function blockedSweep<Id extends string>(
+  bookings: readonly Booking<Id>[],
+  excludeBookingId: Id | undefined
+): (range: InstantRange) => boolean {
+  const sorted = bookings
+    .filter((b) => b.isBlocking && b.id !== excludeBookingId)
+    .toSorted(byStart);
+
+  let next = 0;
+  // The latest end among the Bookings that start before the current range ends.
+  let reach: Temporal.Instant | null = null;
+
+  return ({ end, start }) => {
+    for (; next < sorted.length; next += 1) {
+      const booking = sorted[next];
+
+      if (
+        booking === undefined ||
+        Temporal.Instant.compare(booking.start, end) >= 0
+      ) {
+        break;
+      }
+
+      reach = later(reach, booking.end);
+    }
+
+    // Half-open: a Booking that starts before `end` overlaps iff it ends after `start`.
+    return reach !== null && Temporal.Instant.compare(start, reach) < 0;
+  };
+}
+
+/**
+ * A forward-only `fitsInSomeWindow`: call the result with ranges whose start and end never decrease.
+ * Each window is visited once across all calls.
+ *
+ * @returns Whether a range fits fully inside one of `windows`.
+ */
+function fitsSweep(
+  windows: readonly InstantRange[]
+): (range: InstantRange) => boolean {
+  const sorted = windows.toSorted(byStart);
+
+  let next = 0;
+  // The latest end among the windows that start at or before the current range starts.
+  let reach: Temporal.Instant | null = null;
+
+  return ({ end, start }) => {
+    for (; next < sorted.length; next += 1) {
+      const window = sorted[next];
+
+      if (
+        window === undefined ||
+        Temporal.Instant.compare(window.start, start) > 0
+      ) {
+        break;
+      }
+
+      reach = later(reach, window.end);
+    }
+
+    return reach !== null && Temporal.Instant.compare(end, reach) <= 0;
+  };
+}
+
 /**
  * The Grid slots in `[from, to)` that overlap no blocking Booking except `excludeBookingId`: the search before any Policy. Internal; not exported from the Core's entry.
  *
@@ -110,13 +188,15 @@ export function freeGridSlots({
     end: Temporal.ZonedDateTime;
   }[] = [];
 
+  const blocked = blockedSweep(bookings, excludeBookingId);
+
   for (const start of gridStarts(from, to, interval, timezone)) {
     const range = {
       end: start.toInstant().add({ minutes: duration }),
       start: start.toInstant(),
     };
 
-    if (!overlapsBlockingBooking(bookings, range, excludeBookingId)) {
+    if (!blocked(range)) {
       slots.push({ end: range.end.toZonedDateTimeISO(timezone), start });
     }
   }
@@ -130,10 +210,10 @@ function findFreeSlotsUnchecked(
   const { from, relax, resourceId, rules, to } = params;
 
   const relaxAvailability = relax?.includes("availability") ?? false;
-  const windows = availableWindows(rules, { end: to, start: from });
+  const fits = fitsSweep(availableWindows(rules, { end: to, start: from }));
 
   return freeGridSlots(params).flatMap(({ end, start }) => {
-    const available = fitsInSomeWindow(windows, {
+    const available = fits({
       end: end.toInstant(),
       start: start.toInstant(),
     });
