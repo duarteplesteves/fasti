@@ -308,6 +308,50 @@ const relaxed = valueOf(
 assert.ok(relaxed.length > 0);
 assert.ok(relaxed.every((s) => s.waived[0]?.policy === "maxThreePerDay"));
 
+// A Plugin of your own (holidays.ts): Tuesday 11 June 2030 is a holiday.
+const holiday = valueOf(
+  await scheduler.holidays.add({
+    end: Temporal.Instant.from("2030-06-12T00:00:00+01:00"),
+    name: "Santo António",
+    resourceId,
+    start: Temporal.Instant.from("2030-06-11T00:00:00+01:00"),
+  })
+);
+
+// Its busy time refuses a Booking, tagged with the Plugin's kind,
+const onHoliday = await scheduler.book({
+  end: Temporal.Instant.from("2030-06-11T10:30:00+01:00"),
+  fields: { customerName: "Ada" },
+  relax: ["holidayEve"], // relaxing a Policy never skips busy time
+  resourceId,
+  start: Temporal.Instant.from("2030-06-11T10:00:00+01:00"),
+});
+
+assert.ok(!onHoliday.ok);
+assert.equal(onHoliday.error._tag, "SlotConflict");
+assert.deepEqual(
+  onHoliday.error.conflicts.map(({ id, kind }) => ({ id, kind })),
+  [{ id: holiday.id, kind: "holiday" }]
+);
+
+// and its Policy refuses ending the day before within 12 hours of it, unless relaxed.
+const eve = {
+  end: Temporal.Instant.from("2030-06-10T16:30:00+01:00"),
+  fields: { customerName: "Ada" },
+  resourceId,
+  start: Temporal.Instant.from("2030-06-10T16:00:00+01:00"),
+};
+
+const onEve = await scheduler.book(eve);
+
+assert.ok(!onEve.ok);
+assert.deepEqual(onEve.error, {
+  _tag: "PolicyViolation",
+  violations: [{ detail: { holiday: holiday.id }, policy: "holidayEve" }],
+});
+
+valueOf(await scheduler.book({ ...eve, relax: ["holidayEve"] }));
+
 await pool.end();
 
 console.log("plain: ok");

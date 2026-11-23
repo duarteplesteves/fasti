@@ -139,18 +139,14 @@ Prisma 8 is an RC (GA expected Dec 2026–Jan 2027). If it isn't GA by `1.0`, th
 
 **Scope:**
 
-- A Plugin is a named module with five optional parts: storage, Actions under `scheduler.<name>`, Policies, free or busy time for slot finding, and Hooks. It's declared in `defineSchema({ plugins })`.
+- A Plugin is a named module with five optional parts: storage, Actions under `scheduler.<name>`, Policies, busy time for slot finding and the overlap Invariant, and Hooks. It's declared in `defineSchema({ plugins })`.
 - Storage is one generic verb group in the Adapter contract, for records that each belong to one Resource. Tables are declared with the `column` helpers and built by the existing table helpers. The Conformance Suite gets a group for it.
 - Plugin Actions get `lock` and `records` from fasti. Plugin write Actions join `appliesTo` and `"*"`.
 - Availability and Blocks rebuilt as first-party Plugins. Availability is off until installed; `defineSchema({ block })` becomes `blocks({ fields })`. Both are breaking changes, flagged in the changeset.
 
-**Open:**
+**Test of done:** the Conformance Suite's `records` group passes on every first-party Adapter; `availability()` and `blocks()` build `0.6`'s tables exactly; the type-check budget holds.
 
-- The generic record's shape: whether every table has a time range.
-- How Plugins contribute free windows and busy time to slot finding and the overlap Invariant.
-- Name clashes between Plugin Policies, and between a Plugin's and the app's.
-- The migration from `defineSchema({ block })` and from always-on availability.
-- How custom Adapters opt into generic storage.
+**Done** in `0.7.0`. The open questions (the record's shape, busy time, name clashes, the migration, how custom Adapters opt in) and the authoring decision (Effect-native, with a Promise face) are settled in [ADR 018's amendment](./docs/adr/018-plugins-are-modules-with-generic-storage.md#amendment-2026-11-23-plugins-as-built-in-checkpoint-9b). **Follow-ups:** app Policies reading Plugin tables, and `update`/`delete`/`replace` on the Promise face's `records`.
 
 ## 10. Finished Framework — `1.0.0` (public)
 

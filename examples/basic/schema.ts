@@ -4,7 +4,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { integer, pgTable, uuid } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 
-/** Default names: tables `booking`, `availabilityRule` and `block`, text Resource ids. */
+import { holidays } from "./holidays.ts";
+
+/** Default names: tables `booking`, `availabilityRule`, `block` and `holiday`, text Resource ids. */
 export const schema = defineSchema({
   booking: {
     fields: { customerName: { required: true, type: column.text() } },
@@ -12,6 +14,7 @@ export const schema = defineSchema({
   plugins: [
     availability(),
     blocks({ fields: { reason: { required: true, type: column.text() } } }),
+    holidays({ eveHours: 12 }),
   ],
 });
 
