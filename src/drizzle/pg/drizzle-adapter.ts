@@ -5,8 +5,6 @@ import { defineAdapter } from "../../adapter/contract.js";
 import type {
   Adapter,
   AdapterReads,
-  BlockReads,
-  BlockWrites,
   ListBookingsQuery,
   RecordReads,
   RecordWrites,
@@ -15,29 +13,20 @@ import type {
 import { LOCK_NAMESPACE, isPgTransient } from "../../adapter/postgres-lock.js";
 import { retryTransient } from "../../adapter/retry.js";
 import { noOverlapConstraint } from "../../schema/backstop-sql.js";
-import type { AnySchema, BlockSchema } from "../../schema/define-schema.js";
+import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import { tablesOf } from "../../schema/table.js";
 import type { TableDef } from "../../schema/table.js";
 import {
-  decodeBlock,
   decodeBooking,
   decodeRecord,
-  decodeRule,
   encodeBooking,
   encodeRecord,
-  encodeRow,
-  encodeRule,
 } from "../codec.js";
 import type { RecordRow, Row } from "../codec.js";
 import { col, query, recordTable } from "../query.js";
 import type { RecordTable as SharedRecordTable } from "../query.js";
-import {
-  availabilityRuleTable,
-  blockTable,
-  bookingTable,
-  recordTables,
-} from "./tables.js";
+import { bookingTable, recordTables } from "./tables.js";
 
 // oxlint-disable-next-line typescript/no-explicit-any -- any database, whatever its driver and relations.
 type AnyPgDatabase = PgAsyncDatabase<any, any>;
@@ -47,7 +36,7 @@ type TxOf<DB extends AnyPgDatabase> = Parameters<
   Parameters<DB["transaction"]>[0]
 >[0];
 
-/** A Booking or Block table of this dialect. */
+/** A Booking or Plugin table of this dialect. */
 type RecordTable = SharedRecordTable<PgTable>;
 
 /** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
@@ -120,17 +109,6 @@ async function compareAndSet(
 export interface CreateDrizzleAdapterParams {
   /** `false` skips the Resource Lock: only for the negative control, never exported publicly. */
   readonly lock: boolean;
-}
-
-/** The Block table of `schema`, or `null` when it declares no Blocks: then no table is built or needed. */
-function blockTableOf(schema: AnySchema): RecordTable | null {
-  if (schema.block === null) {
-    return null;
-  }
-
-  // SAFETY: `block` isn't null, which is all BlockSchema adds.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the generic S can't narrow on the runtime check.
-  return recordTable(blockTable(schema as BlockSchema));
 }
 
 /** A Plugin table: its definition and its Drizzle table. */
@@ -265,36 +243,18 @@ function recordWrites<S extends AnySchema>(
 export function createDrizzleAdapter<DB extends AnyPgDatabase>(
   db: DB,
   { lock }: CreateDrizzleAdapterParams
-): Adapter<TxOf<DB>, "blocks" | "records"> {
+): Adapter<TxOf<DB>, "records"> {
   return defineAdapter(
-    <S extends AnySchema>(
-      schema: S
-    ): SchemaAdapter<S, TxOf<DB>, "blocks" | "records"> => {
+    <S extends AnySchema>(schema: S): SchemaAdapter<S, TxOf<DB>, "records"> => {
       const table = bookingTable(schema);
       const bookings = recordTable(table);
-      const blocks = blockTableOf(schema);
-      const rules = availabilityRuleTable(schema);
       const codec = statusCodec(schema);
       const noOverlap = noOverlapConstraint(schema);
       const pluginTable = pluginTablesOf(schema);
 
-      function reads(
-        q: AnyPgDatabase
-      ): AdapterReads<S> & BlockReads<S> & RecordReads<S> {
+      function reads(q: AnyPgDatabase): AdapterReads<S> & RecordReads<S> {
         return {
           ...recordReads<S>(q, pluginTable),
-          getBlock: async (id) => {
-            if (blocks === null) {
-              return null;
-            }
-
-            const row = await query(
-              "getBlock",
-              async () => await byId(q, blocks, id)
-            );
-
-            return row === undefined ? null : decodeBlock<S>(row);
-          },
           getBooking: async (id) => {
             const row = await query(
               "getBooking",
@@ -302,30 +262,6 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
             );
 
             return row === undefined ? null : decodeBooking<S>(codec, row);
-          },
-          getRules: async (resourceId) => {
-            const rows = await query(
-              "getRules",
-              async () =>
-                await q
-                  .select()
-                  .from(rules)
-                  .where(eq(rules.resourceId, resourceId))
-            );
-
-            return rows.map(decodeRule);
-          },
-          listBlocks: async (range) => {
-            if (blocks === null) {
-              return [];
-            }
-
-            const rows = await query(
-              "listBlocks",
-              async () => await overlapping(q, blocks, range)
-            );
-
-            return rows.map((row) => decodeBlock<S>(row));
           },
           listBookings: async (range) => {
             const rows = await query(
@@ -338,18 +274,7 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
         };
       }
 
-      /** The Block table, for a write. */
-      function blockWriteTable(verb: string): RecordTable {
-        // shortcut: a schema without `block` has no Block table, and the Framework never calls a Block write for it
-        // (its liftAdapter dies first), so this only guards direct misuse; keep it if a caller ever can reach it.
-        if (blocks === null) {
-          throw new Error(`drizzleAdapter: ${verb} on a schema without block`);
-        }
-
-        return blocks;
-      }
-
-      const singleAttempt: SchemaAdapter<S, TxOf<DB>, "blocks" | "records"> = {
+      const singleAttempt: SchemaAdapter<S, TxOf<DB>, "records"> = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
           await db.transaction(async (tx) => {
@@ -388,53 +313,8 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
               });
             }
 
-            const blockWrites: BlockWrites<S> = {
-              deleteBlock: async (id) => {
-                const t = blockWriteTable("deleteBlock");
-
-                const deleted = await query(
-                  "deleteBlock",
-                  async () =>
-                    await tx
-                      .delete(t.table)
-                      .where(eq(col(t, "id"), id))
-                      .returning({ id: col(t, "id") })
-                );
-
-                return deleted.length === 1
-                  ? { ok: true }
-                  : { ok: false, reason: "missing" };
-              },
-              insertBlock: async (block) => {
-                const t = blockWriteTable("insertBlock");
-
-                await query("insertBlock", async () => {
-                  await tx.insert(t.table).values(encodeRow(block));
-                });
-              },
-              updateBlock: async ({ changes, expected }) => {
-                const t = blockWriteTable("updateBlock");
-
-                const updated = await query(
-                  "updateBlock",
-                  async () =>
-                    await compareAndSet(
-                      tx,
-                      t,
-                      encodeRow(expected),
-                      encodeRow(changes)
-                    )
-                );
-
-                return updated
-                  ? { ok: true }
-                  : { ok: false, reason: "changed" };
-              },
-            };
-
             return await work({
               ...reads(tx),
-              ...blockWrites,
               ...recordWrites<S>(tx, pluginTable),
               insertBooking: async (booking) => {
                 // SAFETY: encodeBooking writes one value per column of bookingTable(schema).
@@ -454,23 +334,6 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
                 return inserted === "conflict"
                   ? { ok: false, reason: "conflict" }
                   : { ok: true };
-              },
-              replaceRules: async ({ resourceId, rules: next }) => {
-                await query("replaceRules", async () => {
-                  await tx
-                    .delete(rules)
-                    .where(eq(rules.resourceId, resourceId));
-
-                  // Drizzle refuses an insert of no rows.
-                  if (next.length > 0) {
-                    await tx.insert(rules).values(
-                      next.map((rule) => ({
-                        ...encodeRule(rule),
-                        resourceId,
-                      }))
-                    );
-                  }
-                });
               },
               // SAFETY: `tx` is what DB's own transaction callback receives, which TxOf<DB> names.
               // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve TxOf<DB> for a generic DB.
@@ -514,11 +377,11 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
 
 /**
  * The Drizzle Postgres Adapter, over your tables made with {@link bookingTable},
- * {@link availabilityRuleTable}, {@link blockTable} if your schema declares `block`, and {@link recordTables} if its Plugins declare tables.
+ * and {@link recordTables} if its Plugins declare tables (`availability()`'s and `blocks()`'s among them).
  * `tx` is Drizzle's own transaction, for your writes in the same unit of work.
  */
 export function drizzleAdapter<DB extends AnyPgDatabase>(
   db: DB
-): Adapter<TxOf<DB>, "blocks" | "records"> {
+): Adapter<TxOf<DB>, "records"> {
   return createDrizzleAdapter(db, { lock: true });
 }

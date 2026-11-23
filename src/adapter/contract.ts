@@ -1,15 +1,8 @@
-import type { BlockId, BookingId } from "../core/types.js";
+import type { BookingId } from "../core/types.js";
 import type { Json, RecordColumn, TypeOf } from "../schema/column.js";
-import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
+import type { AnySchema } from "../schema/define-schema.js";
 import type { HasTables } from "../schema/table.js";
-import type {
-  BlockChanges,
-  BlockRecord,
-  BookingChanges,
-  BookingRecord,
-  ResourceIdOf,
-  RuleRecord,
-} from "./records.js";
+import type { BookingChanges, BookingRecord, ResourceIdOf } from "./records.js";
 
 /** A `listBookings` query: one Resource, one half-open range. */
 export interface ListBookingsQuery<S extends AnySchema> {
@@ -30,17 +23,14 @@ export interface AdapterReads<S extends AnySchema> {
   readonly listBookings: (
     query: ListBookingsQuery<S>
   ) => Promise<BookingRecord<S>[]>;
-  /** Every stored rule of the Resource; order unspecified. */
-  readonly getRules: (resourceId: ResourceIdOf<S>) => Promise<RuleRecord[]>;
 }
 
-/** An optional group of verbs an Adapter declares it implements, as `Adapter<Tx, "blocks">`. */
-export type VerbGroup = "blocks" | "records";
+/** An optional group of verbs an Adapter declares it implements, as `Adapter<Tx, "records">`. */
+export type VerbGroup = "records";
 
-/** The verb groups a schema needs from its Adapter: `"blocks"` when it declares `block`, `"records"` when a Plugin declares tables. */
+/** The verb groups a schema needs from its Adapter: `"records"` when a Plugin declares tables. */
 export type GroupsOf<S extends AnySchema> =
-  | (HasBlocks<S> extends true ? "blocks" : never)
-  | (HasTables<S> extends true ? "records" : never);
+  HasTables<S> extends true ? "records" : never;
 
 /** A value in a Plugin record's column. */
 export type StoredValue = TypeOf<RecordColumn> | null;
@@ -146,42 +136,6 @@ export interface RecordWrites<S extends AnySchema> {
   ) => Promise<void>;
 }
 
-/** A `listBlocks` query: one Resource, one half-open range. */
-export type ListBlocksQuery<S extends AnySchema> = ListBookingsQuery<S>;
-
-/** The Block reads, inside and outside a unit of work. */
-export interface BlockReads<S extends AnySchema> {
-  /** The Block with this id, or `null` when there is none. */
-  readonly getBlock: (id: BlockId) => Promise<BlockRecord<S> | null>;
-  /** Every Block of the Resource overlapping the half-open range; sorted by `start`, then `id`. */
-  readonly listBlocks: (query: ListBlocksQuery<S>) => Promise<BlockRecord<S>[]>;
-}
-
-/** What `updateBlock` can return. `changed`: the stored row no longer equals `expected`, or is gone. */
-export type UpdateBlockResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: "changed" };
-
-/** What `deleteBlock` can return. `missing`: there was no Block with that id. */
-export type DeleteBlockResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: "missing" };
-
-/** The Block writes, only inside a unit of work. */
-export interface BlockWrites<S extends AnySchema> {
-  /** Store a new Block. No backstop, so any failure rejects. */
-  readonly insertBlock: (block: BlockRecord<S>) => Promise<void>;
-  /** Change a Block, if it still equals `expected` (compare-and-set). The id comes from `expected`. */
-  readonly updateBlock: (params: {
-    /** The row as last read; the update applies only if the stored row still equals it. */
-    readonly expected: BlockRecord<S>;
-    /** The fields to change. */
-    readonly changes: BlockChanges<S>;
-  }) => Promise<UpdateBlockResult>;
-  /** Remove a Block. */
-  readonly deleteBlock: (id: BlockId) => Promise<DeleteBlockResult>;
-}
-
 /** `T` when the Adapter declares group `K`, nothing otherwise. Tuple-wrapped: `K extends G` makes TypeScript measure G as covariant. */
 type With<G extends VerbGroup, K extends VerbGroup, T> = [
   Extract<G, K>,
@@ -210,14 +164,6 @@ export interface UpdateBookingParams<S extends AnySchema> {
   readonly changes: BookingChanges<S>;
 }
 
-/** Params of {@link LockedAdapter.replaceRules}. */
-export interface ReplaceRulesParams<S extends AnySchema> {
-  /** The Resource whose whole rule set is replaced. */
-  readonly resourceId: ResourceIdOf<S>;
-  /** The new rule set. */
-  readonly rules: readonly RuleRecord[];
-}
-
 /**
  * The handle passed into a unit of work. Writes exist only here, so an unlocked write can't type-check.
  * Reads go through the same transaction and see the unit's own writes.
@@ -230,7 +176,6 @@ export type LockedAdapter<
   Tx,
   G extends VerbGroup = never,
 > = AdapterReads<S> &
-  With<G, "blocks", BlockReads<S> & BlockWrites<S>> &
   With<G, "records", RecordReads<S> & RecordWrites<S>> & {
     /** The ORM's own transaction, for the developer's writes (ADR 015). */
     readonly tx: Tx;
@@ -242,8 +187,6 @@ export type LockedAdapter<
     readonly updateBooking: (
       params: UpdateBookingParams<S>
     ) => Promise<UpdateBookingResult>;
-    /** Replace one Resource's whole rule set. */
-    readonly replaceRules: (params: ReplaceRulesParams<S>) => Promise<void>;
   };
 
 /** An Adapter bound to one schema. */
@@ -252,7 +195,6 @@ export type SchemaAdapter<
   Tx,
   G extends VerbGroup = never,
 > = AdapterReads<S> &
-  With<G, "blocks", BlockReads<S>> &
   With<G, "records", RecordReads<S>> & {
     /**
      * Never set. Makes `Adapter<Tx, G>` contravariant in G, which TypeScript can't infer from {@link With}:
@@ -273,7 +215,7 @@ export type SchemaAdapter<
 /**
  * An Adapter: given the developer's schema, the verbs over their tables.
  *
- * @typeParam G - The optional verb groups it implements; a schema with `block` needs `"blocks"`, one with Plugin tables `"records"`.
+ * @typeParam G - The optional verb groups it implements; a schema with Plugin tables needs `"records"`.
  */
 export type Adapter<Tx, G extends VerbGroup = never> = <S extends AnySchema>(
   schema: S

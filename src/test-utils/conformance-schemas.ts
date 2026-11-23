@@ -185,9 +185,8 @@ export type PluginFreeSchema = AnySchema & { readonly plugins: readonly [] };
 
 /** An Adapter without `records`, as a suite generic over a {@link PluginFreeSchema} needs it: TypeScript can't resolve GroupsOf for a generic schema. */
 export function pluginFree<S extends PluginFreeSchema, Tx>(
-  adapter: Adapter<Tx, "blocks">
+  adapter: Adapter<Tx, "records">
 ): Adapter<Tx, GroupsOf<S>> {
-  // SAFETY: S has no Plugins, so GroupsOf<S> is at most "blocks".
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the constraint.
-  return adapter as Adapter<Tx, GroupsOf<S>>;
+  // An Adapter with more groups stands in for one with fewer.
+  return adapter;
 }

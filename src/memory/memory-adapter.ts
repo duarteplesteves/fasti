@@ -2,7 +2,6 @@ import { defineAdapter, isList } from "../adapter/contract.js";
 import type {
   Adapter,
   AdapterReads,
-  BlockReads,
   ListBookingsQuery,
   LockedAdapter,
   RecordReads,
@@ -11,12 +10,8 @@ import type {
   StoredValue,
 } from "../adapter/contract.js";
 import { serialize } from "../adapter/queue.js";
-import type {
-  BlockRecord,
-  BookingRecord,
-  RuleRecord,
-} from "../adapter/records.js";
-import type { BlockId, BookingId } from "../core/types.js";
+import type { BookingRecord } from "../adapter/records.js";
+import type { BookingId } from "../core/types.js";
 import type { Json } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { tablesOf } from "../schema/table.js";
@@ -82,8 +77,6 @@ function sameRecord(a: Row, b: Row): boolean {
 /** The committed state, or a unit of work's draft of it. Records are immutable and replaced, so a shallow copy is enough. */
 interface Store {
   readonly bookings: Map<BookingId, BookingRecord<AnySchema>>;
-  readonly blocks: Map<BlockId, BlockRecord<AnySchema>>;
-  readonly rules: Map<unknown, readonly RuleRecord[]>;
   /** Plugin records, by table, then id. */
   readonly records: Map<string, Map<string, StoredRecord>>;
 }
@@ -91,12 +84,10 @@ interface Store {
 /** A copy of `store` a unit of work can change without touching it. */
 function draftOf(store: Store): Store {
   return {
-    blocks: new Map(store.blocks),
     bookings: new Map(store.bookings),
     records: new Map(
       [...store.records].map(([table, rows]) => [table, new Map(rows)])
     ),
-    rules: new Map(store.rules),
   };
 }
 
@@ -152,7 +143,7 @@ function recordsOn(
 function readsOf<S extends AnySchema>(
   current: () => Store,
   timed: ReadonlySet<string>
-): AdapterReads<S> & BlockReads<S> & RecordReads<S> {
+): AdapterReads<S> & RecordReads<S> {
   return {
     getRecord: async (table, id) =>
       current().records.get(table)?.get(id) ?? null,
@@ -171,22 +162,11 @@ function readsOf<S extends AnySchema>(
         ? ranged.toSorted(byStart)
         : overlapping(ranged, { overlapping: range, resourceId });
     },
-    // SAFETY: every stored record was inserted through an adapter bound to this same schema.
-    getBlock: async (id) =>
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the store is shared across bindings, so it holds AnySchema records.
-      (current().blocks.get(id) ?? null) as BlockRecord<S> | null,
     // SAFETY: every stored Booking was inserted through an adapter bound to this same schema.
     getBooking: async (id) =>
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the store is shared across bindings, so it holds AnySchema records.
       (current().bookings.get(id) ?? null) as BookingRecord<S> | null,
-    getRules: async (resourceId) => [
-      ...(current().rules.get(resourceId) ?? []),
-    ],
-    // SAFETY: as in getBlock.
-    listBlocks: async (query) =>
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
-      overlapping(current().blocks.values(), query) as BlockRecord<S>[],
-    // SAFETY: as in getBlock.
+    // SAFETY: as in getBooking.
     listBookings: async (query) =>
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
       overlapping(current().bookings.values(), query) as BookingRecord<S>[],
@@ -197,7 +177,7 @@ function readsOf<S extends AnySchema>(
 function lockedOn<S extends AnySchema>(
   draft: Store,
   timed: ReadonlySet<string>
-): LockedAdapter<S, undefined, "blocks" | "records"> {
+): LockedAdapter<S, undefined, "records"> {
   /** The draft's records of `table`, made on first use. */
   function rowsOf(table: string): Map<string, StoredRecord> {
     const rows = draft.records.get(table) ?? new Map<string, StoredRecord>();
@@ -250,15 +230,6 @@ function lockedOn<S extends AnySchema>(
 
       return { ok: true };
     },
-    insertBlock: async (block) => {
-      if (draft.blocks.has(block.id)) {
-        throw new Error(`memoryAdapter: Block ${block.id} already exists`);
-      }
-
-      draft.blocks.set(block.id, block);
-    },
-    deleteBlock: async (id) =>
-      draft.blocks.delete(id) ? { ok: true } : { ok: false, reason: "missing" },
     insertBooking: async (booking) => {
       if (draft.bookings.has(booking.id)) {
         throw new Error(`memoryAdapter: Booking ${booking.id} already exists`);
@@ -268,21 +239,7 @@ function lockedOn<S extends AnySchema>(
 
       return { ok: true };
     },
-    replaceRules: async ({ resourceId, rules }) => {
-      draft.rules.set(resourceId, [...rules]);
-    },
     tx: undefined,
-    updateBlock: async ({ changes, expected }) => {
-      const stored = draft.blocks.get(expected.id);
-
-      if (stored === undefined || !sameRecord(stored, expected)) {
-        return { ok: false, reason: "changed" };
-      }
-
-      draft.blocks.set(expected.id, { ...stored, ...changes });
-
-      return { ok: true };
-    },
     updateBooking: async ({ changes, expected }) => {
       const stored = draft.bookings.get(expected.id);
 
@@ -300,13 +257,11 @@ function lockedOn<S extends AnySchema>(
 /** The in-memory Adapter, with the lock switchable for the negative control. Internal: use {@link memoryAdapter}. */
 export function createMemoryAdapter({
   lock,
-}: CreateMemoryAdapterParams): Adapter<undefined, "blocks" | "records"> {
+}: CreateMemoryAdapterParams): Adapter<undefined, "records"> {
   // One store per call, however many times it is bound to a schema. Unlocked reads see only committed state.
   let store: Store = {
-    blocks: new Map(),
     bookings: new Map(),
     records: new Map(),
-    rules: new Map(),
   };
 
   // One global queue for every locked unit of work: locking more broadly than one Resource is allowed (ADR 008).
@@ -315,9 +270,7 @@ export function createMemoryAdapter({
   // shortcut: O(n) copy per unit of work; fine for tests, replace with a write log if anyone benchmarks it.
   async function run<S extends AnySchema, T>(
     timed: ReadonlySet<string>,
-    work: (
-      locked: LockedAdapter<S, undefined, "blocks" | "records">
-    ) => Promise<T>
+    work: (locked: LockedAdapter<S, undefined, "records">) => Promise<T>
   ): Promise<T> {
     const draft = draftOf(store);
 
@@ -332,7 +285,7 @@ export function createMemoryAdapter({
   return defineAdapter(
     <S extends AnySchema>(
       schema: S
-    ): SchemaAdapter<S, undefined, "blocks" | "records"> => {
+    ): SchemaAdapter<S, undefined, "records"> => {
       const timed = new Set(
         Object.entries(tablesOf(schema.plugins))
           .filter(([, t]) => t.timed)
@@ -354,6 +307,6 @@ export function createMemoryAdapter({
 }
 
 /** An Adapter that keeps everything in memory, for tests. `tx` is `undefined`: there is no transaction to join. */
-export function memoryAdapter(): Adapter<undefined, "blocks" | "records"> {
+export function memoryAdapter(): Adapter<undefined, "records"> {
   return createMemoryAdapter({ lock: true });
 }

@@ -60,7 +60,6 @@ async function refuse(): Promise<never> {
 const spyAdapter = defineAdapter<undefined, "records">(() => ({
   getRecord: refuse,
   getBooking: refuse,
-  getRules: refuse,
   listBookings: refuse,
   listRecords: refuse,
   withResourceLock: refuse,

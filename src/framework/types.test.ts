@@ -7,7 +7,6 @@ import type {
   GroupsOf,
   UpdateRecordResult,
 } from "../adapter/index.js";
-import type { RuleRecord } from "../adapter/records.js";
 import type { InvalidParams, Result } from "../core/result.js";
 import type { AvailabilityViolation, BookingId } from "../core/types.js";
 import { Scheduler as EffectScheduler } from "../effect/index.js";
@@ -61,6 +60,7 @@ import type {
 import type { FindSlotsError, Slot } from "./find-slots.js";
 import type { Fill } from "./plugin.js";
 import type {
+  RuleRecord,
   GetAvailabilityError,
   GetAvailabilityParams,
   SetAvailabilityError,
@@ -341,8 +341,8 @@ describe("Blocks types", () => {
     expectTypeOf<UpdateBlockParams<Reason>>().not.toHaveProperty("resourceId");
   });
 
-  it("types blocks()' table by its fields, and leaves fasti's own `block` null", () => {
-    expectTypeOf(bareBlockSchema.block).toEqualTypeOf<null>();
+  it("types blocks()' table by its fields; the schema has no `block` of its own", () => {
+    expectTypeOf(bareBlockSchema).not.toHaveProperty("block");
     expectTypeOf(
       blocks({ fields: {} }).tables.block.columns
     ).toEqualTypeOf<Bare>();

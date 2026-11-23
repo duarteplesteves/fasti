@@ -4,12 +4,15 @@ import { integer as pgInteger, pgTable } from "drizzle-orm/pg-core";
 import { integer as sqliteInteger, sqliteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 
+import { defineSchema } from "../schema/define-schema.js";
 import {
   defaultParitySchema,
   renamedParitySchema,
 } from "../test-utils/parity-schemas.js";
 import { pgSnapshot, sqliteSnapshot } from "../test-utils/table-snapshot.js";
+import * as pg from "./pg/index.js";
 import { recordTables as pgRecordTables } from "./pg/index.js";
+import * as sqlite from "./sqlite/index.js";
 import { recordTables as sqliteRecordTables } from "./sqlite/index.js";
 
 /** 0.6's tables in one dialect, by schema, then table. */
@@ -78,3 +81,46 @@ describe("availability() and blocks() need no migration from 0.6 (I8)", () => {
     }).toStrictEqual(v06.sqlite);
   });
 });
+
+// oxlint-disable typescript/no-deprecated -- the aliases under test.
+describe("the deprecated blockTable and availabilityRuleTable (R7)", () => {
+  it("Postgres: build the same tables as recordTables", () => {
+    const options = { references: () => pgStaff.id };
+    const tables = pgRecordTables(renamedParitySchema, options);
+
+    expect([
+      pgSnapshot(pg.blockTable(renamedParitySchema, options)),
+      pgSnapshot(pg.availabilityRuleTable(renamedParitySchema, options)),
+    ]).toStrictEqual([
+      pgSnapshot(tables.block),
+      pgSnapshot(tables.availabilityRule),
+    ]);
+  });
+
+  it("SQLite: build the same tables as recordTables", () => {
+    const options = { references: () => sqliteStaff.id };
+    const tables = sqliteRecordTables(renamedParitySchema, options);
+
+    expect([
+      sqliteSnapshot(sqlite.blockTable(renamedParitySchema, options)),
+      sqliteSnapshot(
+        sqlite.availabilityRuleTable(renamedParitySchema, options)
+      ),
+    ]).toStrictEqual([
+      sqliteSnapshot(tables.block),
+      sqliteSnapshot(tables.availabilityRule),
+    ]);
+  });
+
+  it("throw on a schema without the Plugin", () => {
+    const bare = defineSchema({});
+
+    expect(() => pg.blockTable(bare)).toThrow(/"block" table/u);
+    expect(() => sqlite.blockTable(bare)).toThrow(/"block" table/u);
+    expect(() => pg.availabilityRuleTable(bare)).toThrow(/"availabilityRule"/u);
+    expect(() => sqlite.availabilityRuleTable(bare)).toThrow(
+      /"availabilityRule"/u
+    );
+  });
+});
+// oxlint-enable typescript/no-deprecated

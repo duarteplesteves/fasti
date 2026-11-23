@@ -172,7 +172,6 @@ describe("findSlots", () => {
       const adapter = defineAdapter<undefined, "records">(() => ({
         getRecord: refuse,
         getBooking: refuse,
-        getRules: refuse,
         listRecords: refuse,
         listBookings: refuse,
         withResourceLock: refuse,
@@ -439,7 +438,6 @@ describe("findSlots with Policies", () => {
     const adapter = defineAdapter<undefined, "records">(() => ({
       getRecord: refuse,
       getBooking: refuse,
-      getRules: refuse,
       listRecords: refuse,
       listBookings: refuse,
       withResourceLock: refuse,

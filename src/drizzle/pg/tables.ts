@@ -14,19 +14,13 @@ import {
 } from "drizzle-orm/pg-core";
 
 import type { ResourceIdOf } from "../../adapter/records.js";
-import type { Recurrence } from "../../core/types.js";
 import { sqlLiteral } from "../../schema/backstop-sql.js";
 import type { RecordColumn } from "../../schema/column.js";
-import type {
-  AnySchema,
-  AvailabilityRuleColumn,
-  BlockColumn,
-  BlockSchema,
-  BookingColumn,
-} from "../../schema/define-schema.js";
+import type { AnySchema, BookingColumn } from "../../schema/define-schema.js";
 import type { Accepts } from "../../schema/references.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
+  installedTable,
   physicalColumns,
   physicalTable,
   tablesOf,
@@ -162,53 +156,6 @@ export function bookingTable<
   ]);
 }
 
-/**
- * The Block table of `schema`, with your physical names, for your drizzle-kit schema file.
- * Columns are keyed by logical name. Only for a schema that declares `block`.
- */
-export function blockTable<
-  S extends BlockSchema,
-  C extends AnyPgColumn = AnyPgColumn,
->(schema: S, options: TableOptions<S, C> = {}) {
-  // SAFETY: defineSchema names every Block column and Developer Field; a generic S only widens the keys to string.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-  const names = schema.names.columns.block as Readonly<
-    Record<BlockColumn, string> & Partial<Record<string, string>>
-  >;
-
-  return pgTable(schema.names.tables.block, {
-    id: uuid(names.id).primaryKey(),
-    resourceId: resourceIdColumn(schema, names.resourceId, options),
-    start: pgColumn({ kind: "instant" }, names.start).notNull(),
-    end: pgColumn({ kind: "instant" }, names.end).notNull(),
-    ...fieldColumns(schema.block.fields, names),
-  });
-}
-
-/**
- * The AvailabilityRule table of `schema`, with your physical names, for your drizzle-kit schema file.
- * Its primary key is generated and private; dates are `date` strings, the window `time`.
- */
-export function availabilityRuleTable<
-  S extends AnySchema,
-  C extends AnyPgColumn = AnyPgColumn,
->(schema: S, options: TableOptions<S, C> = {}) {
-  const names: Readonly<Record<AvailabilityRuleColumn, string>> =
-    schema.names.columns.availabilityRule;
-
-  return pgTable(schema.names.tables.availabilityRule, {
-    id: uuid(names.id).primaryKey().defaultRandom(),
-    resourceId: resourceIdColumn(schema, names.resourceId, options),
-    recurrence: jsonb(names.recurrence).$type<Recurrence>().notNull(),
-    windowStart: time(names.windowStart).notNull(),
-    windowEnd: time(names.windowEnd).notNull(),
-    timezone: text(names.timezone).notNull(),
-    effectiveFrom: date(names.effectiveFrom, { mode: "string" }),
-    effectiveTo: date(names.effectiveTo, { mode: "string" }),
-    exceptions: date(names.exceptions, { mode: "string" }).array().notNull(),
-  });
-}
-
 /** One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. */
 function pluginTable<S extends AnySchema, C extends AnyPgColumn>(
   schema: S,
@@ -253,5 +200,39 @@ export function recordTables<
       name,
       pluginTable(schema, name, def, options),
     ])
+  );
+}
+
+/**
+ * `blocks()`'s Block table: `recordTables(schema).block`.
+ *
+ * @deprecated Use `recordTables(schema).block`; this alias goes in a later minor.
+ * @throws When `schema` doesn't install `blocks()`.
+ */
+export function blockTable<
+  S extends AnySchema,
+  C extends AnyPgColumn = AnyPgColumn,
+>(schema: S, options: TableOptions<S, C> = {}) {
+  return installedTable<ReturnType<typeof pluginTable<S, C>>>(
+    recordTables(schema, options),
+    "block",
+    "blockTable"
+  );
+}
+
+/**
+ * `availability()`'s AvailabilityRule table: `recordTables(schema).availabilityRule`.
+ *
+ * @deprecated Use `recordTables(schema).availabilityRule`; this alias goes in a later minor.
+ * @throws When `schema` doesn't install `availability()`.
+ */
+export function availabilityRuleTable<
+  S extends AnySchema,
+  C extends AnyPgColumn = AnyPgColumn,
+>(schema: S, options: TableOptions<S, C> = {}) {
+  return installedTable<ReturnType<typeof pluginTable<S, C>>>(
+    recordTables(schema, options),
+    "availabilityRule",
+    "availabilityRuleTable"
   );
 }

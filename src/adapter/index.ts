@@ -3,24 +3,18 @@ export { defineAdapter } from "./contract.js";
 export type {
   Adapter,
   AdapterReads,
-  BlockReads,
-  BlockWrites,
-  DeleteBlockResult,
   DeleteRecordResult,
   GroupsOf,
   InsertBookingResult,
-  ListBlocksQuery,
   ListBookingsQuery,
   ListRecordsQuery,
   LockedAdapter,
   RecordReads,
   RecordWrites,
   ReplaceRecordsParams,
-  ReplaceRulesParams,
   SchemaAdapter,
   StoredRecord,
   StoredValue,
-  UpdateBlockResult,
   UpdateBookingParams,
   UpdateBookingResult,
   UpdateRecordParams,
@@ -29,12 +23,10 @@ export type {
 } from "./contract.js";
 
 export type {
-  BlockChanges,
-  BlockFieldsOf,
-  BlockRecord,
   BookingChanges,
   BookingRecord,
   ResourceIdOf,
-  RuleRecord,
   StatusOf,
 } from "./records.js";
+
+export type { RuleRecord } from "../framework/plugins/availability.js";

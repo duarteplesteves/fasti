@@ -208,11 +208,11 @@ type Reads = RecordReadsOf<SlotTables>;
 type Store = RecordStoreOf<SlotTables>;
 
 /** Never called: only the types are checked. */
-function bind(blocksOnly: Adapter<undefined, "blocks">) {
+function bind(plain: Adapter<undefined>) {
   return [
     // @ts-expect-error -- the notes table needs the `records` verbs.
-    createScheduler({ adapter: blocksOnly, schema }),
-    createScheduler({ adapter: blocksOnly, schema: defineSchema({}) }),
+    createScheduler({ adapter: plain, schema }),
+    createScheduler({ adapter: plain, schema: defineSchema({}) }),
   ];
 }
 

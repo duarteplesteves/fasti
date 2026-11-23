@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
-import type { ResourceIdOf, RuleRecord } from "../../adapter/records.js";
+import type { ResourceIdOf } from "../../adapter/records.js";
+import type { RuleRecord } from "../../framework/plugins/availability.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
 import { ruleStore } from "../plugin-stores.js";

@@ -1,6 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type { RuleRecord } from "../adapter/records.js";
 import type {
   AdapterError,
   InvalidParams,
@@ -14,7 +13,10 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { issuePaths, unwrap } from "../test-utils/results.js";
-import type { SetAvailabilityValue } from "./plugins/availability.js";
+import type {
+  RuleRecord,
+  SetAvailabilityValue,
+} from "./plugins/availability.js";
 
 const schema = uuidIdSchema;
 const [room, otherRoom] = uuidIdResources;

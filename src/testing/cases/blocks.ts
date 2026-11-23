@@ -1,20 +1,14 @@
 import { expect } from "vitest";
 
-import type { BlockChanges, BlockRecord } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
 import { blockId, insertBlock, newBlock } from "../fixtures.js";
 import { blockFieldsOf, blockStore as withBlocks } from "../plugin-stores.js";
-import type { BlockStore } from "../plugin-stores.js";
-
-/** Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record. */
-function asChanges<S extends AnySchema>(
-  changes: BlockChanges<AnySchema>
-): BlockChanges<S> {
-  // SAFETY: the cases only change `start`/`end`, which every Block has.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-  return changes as BlockChanges<S>;
-}
+import type {
+  BlockChanges,
+  BlockRecord,
+  BlockStore,
+} from "../plugin-stores.js";
 
 /** `updateBlock` in its own unit of work. */
 async function update<S extends AnySchema, Tx>(
@@ -234,10 +228,7 @@ export const blockCases: readonly ConformanceCase[] = [
       const end = block.end.add({ hours: 1 });
 
       const results = await Promise.all(
-        stale.map(
-          async (expected) =>
-            await update(adapter, expected, asChanges({ end }))
-        )
+        stale.map(async (expected) => await update(adapter, expected, { end }))
       );
 
       expect(results).toStrictEqual(
@@ -300,7 +291,7 @@ export const blockCases: readonly ConformanceCase[] = [
       await expect(
         adapter.withResourceLock(resources[0], async (locked) => {
           await locked.updateBlock({
-            changes: asChanges({ end: moved.end.add({ hours: 1 }) }),
+            changes: { end: moved.end.add({ hours: 1 }) },
             expected: moved,
           });
           await locked.deleteBlock(deleted.id);

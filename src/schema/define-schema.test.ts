@@ -5,6 +5,7 @@ import type {
   ResourceIdOf,
   StatusOf,
 } from "../adapter/records.js";
+import { availability } from "../framework/plugins/availability.js";
 import { column } from "./column.js";
 import type { AnyColumn, Column } from "./column.js";
 import { defineSchema } from "./define-schema.js";
@@ -13,27 +14,9 @@ import type { BaseStatus, InitialOf } from "./define-schema.js";
 describe(defineSchema, () => {
   it("resolves defaults: text ids, logical names, the two base Statuses", () => {
     expect(defineSchema({})).toStrictEqual({
-      block: null,
       booking: { fields: {} },
       names: {
         columns: {
-          availabilityRule: {
-            effectiveFrom: "effectiveFrom",
-            effectiveTo: "effectiveTo",
-            exceptions: "exceptions",
-            id: "id",
-            recurrence: "recurrence",
-            resourceId: "resourceId",
-            timezone: "timezone",
-            windowEnd: "windowEnd",
-            windowStart: "windowStart",
-          },
-          block: {
-            end: "end",
-            id: "id",
-            resourceId: "resourceId",
-            start: "start",
-          },
           booking: {
             end: "end",
             id: "id",
@@ -42,11 +25,7 @@ describe(defineSchema, () => {
             status: "status",
           },
         },
-        tables: {
-          availabilityRule: "availabilityRule",
-          block: "block",
-          booking: "booking",
-        },
+        tables: { booking: "booking" },
       },
       initial: ["booked"],
       plugins: [],
@@ -152,7 +131,7 @@ describe(defineSchema, () => {
     ).toThrow(/Status "paid" needs `blocking/u);
   });
 
-  it("throws on a Booking or Block Developer Field named `also`", () => {
+  it("throws on a Booking Developer Field named `also`", () => {
     expect(() =>
       defineSchema({
         booking: {
@@ -161,14 +140,6 @@ describe(defineSchema, () => {
         },
       })
     ).toThrow(/Booking Developer Field can't be named "also"/u);
-    expect(() =>
-      defineSchema({
-        block: {
-          // @ts-expect-error `also` is reserved
-          fields: { also: { required: false, type: column.text() } },
-        },
-      })
-    ).toThrow(/Block Developer Field can't be named "also"/u);
   });
 
   it("throws on a Booking Developer Field named `waived`", () => {
@@ -194,56 +165,15 @@ describe(defineSchema, () => {
     expect(() =>
       defineSchema({
         names: { columns: { availabilityRule: { windowEnd: "windowStart" } } },
+        plugins: [availability()],
       })
     ).toThrow(/column name "windowStart"/u);
     expect(() =>
       defineSchema({
         names: { tables: { availabilityRule: "x", booking: "x" } },
+        plugins: [availability()],
       })
     ).toThrow(/table name "x"/u);
-  });
-
-  it("resolves `block` with its fields and default names, renamed where asked", () => {
-    const fields = { reason: { required: true, type: column.text() } };
-
-    const schema = defineSchema({
-      block: { fields },
-      names: {
-        columns: { block: { reason: "why", start: "starts_at" } },
-        tables: { block: "time_off" },
-      },
-    });
-
-    expect(schema.block).toStrictEqual({ fields });
-    expect(schema.names.tables.block).toBe("time_off");
-    expect(schema.names.columns.block).toStrictEqual({
-      end: "end",
-      id: "id",
-      reason: "why",
-      resourceId: "resourceId",
-      start: "starts_at",
-    });
-    expect(defineSchema({ block: { fields: {} } }).block).toStrictEqual({
-      fields: {},
-    });
-  });
-
-  it("throws on a Block table or column name that collides only when `block` is declared", () => {
-    const names = { tables: { block: "booking" } };
-
-    expect(() => defineSchema({ names })).not.toThrow();
-    expect(() =>
-      defineSchema({ names: { columns: { block: { end: "start" } } } })
-    ).not.toThrow();
-    expect(() => defineSchema({ block: { fields: {} }, names })).toThrow(
-      /table name "booking"/u
-    );
-    expect(() =>
-      defineSchema({
-        block: { fields: {} },
-        names: { columns: { block: { end: "start" } } },
-      })
-    ).toThrow(/column name "start"/u);
   });
 
   it("names a Developer Field called `constructor` after itself", () => {
@@ -319,17 +249,6 @@ describe("schema types", () => {
         booking: {
           // @ts-expect-error `start` is a Booking column
           fields: { start: { required: true, type: column.instant() } },
-        },
-      })
-    ).not.toThrow();
-  });
-
-  it("rejects a Block Developer Field named after a Block column", () => {
-    expect(() =>
-      defineSchema({
-        block: {
-          // @ts-expect-error `end` is a Block column
-          fields: { end: { required: true, type: column.instant() } },
         },
       })
     ).not.toThrow();

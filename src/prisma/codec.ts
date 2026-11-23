@@ -1,19 +1,13 @@
 import { canonical, isList } from "../adapter/contract.js";
 import type { StoredRecord, StoredValue } from "../adapter/contract.js";
-import type {
-  BlockChanges,
-  BlockRecord,
-  BookingChanges,
-  BookingRecord,
-  RuleRecord,
-} from "../adapter/records.js";
+import type { BookingChanges, BookingRecord } from "../adapter/records.js";
 import type { ColumnKind, Json } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import type { TableDef } from "../schema/table.js";
 
 /** A value as the contract's codecs read and write it: Instants stay `Temporal.Instant` (`DateTime(as: temporal)`). */
-export type PrismaValue = Temporal.Instant | RuleRecord["recurrence"] | Json;
+export type PrismaValue = Temporal.Instant | Json;
 
 /** A row of a fasti table, keyed by physical column name, as the SQL builder reads and writes it. */
 export type PrismaRow = Readonly<Record<string, PrismaValue>>;
@@ -38,14 +32,10 @@ export function physical(names: ColumnNames, key: string): string {
  */
 export function encodeRecord<S extends AnySchema>(
   names: ColumnNames,
-  record:
-    | BookingRecord<S>
-    | BookingChanges<S>
-    | BlockRecord<S>
-    | BlockChanges<S>
+  record: BookingRecord<S> | BookingChanges<S>
 ): PrismaRow {
   return Object.fromEntries(
-    // SAFETY: Booking and Block records hold only PrismaValues; TS can't resolve a generic S's fields to them.
+    // SAFETY: Booking records hold only PrismaValues; TS can't resolve a generic S's fields to them.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
     Object.entries(record as Readonly<Record<string, PrismaValue | undefined>>)
       .filter((entry): entry is [string, PrismaValue] => entry[1] !== undefined)
@@ -96,67 +86,6 @@ export function decodeBooking<S extends AnySchema>(
   // SAFETY: the row comes from the Booking model of prismaModels(schema): one column per record key, of the declared kind.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
   return { ...decodeRecord(names, row), status } as BookingRecord<S>;
-}
-
-/** Row → Block record. */
-export function decodeBlock<S extends AnySchema>(
-  names: ColumnNames,
-  row: PrismaRow
-): BlockRecord<S> {
-  // SAFETY: the row comes from the Block model of prismaModels(schema): one column per record key, of the declared kind.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
-  return decodeRecord(names, row) as BlockRecord<S>;
-}
-
-/** Rule → row, without its private id: Temporal values become their ISO strings, unset dates `null`. */
-export function encodeRule(names: ColumnNames, rule: RuleRecord) {
-  return {
-    [physical(names, "effectiveFrom")]: rule.effectiveFrom?.toString() ?? null,
-    [physical(names, "effectiveTo")]: rule.effectiveTo?.toString() ?? null,
-    [physical(names, "exceptions")]: rule.exceptions.map(String),
-    [physical(names, "recurrence")]: rule.recurrence,
-    [physical(names, "timezone")]: rule.timezone,
-    [physical(names, "windowEnd")]: rule.timeWindow.end.toString(),
-    [physical(names, "windowStart")]: rule.timeWindow.start.toString(),
-  };
-}
-
-/** A RuleRecord under construction, so the optional dates can be added after it. */
-type RuleDraft = { -readonly [K in keyof RuleRecord]: RuleRecord[K] };
-
-/** Row → rule: a `null` effective date is an absent key. */
-export function decodeRule(names: ColumnNames, row: PrismaRow): RuleRecord {
-  // SAFETY: the row comes from the AvailabilityRule model of prismaModels(schema), whose columns have these types.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
-  const value = decodeRecord(names, row) as {
-    readonly recurrence: RuleRecord["recurrence"];
-    readonly windowStart: string;
-    readonly windowEnd: string;
-    readonly timezone: string;
-    readonly effectiveFrom: string | null;
-    readonly effectiveTo: string | null;
-    readonly exceptions: readonly string[];
-  };
-
-  const rule: RuleDraft = {
-    exceptions: value.exceptions.map((d) => Temporal.PlainDate.from(d)),
-    recurrence: value.recurrence,
-    timeWindow: {
-      end: Temporal.PlainTime.from(value.windowEnd),
-      start: Temporal.PlainTime.from(value.windowStart),
-    },
-    timezone: value.timezone,
-  };
-
-  if (value.effectiveFrom !== null) {
-    rule.effectiveFrom = Temporal.PlainDate.from(value.effectiveFrom);
-  }
-
-  if (value.effectiveTo !== null) {
-    rule.effectiveTo = Temporal.PlainDate.from(value.effectiveTo);
-  }
-
-  return rule;
 }
 
 /** One Plugin record value → its row value: PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical, Instants as they are. */
@@ -231,9 +160,7 @@ function decodeValue(
     case "instant":
     case "json":
     case undefined: {
-      // SAFETY: a Plugin table's other columns read as their kind's value; JSON as stored, never a rule's recurrence.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
-      return value as StoredValue;
+      return value;
     }
 
     default: {

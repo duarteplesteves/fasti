@@ -7,14 +7,7 @@ import type {
 
 import { sqlLiteral } from "../schema/backstop-sql.js";
 import type { ColumnKind } from "../schema/column.js";
-import type {
-  AnySchema,
-  AvailabilityRuleColumn,
-  BlockColumn,
-  BookingColumn,
-  Fields,
-  HasBlocks,
-} from "../schema/define-schema.js";
+import type { AnySchema, BookingColumn } from "../schema/define-schema.js";
 import type { Accepts } from "../schema/references.js";
 import { statusCodec } from "../schema/status-codec.js";
 import { physicalColumns, physicalTable, tablesOf } from "../schema/table.js";
@@ -119,16 +112,12 @@ function tableModel(
 /** A contract model of any fasti table. */
 type PrismaModel = ReturnType<typeof tableModel>;
 
-/** One model per fasti table, keyed by its physical table name. The Block model only when `S` declares `block`; one per Plugin table. */
+/** One model per fasti table, keyed by its physical table name: the Booking model, and one per Plugin table. */
 export type PrismaModels<S extends AnySchema> = Record<
   | S["names"]["tables"]["booking"]
-  | S["names"]["tables"]["availabilityRule"]
   | S["names"]["tables"][TableNamesOf<S["plugins"]>],
   PrismaModel
-> &
-  (HasBlocks<S> extends true
-    ? Record<S["names"]["tables"]["block"], PrismaModel>
-    : unknown);
+>;
 
 /**
  * The Prisma column type of a schema column kind. Instants are `timestamptz(3)` read as `Temporal.Instant` (I7);
@@ -243,85 +232,6 @@ function bookingModel(
   );
 }
 
-/** The Block model, for a schema that declares `block`. */
-function blockModel(
-  schema: AnySchema,
-  fields: Fields,
-  helpers: ContractHelpers,
-  references: TargetFieldRef | undefined
-) {
-  // SAFETY: defineSchema names every Block column and Developer Field; a generic S only widens the keys to string.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-  const names = schema.names.columns.block as Readonly<
-    Record<BlockColumn, string> & Partial<Record<string, string>>
-  >;
-
-  return tableModel(
-    helpers,
-    schema.names.tables.block,
-    {
-      id: helpers.field.column(helpers.type.Uuid()).id().column(names.id),
-      resourceId: column(
-        helpers,
-        schema.resource.idType.kind,
-        names.resourceId
-      ),
-      start: column(helpers, "instant", names.start),
-      end: column(helpers, "instant", names.end),
-      ...fieldColumns(helpers, fields, names),
-    },
-    [],
-    references
-  );
-}
-
-/** The AvailabilityRule model. Its primary key is generated and private; dates are `date` strings, the window `time`. */
-function availabilityRuleModel(
-  schema: AnySchema,
-  helpers: ContractHelpers,
-  references: TargetFieldRef | undefined
-) {
-  const { field, type } = helpers;
-
-  const names: Readonly<Record<AvailabilityRuleColumn, string>> =
-    schema.names.columns.availabilityRule;
-
-  return tableModel(
-    helpers,
-    schema.names.tables.availabilityRule,
-    {
-      id: field
-        .column(type.Uuid())
-        .id()
-        .default(sql`gen_random_uuid()`)
-        .column(names.id),
-      resourceId: column(
-        helpers,
-        schema.resource.idType.kind,
-        names.resourceId
-      ),
-      recurrence: field.column(type.Jsonb()).column(names.recurrence),
-      windowStart: field.column(type.Time()).column(names.windowStart),
-      windowEnd: field.column(type.Time()).column(names.windowEnd),
-      timezone: column(helpers, "text", names.timezone),
-      effectiveFrom: field
-        .column(type.Date())
-        .optional()
-        .column(names.effectiveFrom),
-      effectiveTo: field
-        .column(type.Date())
-        .optional()
-        .column(names.effectiveTo),
-      exceptions: field
-        .column(type.Date())
-        .many({ elementsNullable: true })
-        .column(names.exceptions),
-    },
-    [],
-    references
-  );
-}
-
 /** One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. */
 function pluginModel(
   schema: AnySchema,
@@ -388,20 +298,8 @@ export function prismaModels<
 
   const models: [string, PrismaModel][] = [
     [tables.booking, bookingModel(schema, helpers, resourceIdTarget)],
-    [
-      tables.availabilityRule,
-      availabilityRuleModel(schema, helpers, resourceIdTarget),
-    ],
   ];
 
-  if (schema.block !== null) {
-    models.push([
-      tables.block,
-      blockModel(schema, schema.block.fields, helpers, resourceIdTarget),
-    ]);
-  }
-
-  // After fasti's own: a Plugin table with one of their physical names (availability()'s, blocks()') is the same table.
   for (const [name, def] of Object.entries(tablesOf(schema.plugins))) {
     models.push([
       physicalTable(schema, name),
@@ -409,7 +307,7 @@ export function prismaModels<
     ]);
   }
 
-  // SAFETY: the keys are S's physical table names, the Block one exactly when S declares `block`, and one per Plugin table.
+  // SAFETY: the keys are S's physical table names: the Booking one, and one per Plugin table.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
   return Object.fromEntries(models) as PrismaModels<S>;
 }

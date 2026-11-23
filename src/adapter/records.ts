@@ -1,11 +1,6 @@
-import type {
-  AvailabilityRule,
-  BlockId,
-  Booking,
-  BookingId,
-} from "../core/types.js";
+import type { Booking, BookingId } from "../core/types.js";
 import type { TypeOf } from "../schema/column.js";
-import type { AnySchema, Fields } from "../schema/define-schema.js";
+import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import type { Columns } from "../schema/table.js";
 
@@ -31,41 +26,10 @@ export type BookingRecord<S extends AnySchema> = {
   readonly status: StatusOf<S>;
 } & Readonly<FieldValues<S["booking"]["fields"]>>;
 
-/** A schema's Block Developer Fields; none when it has no Blocks. */
-export type BlockFieldsOf<S extends AnySchema> = S["block"] extends {
-  readonly fields: infer F extends Fields;
-}
-  ? F
-  : // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no Developer Fields" is exactly `{}`.
-    Record<never, never>;
-
-/** A Block as it crosses the Adapter seam: logical names only, Developer Fields included. */
-export type BlockRecord<S extends AnySchema> = {
-  readonly id: BlockId;
-  readonly resourceId: ResourceIdOf<S>;
-  readonly start: Temporal.Instant;
-  readonly end: Temporal.Instant;
-} & Readonly<FieldValues<BlockFieldsOf<S>>>;
-
-/** The fields `updateBlock` may change: anything but `id` and `resourceId`, since a Block never changes Resource. */
-export type BlockChanges<S extends AnySchema> = Partial<
-  Omit<BlockRecord<S>, "id" | "resourceId">
->;
-
 /** The fields `updateBooking` may change: anything but `id`. */
 export type BookingChanges<S extends AnySchema> = Partial<
   Omit<BookingRecord<S>, "id">
 >;
-
-/**
- * A stored AvailabilityRule: the Core rule without `resourceId` (the verbs take it separately).
- * An unset effective date is an absent key; `exceptions` is always present, empty when there are none.
- */
-export type RuleRecord = Readonly<
-  Omit<AvailabilityRule, "resourceId" | "exceptions">
-> & {
-  readonly exceptions: readonly Temporal.PlainDate[];
-};
 
 /** The Core's view of a stored Booking: `String` Resource id, blocking derived from its Status. Internal. */
 export function toCoreBooking<S extends AnySchema>(

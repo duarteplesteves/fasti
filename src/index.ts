@@ -13,14 +13,11 @@ export { defineSchema } from "./schema/define-schema.js";
 
 export type {
   AnySchema,
-  AvailabilityRuleColumn,
   BaseStatus,
-  BlockColumn,
   BookingColumn,
   DefineSchemaParams,
   FieldDef,
   Fields,
-  HasBlocks,
   InitialOf,
   Schema,
   StatusDecls,

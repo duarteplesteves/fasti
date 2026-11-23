@@ -67,7 +67,6 @@ async function refuse(): Promise<never> {
 const noCalls = defineAdapter<undefined, "records">(() => ({
   getRecord: refuse,
   getBooking: refuse,
-  getRules: refuse,
   listRecords: refuse,
   listBookings: refuse,
   withResourceLock: refuse,
