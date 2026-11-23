@@ -21,8 +21,8 @@ One package, several entry points:
 
 | Import                          | What it holds                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------- |
-| `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, `definePolicy`, `notice`, `defineHook`, the `column` helpers and the error types. |
-| `@fastijs/scheduler/effect`     | `Scheduler`, the Effect form of the Actions.                                            |
+| `@fastijs/scheduler`            | `createScheduler`, `defineSchema`, `definePolicy`, `notice`, `defineHook`, `definePlugin`, the `availability()` and `blocks()` Plugins, the `column` helpers and the error types. |
+| `@fastijs/scheduler/effect`     | `Scheduler`, the Effect form of the Actions, and the native `definePlugin`.             |
 | `@fastijs/scheduler/drizzle/pg` | `drizzleAdapter`, the table builders and `backstopSql` (needs `drizzle-orm` 1.0 RC.5+). |
 | `@fastijs/scheduler/drizzle/sqlite` | The same names as `drizzle/pg`, for libsql file databases (needs `drizzle-orm` 1.0 RC.5+ and `@libsql/client`). |
 | `@fastijs/scheduler/prisma`     | `prismaAdapter`, `prismaModels` and `backstopSql`, for Prisma 8 on Postgres. Experimental while Prisma 8 is an RC. |
@@ -38,14 +38,19 @@ fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without na
 
 The full, runnable version is [`examples/basic`](./examples/basic), which CI runs against Postgres on every push.
 
-**1. Define your schema and tables.** `defineSchema` names your tables, columns and Statuses and declares your Developer Fields: your own columns on each Booking. Every option has a default; see [Defining your schema](#defining-your-schema).
+**1. Define your schema and tables.** `defineSchema` names your tables, columns and Statuses, declares your Developer Fields (your own columns on each Booking) and installs [Plugins](#plugins). `availability()` adds opening hours; leave it out and every time outside Bookings is bookable. Every option has a default; see [Defining your schema](#defining-your-schema).
 
 ```typescript
-import { column, createScheduler, defineSchema } from "@fastijs/scheduler";
 import {
-  availabilityRuleTable,
+  availability,
+  column,
+  createScheduler,
+  defineSchema,
+} from "@fastijs/scheduler";
+import {
   bookingTable,
   drizzleAdapter,
+  recordTables,
 } from "@fastijs/scheduler/drizzle/pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -54,10 +59,11 @@ export const schema = defineSchema({
   booking: {
     fields: { customerName: { required: true, type: column.text() } },
   },
+  plugins: [availability()],
 });
 
 export const tables = {
-  availabilityRule: availabilityRuleTable(schema),
+  ...recordTables(schema), // every Plugin table: here `availabilityRule`
   booking: bookingTable(schema),
 };
 ```
@@ -122,8 +128,10 @@ if (!result.ok) {
 | `availability.set` | `{ rules }`, replacing the whole set     | `InvalidParams`, `AdapterError`                                       |
 | `availability.get` | the stored rules                         | `AdapterError`                                                        |
 
+`availability.set` and `.get` exist because the schema installs `availability()`; every other Plugin adds its Actions under its own name the same way.
+
 - An overlap is checked before availability, so an overlapping Booking outside hours is a `SlotConflict` alone ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)).
-- `PolicyViolation` is in an Action's error type only when some [Policy](#policies) applies to it and isn't relaxed. `availability` always applies to `book` and `reschedule`.
+- `PolicyViolation` is in an Action's error type only when some [Policy](#policies) applies to it and isn't relaxed. With `availability()` installed, its `availability` Policy applies to `book` and `reschedule`.
 - Domain errors are plain objects with no `message`, safe to send to a client as JSON. `AdapterError` is an `Error` whose `cause` is your driver's error ([ADR 010](./docs/adr/010-action-results-and-two-forms.md)).
 - `cancel` is idempotent. `book` is not: each call mints a new id, so dedupe retries in your backend.
 - `transition({ id, from, to })` moves a Booking along a declared Transition, compare-and-set on `from`: if the stored Status isn't `from`, it's a `StatusMismatch` carrying the stored one. `to` is narrowed by `from`, and `cancelled` is never a `to` (use `cancel`). It exists when some declared Transition doesn't end in `cancelled`. Moving into a blocking Status from a non-blocking one re-checks overlap; availability is never checked. `cancel` from a Status with no Transition to `cancelled` gives `TransitionNotDeclared`. Both take a partial `fields` patch.
@@ -165,19 +173,23 @@ Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug i
 
 A Block makes a Resource unbookable for a while: a vacation, a lunch, a meeting. It is its own entity, not a kind of Booking, with its own Developer Fields and no Status: you create, change and delete it ([ADR 016](./docs/adr/016-block-is-its-own-entity.md)).
 
-**Declare it in the schema.** Blocks are opt-in: `block` turns them on, with its Developer Fields (`fields: {}` for none). A schema without `block` has no Block table and no `scheduler.blocks`.
+**Install the Plugin.** Blocks are a first-party [Plugin](#plugins): `blocks({ fields })` turns them on, with their Developer Fields (`fields: {}` for none). A schema without it has no Block table and no `scheduler.blocks`.
 
 ```typescript
+import { availability, blocks, column, defineSchema } from "@fastijs/scheduler";
+
 export const schema = defineSchema({
-  block: { fields: { reason: { required: true, type: column.text() } } },
   booking: {
     fields: { customerName: { required: true, type: column.text() } },
   },
+  plugins: [
+    availability(),
+    blocks({ fields: { reason: { required: true, type: column.text() } } }),
+  ],
 });
 
 export const tables = {
-  availabilityRule: availabilityRuleTable(schema),
-  block: blockTable(schema), // from @fastijs/scheduler/drizzle/pg; takes `references` like the others
+  ...recordTables(schema), // `availabilityRule` and `block`; takes `references` like bookingTable
   booking: bookingTable(schema),
 };
 ```
@@ -203,7 +215,7 @@ const overLunch = await scheduler.book({
 });
 if (!overLunch.ok && overLunch.error._tag === "SlotConflict") {
   for (const conflict of overLunch.error.conflicts) {
-    conflict.kind; // "booking" | "block": narrow on it; conflict.id is a BookingId or a BlockId
+    conflict.kind; // "booking" | "block" (plus any other Plugin's busy kind): narrow on it
   }
 }
 ```
@@ -217,13 +229,13 @@ if (!overLunch.ok && overLunch.error._tag === "SlotConflict") {
 
 - A Block is a half-open `[start, end)` range of Instants: no timezone, no recurrence. It may be in the past.
 - `update` takes the `id`, and optionally a new `start` and `end` (together) and the `fields` to change. It can't move a Block to another Resource.
-- The overlap check runs both ways, under the Resource Lock: `book` refuses a slot over a Block, and `blocks.create` or `blocks.update` refuse a range over a blocking Booking. Both are a `SlotConflict`, whose items carry `kind: "booking" | "block"` with ids and times only. Like the Booking overlap, it can't be relaxed.
+- Blocks are [busy time](#plugins). The overlap check runs both ways, under the Resource Lock: `book` refuses a slot over a Block, and `blocks.create` or `blocks.update` refuse a range over a blocking Booking. Both are a `SlotConflict`, whose items carry `kind: "booking" | "block"` with ids and times only. Like the Booking overlap, it can't be relaxed.
 - Blocks may overlap each other, and no Policy applies to their writes: a Block outside availability is fine.
 - The Effect form has the same `blocks` Actions; failures are tagged for `Effect.catchTag`.
 
 **Writes outside fasti.** The [backstop](#drizzle-on-postgres) `EXCLUDE` constraint works within one table, so no database constraint stops a Booking from overlapping a Block. fasti's lock keeps its own Actions safe, but a row you write to either table yourself can create a Booking/Block overlap that nothing catches. A later `blocks.update` that changes only `fields` doesn't re-check, so such an overlap stays.
 
-**In a custom Adapter.** A schema with `block` needs an Adapter that implements the Block verb group, and the types enforce it: declare it as `Adapter<Tx, "blocks">` (or `defineAdapter<Tx, "blocks">`) and add `getBlock` and `listBlocks` to the reads, and `insertBlock`, `updateBlock` (compare-and-set, `"changed"`) and `deleteBlock` (`"missing"`) to the locked handle. See [Writing a custom Adapter](#writing-a-custom-adapter). `testAdapter` runs the Conformance Suite's Blocks cases whenever your schema declares `block`.
+**In a custom Adapter.** Blocks are stored through the `records` verb group, like every Plugin table: see [Writing a custom Adapter](#writing-a-custom-adapter). `testAdapter` runs the Conformance Suite's Blocks cases whenever your schema installs `blocks()`.
 
 ## Statuses and Transitions
 
@@ -264,7 +276,7 @@ await scheduler.transition({ id, from: "booked", to: "done" }); // type error: n
 
 ## Your writes in the same transaction (`also`)
 
-Every write Action (`book`, `reschedule`, `cancel`, `transition`, `availability.set`, `blocks.create`, `blocks.update`, `blocks.delete`) takes an optional `also`. fasti calls it after its own write, on the same unit of work, with the Adapter's `tx` and the Clock's `now` ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)):
+Every write Action (`book`, `reschedule`, `cancel`, `transition`, and every Plugin write Action, such as `availability.set` and `blocks.create`, `blocks.update`, `blocks.delete`) takes an optional `also`. fasti calls it after its own write, on the same unit of work, with the Adapter's `tx` and the Clock's `now` ([ADR 015](./docs/adr/015-developer-writes-inside-the-action-transaction.md)):
 
 ```typescript
 // Each Booking spends a credit from a prepaid pack, a table of your own.
@@ -294,9 +306,10 @@ const result = await scheduler.book({
 - `also` may run more than once. The Drizzle Adapter reruns the whole unit, `also` included, when it fails with a deadlock or a serialization failure (`40P01`, `40001`), up to 3 attempts. When they run out, it fails as on the last attempt: an `AdapterError` if fasti's write failed, a rejection if `also` threw. So a deadlock hit by a query inside a plain `also` rejects the promise rather than returning `AdapterError`. Another reason to write only through `tx`.
 - Side effects that can't roll back, such as an email or a webhook, don't belong in `also`: send them from an after-commit [Hook](#hooks), or after the call returns `ok`. If one must never be lost, insert an outbox row through `tx` and send it from a background job.
 - `also` runs under the Resource Lock, so a slow `also` delays every other write to that Resource. Don't call an Action from inside it: that's unsupported, and on the same Resource it deadlocks.
-- What each Action passes, besides `tx` and `now`: `book` gets `booking`; `reschedule`, `cancel` and `transition` get `booking` and `previous`; `availability.set` gets `resourceId`, `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`.
+- What each Action passes, besides `tx` and `now`: `book` gets `booking`; `reschedule`, `cancel` and `transition` get `booking` and `previous`; `availability.set` gets `resourceId`, `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`. Any other Plugin write Action gets the `context` its `lock` returned.
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
 - `also` is a reserved name: a Booking or Block Developer Field can't be called `also`.
+- A Plugin's own write Actions get `also` the same way, whether the Plugin was written in Effect or with plain async functions.
 
 ## Hooks
 
@@ -350,15 +363,15 @@ const scheduler = createScheduler({ adapter, hooks: [audit, confirm], schema });
 
 **`appliesTo`.** At least one target, or `"*"`:
 
-- Write Action names: `"book"`, `"reschedule"`, `"cancel"`, `"transition"`, `"availability.set"`, and `"blocks.create"`, `"blocks.update"`, `"blocks.delete"` when the schema has `block`.
+- Write Action names: `"book"`, `"reschedule"`, `"cancel"`, `"transition"`, and `"<plugin>.<action>"` for every installed Plugin's write Actions: `"availability.set"` with `availability()`, `"blocks.create"`, `"blocks.update"`, `"blocks.delete"` with `blocks()`.
 - Transition edges, as a Policy takes them: `{ to }` for every declared edge into `to`, or `{ from, to }` for one. Edges into `cancelled` belong to `"cancel"`.
-- `"*"` for every write Action, including ones a later schema change adds. Unlike Policies, Hooks allow it: an audit log that picks up a new edge is what you want.
+- `"*"` for every write Action, Plugin ones included, and ones a later schema change adds. Unlike Policies, Hooks allow it: an audit log that picks up a new edge is what you want.
 
-The event `run` gets is what that Action's `also` gets (see [`also`](#your-writes-in-the-same-transaction-also)), plus `action`, narrowed by `appliesTo`: an edge's event has `action: "transition"`. An unknown name, `blocks.*` on a schema without `block`, an undeclared edge or an edge into `cancelled` is a type error, and `defineHook` throws on it, as on an empty `appliesTo`.
+The event `run` gets is what that Action's `also` gets (see [`also`](#your-writes-in-the-same-transaction-also)), plus `action`, narrowed by `appliesTo`: an edge's event has `action: "transition"`. An unknown name, a Plugin Action whose Plugin isn't installed (`blocks.*` without `blocks()`), an undeclared edge or an edge into `cancelled` is a type error, and `defineHook` throws on it, as on an empty `appliesTo`.
 
 **When Hooks run, and in what order.**
 
-- `also` → in-transaction Hooks → commit → after-commit Hooks, each kind in `hooks` order. Each in-transaction Hook sees the earlier ones' writes on `tx`.
+- `also` → in-transaction Hooks → commit → after-commit Hooks. Within each kind, the Plugins' Hooks run first, in Plugin order, then yours, in `hooks` order. Each in-transaction Hook sees the earlier ones' writes on `tx`.
 - A Hook runs only when something was saved: never on a Veto, a typed failure such as `SlotConflict` or `PolicyViolation`, or a repeat `cancel`. A `blocks.update` that changes nothing still runs them, as it runs `also`. Reads run no Hooks.
 - Hooks run whether or not the call passed `also`, and add nothing to the Action's value or types.
 
@@ -366,7 +379,7 @@ The event `run` gets is what that Action's `also` gets (see [`also`](#your-write
 
 ## Policies
 
-fasti splits its checks in two ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)). **Invariants** always hold and can't be skipped: meaningful params, no overlap, a declared Transition, and a Booking that exists in the expected Status. Everything else is a **Policy**: a named rule the caller can relax on one call. `availability` is always present on `book` and `reschedule`; any other Policy runs only if you register it.
+fasti splits its checks in two ([ADR 014](./docs/adr/014-invariants-and-relaxable-policies.md)). **Invariants** always hold and can't be skipped: meaningful params, no overlap, a declared Transition, and a Booking that exists in the expected Status. Everything else is a **Policy**: a named rule the caller can relax on one call. Policies come from your `policies` and from installed Plugins, such as `availability` on `book` and `reschedule` with `availability()`. Nothing else runs by default.
 
 ```typescript
 import { createScheduler, definePolicy, notice } from "@fastijs/scheduler";
@@ -412,7 +425,7 @@ const staff = await scheduler.book({ ...slot, fields, relax: ["maxFourPerDay"] }
 // { ok: true, value: { ...booking, waived: [{ policy: "maxFourPerDay", detail: { count: 4 } }] } }
 ```
 
-**`load` and `check`.** `load` reads, `check` decides. They are split so `findSlots` can judge hundreds of slots with one query per Policy, not one per slot. `load` gets `{ resourceId, from, to, now, reads }`: the candidate's Resource and range (the stored Booking's on `cancel` and Transition edges; the whole search, `[from, to + duration)`, in `findSlots`). `reads` holds `getBooking`, `listBookings`, `listBlocks` and `getRules`, as Promises. `check` gets the candidate and what `load` returned (`undefined` without `load`); `detail`'s type is inferred from it.
+**`load` and `check`.** `load` reads, `check` decides. They are split so `findSlots` can judge hundreds of slots with one query per Policy, not one per slot. `load` gets `{ resourceId, from, to, now, reads }`: the candidate's Resource and range (the stored Booking's on `cancel` and Transition edges; the whole search, `[from, to + duration)`, in `findSlots`). `reads` holds `getBooking` and `listBookings`, as Promises. Plugin data isn't in `reads`; a Plugin's own Policies read its tables. `check` gets the candidate and what `load` returned (`undefined` without `load`); `detail`'s type is inferred from it.
 
 **`appliesTo`.** Action names and Transition edges, at least one. The candidate `check` gets is narrowed to them:
 
@@ -433,12 +446,12 @@ const noShowAfterStart = definePolicy(schema, {
 });
 ```
 
-Edges into `cancelled` belong to `"cancel"`. An undeclared edge, `{ to }` with no declared edge into it, an empty `appliesTo` or the name `availability` is a type error, and `definePolicy` throws on it. Two Policies with one name are a type error, and `createScheduler` throws.
+Edges into `cancelled` belong to `"cancel"`. An undeclared edge, `{ to }` with no declared edge into it or an empty `appliesTo` is a type error, and `definePolicy` throws on it. Policy names are unique across your `policies` and every installed Plugin's (`availability` is taken once `availability()` is installed): a clash is a type error, and `createScheduler` throws.
 
 **`relax`, `waived` and `PolicyViolation`.**
 
 - The Invariants run first. If one fails, its error comes back alone: an overlapping Booking that also breaks a Policy is a `SlotConflict`.
-- Then every applicable Policy runs, relaxed ones included, with `availability` first. Every unrelaxed one that broke is in `PolicyViolation.violations`, each with `detail` typed by its `policy`. Nothing is written, and `also` doesn't run.
+- Then every applicable Policy runs, relaxed ones included: the Plugins' first, in Plugin order (so `availability` first when it's installed first), then yours. Every unrelaxed one that broke is in `PolicyViolation.violations`, each with `detail` typed by its `policy`. Nothing is written, and `also` doesn't run.
 - `relax: [...names]` is typed per Action and per Transition edge, so it lists only the Policies that apply. An unknown name is `InvalidParams` at `["relax", i]`, before any database call. There is no `"all"`: a Policy you add later is never relaxed by old code.
 - With `relax`, the value carries `waived`: the relaxed Policies that actually broke, `[]` when none did. Without `relax`, there is no `waived` key. Log it to see who booked outside hours. On `cancel`, only `alreadyCancelled: false` carries it: a repeat `cancel` runs no Policy and no `also`.
 - `waived`, like `also`, is a reserved name: a Booking Developer Field can't be called `waived`.
@@ -465,6 +478,185 @@ Edges into `cancelled` belong to `"cancel"`. An undeclared edge, `{ to }` with n
 - `load` gets fasti's reads, not your Adapter's `tx`, so it can't read your own tables inside the unit of work. A check on your own data ("this customer's tier allows evenings") belongs in [`also`](#your-writes-in-the-same-transaction-also), vetoing the Action. It won't show in `findSlots`.
 - A Policy is race-free only for the Resource whose lock it runs under. A limit across Resources (sessions per pack) can be overfilled by concurrent bookings on different Resources: make it a guarded update in `also`.
 - A read that fails in `load` is an `AdapterError`. Anything else thrown from `load` or `check` is a bug: the unit rolls back and the promise rejects.
+
+## Plugins
+
+A Plugin extends fasti without forking it: a waitlist, public holidays, a calendar sync, an audit log ([ADR 018](./docs/adr/018-plugins-are-modules-with-generic-storage.md)). You install it in `defineSchema({ plugins })`, and it can bring any of five parts, each optional:
+
+- **Tables**, declared as data with the `column` helpers. Every Adapter stores them, custom ones included, and your table helpers (`recordTables`, `prismaModels`) build them.
+- **Actions**, on `scheduler.<plugin>.<action>`, in both the plain and the Effect forms.
+- **Busy time**: ranges on a Resource that no Booking may overlap.
+- **Policies**: rules about when a Booking change is allowed, which a caller can relax by name.
+- **Hooks**, as `defineHook`'s, run before yours.
+
+`availability()` and `blocks()` are Plugins built this way, with nothing special about them. Plugins are trusted code, like an Adapter: install only ones you'd let write to your database.
+
+**Write one.** `definePlugin` from `@fastijs/scheduler` takes plain async functions; you never need Effect. This one, from [`examples/basic`](./examples/basic/holidays.ts), stores holidays on a Resource:
+
+```typescript
+import { column, definePlugin, ok } from "@fastijs/scheduler";
+import type { PluginResourceId, RecordId } from "@fastijs/scheduler";
+
+export function holidays({ eveHours }: { readonly eveHours: number }) {
+  return definePlugin({
+    name: "holidays", // → scheduler.holidays
+    tables: {
+      // A timed table: fasti adds and owns `id`, `resourceId`, `start` and `end`.
+      holiday: {
+        columns: { name: { required: true, type: column.text() } },
+        timed: true,
+      },
+    },
+    actions: {
+      add: {
+        kind: "write",
+        // Type the params on `run`; PluginResourceId becomes the schema's Resource id type.
+        run: async (
+          params: {
+            readonly resourceId: PluginResourceId;
+            readonly start: Temporal.Instant;
+            readonly end: Temporal.Instant;
+            readonly name: string;
+          },
+          { lock }
+        ) =>
+          // One unit of work under the Resource Lock: the caller's `also` and the Hooks run on it.
+          await lock(params.resourceId, async ({ conflicts, records }) => {
+            // Busy time must not cover a Booking: checking that is this Plugin's job.
+            const hits = await conflicts(params);
+
+            if (hits.length > 0) {
+              return {
+                _tag: "Failed",
+                error: { _tag: "SlotConflict", conflicts: hits },
+              } as const;
+            }
+
+            const holiday = await records.holiday.insert(params);
+
+            return {
+              _tag: "Done",
+              context: { holiday }, // what `also` and the Hooks get
+              value: holiday,
+            } as const;
+          }),
+      },
+      list: {
+        kind: "read",
+        run: async (
+          params: { readonly resourceId: PluginResourceId },
+          { records }
+        ) => ok(await records.holiday.list({ resourceId: params.resourceId })),
+      },
+    },
+    // Busy time: `book` refuses it with SlotConflict { kind: "holiday" }, and findSlots skips it. Nobody can relax it.
+    busy: {
+      kind: "holiday",
+      list: async ({ overlapping, records, resourceId }) =>
+        await records.holiday.list({ overlapping, resourceId }),
+    },
+    // A Policy: no Booking ending within `eveHours` of a holiday. Callers can relax it by name.
+    policies: [
+      {
+        appliesTo: ["book", "reschedule"],
+        check: (
+          _candidate,
+          next: readonly { readonly id: RecordId<"holiday"> }[]
+        ) => (next[0] === undefined ? null : { holiday: next[0].id }),
+        load: async ({ records, resourceId, to }) =>
+          await records.holiday.list({
+            overlapping: { from: to, to: to.add({ hours: eveHours }) },
+            resourceId,
+          }),
+        name: "holidayEve",
+      },
+    ],
+    hooks: [
+      {
+        appliesTo: ["holidays.add"],
+        run: (event) => {
+          if (event.action === "holidays.add") {
+            console.log(`holiday added: ${event.holiday.name}`);
+          }
+        },
+        when: "afterCommit",
+      },
+    ],
+  });
+}
+```
+
+Install it, migrate its table (`recordTables(schema)` includes `holiday`), and its Actions are typed like fasti's own:
+
+```typescript
+const schema = defineSchema({
+  booking: { fields: { customerName: { required: true, type: column.text() } } },
+  plugins: [availability(), holidays({ eveHours: 12 })],
+});
+
+const holiday = await scheduler.holidays.add({ resourceId, start, end, name: "Santo António" });
+// { ok: true, value: { id, resourceId, start, end, name } }, or SlotConflict, Vetoed, AdapterError
+
+await scheduler.book({ ...onTheHoliday, fields }); // SlotConflict: [{ kind: "holiday", id, start, end }]
+await scheduler.book({ ...theEveBefore, fields }); // PolicyViolation: [{ policy: "holidayEve", detail: { holiday } }]
+await scheduler.book({ ...theEveBefore, fields, relax: ["holidayEve"] }); // ok, with `waived`
+```
+
+**Two lanes: busy time and Policies.** A Plugin that says "not then" picks one:
+
+- **Busy time** means *something is already there*. It joins blocking Bookings in the overlap Invariant: `book`, `reschedule` and a Transition into a blocking Status refuse it with `SlotConflict`, tagged with the Plugin's `kind`, and `findSlots` skips it. No caller can relax it. Busy time may overlap other busy time, from the same Plugin or another. `list` is a function over a range, so it can come from a table, as here, or be computed. Blocks are busy time.
+- **A Policy** means *you're not supposed to then*. It runs after the Invariants, like yours, and the caller can relax it by name, see it in `waived`, and get the same answer from `findSlots`. Opening hours are a Policy: `availability()`'s. A Plugin Policy applies to `"book"`, `"reschedule"` or `"cancel"`, never to Transition edges, since a Plugin can't know your Statuses. It runs before your own Policies, in Plugin order.
+
+**`conflicts()`.** Busy time stops new Bookings from landing on it, but nothing stops busy time from landing on an existing Booking except the Plugin itself. Inside `lock`, `conflicts({ start, end })` returns the blocking Bookings in that range, under the Resource Lock; `blocks.create` and `holidays.add` refuse with `SlotConflict` when it isn't empty.
+
+> **A Plugin that writes busy time without calling `conflicts()` can overlap a Booking**, and fasti won't notice: no database constraint spans the two tables. Check that a Plugin you install does it.
+
+**Tables.**
+
+- Every record has a fasti-owned `id` (a UUIDv7, branded per table: `RecordId<"holiday">`, so a holiday id can't pass for a Block's) and `resourceId`. A `timed: true` table also gets `start` and `end`, and `list` takes `overlapping` (half-open), sorted by start, then id. An untimed one is listed by Resource only, sorted by id.
+- Column kinds: `text`, `uuid`, `integer`, `boolean`, `instant`, and for Plugins `date` (`Temporal.PlainDate`), `time` (`Temporal.PlainTime`), `json<T>()` and `dates` (a list of `PlainDate`). An optional column is `null` when unset, and `insert` takes it as `null`.
+- Writes exist only on the `records` inside `lock`; the `records` an Action gets outside it only read. Reads inside `lock` see the unit's own writes.
+- With plain async functions, `records` inside `lock` can `insert`; `update` (compare-and-set), `delete` and `replace` are on the native, Effect API only for now.
+- `tx` inside `lock` is your Adapter's transaction, as `unknown`: an escape hatch for a query the generic verbs don't offer, which ties the Plugin to that ORM.
+- Rename a Plugin table and its columns under `names`, by logical name: `names.tables.holiday`, `names.columns.holiday`.
+
+**Actions.**
+
+- `kind: "write"` Actions write through `lock(resourceId, work)`. `work` returns `Done` (a `value`, and the `context` that `also` and the Hooks get), `NoOp` (nothing changed: no `also`, no Hooks) or `Failed` (a typed `error`; the unit rolls back). The caller's `also`, the Hooks, the retries and `now` work exactly as on `book`. Return what `lock` returns, or `fail(error)` to refuse before taking the lock.
+- `kind: "read"` Actions get `records` and no lock, and return `ok(value)` or `fail(error)`. They run no `also` and no Hooks.
+- An Action's errors are its own typed ones, plus `Vetoed` (from `also`) and `AdapterError`. A throw is a bug: the unit rolls back and the promise rejects.
+- `run` gets a `signal` too, aborted when an Effect caller interrupts: a unit then rolls back, but your code between `lock` calls runs on.
+
+**Hooks.** A Plugin Hook applies to `"book"`, `"reschedule"`, `"cancel"`, its own write Actions (`"holidays.add"`), or `"*"`, which also covers Transitions. Narrow on `event.action` to read the Action's context. An in-transaction Hook gets `records` with writes on the unit, so it writes atomically on every Adapter. Your own `defineHook` can target any installed Plugin's write Actions, and `"*"` includes them.
+
+**Names.** Plugin names, table names and Policy names must each be unique. A Plugin can't take a scheduler key (`book`, `cancel`, `findSlots`, …), a table can't be called `booking`, and a column can't be `id`, `resourceId`, `start` or `end`. A clash is a type error, and throws in `defineSchema` (Policies: in `createScheduler`).
+
+**Natively, in Effect.** `definePlugin` from `@fastijs/scheduler/effect` takes the same definition with Effects instead of Promises: `run`, `work`, `load` and `list` return Effects, `lock` is an Effect, and expected failures go through `Effect.fail`. Nothing crosses between Promises and Effect, so services, cancellation and typed errors flow straight through. `availability()` and `blocks()` are written this way. Both styles build the same Plugin value, and its Actions appear in both scheduler forms.
+
+```typescript
+import { definePlugin } from "@fastijs/scheduler/effect";
+
+lock(params.resourceId, ({ conflicts, records }) =>
+  Effect.gen(function* () {
+    const hits = yield* conflicts(params);
+    if (hits.length > 0) return yield* Effect.fail({ _tag: "SlotConflict", conflicts: hits } as const);
+    const holiday = yield* records.holiday.insert(params);
+    return { _tag: "Done", context: { holiday }, value: holiday } as const;
+  })
+);
+```
+
+### Migrating from `0.6`
+
+The tables don't change, so there is no database migration: `availability()` and `blocks()` build the same tables, columns and foreign keys as `0.6`. The code changes:
+
+- **Opening hours are a Plugin.** Add `plugins: [availability()]` to keep `scheduler.availability`, the `availability` Policy and `relax: ["availability"]`. Without it, everything outside Bookings and busy time is bookable.
+- **`block: { fields }` becomes `blocks({ fields })`** in `plugins`. `scheduler.blocks`, `kind: "block"` and the `blocks.*` Hook targets stay.
+- **Drizzle:** `blockTable(schema)` and `availabilityRuleTable(schema)` become `recordTables(schema).block` and `.availabilityRule` (same `references` option). The old names still work in `0.7`, deprecated.
+- **Custom Adapters:** replace `getRules`, `replaceRules` and the Block verbs with the [`records` group](#writing-a-custom-adapter), and `"blocks"` with `"records"` in `Adapter<Tx, …>`.
+- **Policies:** `load`'s `reads` no longer has `getRules` or `listBlocks`, and nothing replaces them yet: a Plugin's Policies read only its own tables. A Policy of yours that read rules or Blocks has no equivalent in `0.7`. The nearest is a Veto in `also`, reading your own database, which can't be relaxed and doesn't show in `findSlots`.
+- **`definePolicy`** no longer reserves the name `availability`; names are unique across your Policies and the installed Plugins'.
+- **The Conformance Suite** runs the Blocks cases when your test schema installs `blocks()`, the rule cases (new tag `availability`) when it installs `availability()`, and the new `records` cases when it installs `conformancePlugin`. Rules used to be tested on every schema.
 
 ## Not yet
 
@@ -602,7 +794,7 @@ See [ADR 005](./docs/adr/005-dst-policy.md) for the rationale.
 
 ### Defining your schema
 
-`defineSchema` is the one place you name your tables, columns and stored Status values, pick the Resource id type and declare Developer Fields. Every option has a default.
+`defineSchema` is the one place you name your tables, columns and stored Status values, pick the Resource id type, declare Developer Fields and install [Plugins](#plugins). Every option has a default.
 
 ```typescript
 import { column, defineSchema } from "@fastijs/scheduler";
@@ -614,8 +806,9 @@ export const schema = defineSchema({
   booking: {
     fields: { customerId: { type: column.uuid(), required: true } },
   },
+  plugins: [availability()],
   names: {
-    tables: { booking: "appointments" },
+    tables: { booking: "appointments", availabilityRule: "hours" }, // Plugin tables by logical name
     columns: { booking: { start: "starts_at", end: "ends_at" } },
     statuses: { booked: "CONFIRMED", cancelled: "CANCELLED" },
   },
@@ -629,14 +822,15 @@ Build your tables from the schema and let your own drizzle-kit migrate them; fas
 ```typescript
 import { pgTable, integer } from "drizzle-orm/pg-core";
 import {
-  availabilityRuleTable,
   bookingTable,
   drizzleAdapter,
+  recordTables,
 } from "@fastijs/scheduler/drizzle/pg";
 
 export const staff = pgTable("staff", { id: integer().primaryKey() });
 export const appointments = bookingTable(schema, { references: () => staff.id });
-export const hours = availabilityRuleTable(schema, { references: () => staff.id });
+// One Drizzle table per Plugin table, by logical name: here `availabilityRule`.
+export const { availabilityRule } = recordTables(schema, { references: () => staff.id });
 
 const adapter = drizzleAdapter(db);
 ```
@@ -651,21 +845,21 @@ Then paste each statement from `backstopSql(schema)` into the generated file, se
 
 ### Drizzle on SQLite
 
-The same names and shapes as `drizzle/pg`, so moving between the two is an import change. Instants are stored as integer milliseconds, recurrence and exceptions as JSON text, and Status as `text` with a `CHECK` over its stored values.
+The same names and shapes as `drizzle/pg`, so moving between the two is an import change. Instants are stored as integer milliseconds, Plugin `date` and `time` columns as ISO text, `json` and `dates` columns as JSON text, and Status as `text` with a `CHECK` over its stored values.
 
 ```typescript
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { integer, sqliteTable } from "drizzle-orm/sqlite-core";
 import {
-  availabilityRuleTable,
   bookingTable,
   drizzleAdapter,
+  recordTables,
 } from "@fastijs/scheduler/drizzle/sqlite";
 
 export const staff = sqliteTable("staff", { id: integer().primaryKey() });
 export const appointments = bookingTable(schema, { references: () => staff.id });
-export const hours = availabilityRuleTable(schema, { references: () => staff.id });
+export const { availabilityRule } = recordTables(schema, { references: () => staff.id });
 
 const db = drizzle({ client: createClient({ url: "file:app.db" }) });
 const adapter = drizzleAdapter(db);
@@ -682,7 +876,7 @@ const adapter = drizzleAdapter(db);
 
 ### Prisma on Postgres
 
-Experimental while Prisma 8 is a release candidate. Postgres only. Spread `prismaModels` into your contract and let Prisma's tooling create the tables; fasti never runs DDL.
+Experimental while Prisma 8 is a release candidate. Postgres only. Spread `prismaModels` into your contract and let Prisma's tooling create the tables; fasti never runs DDL. It includes a model for every Plugin table.
 
 ```typescript
 import { defineContract } from "@prisma/orm-postgres/contract-builder";
@@ -719,26 +913,32 @@ If your tables differ from fasti's by more than names, write your own Adapter ag
 ```typescript
 import { defineAdapter } from "@fastijs/scheduler/adapter";
 
-export const myAdapter = defineAdapter<MyTx>((schema) => ({
+export const myAdapter = defineAdapter<MyTx, "records">((schema) => ({
   getBooking: async (id) => /* BookingRecord | null */,
   listBookings: async ({ resourceId, overlapping }) => /* sorted by start, then id */,
-  getRules: async (resourceId) => /* RuleRecord[] */,
+  // The "records" group: every Plugin table, by logical name (schema.tables).
+  getRecord: async (table, id) => /* StoredRecord | null */,
+  listRecords: async (table, { resourceId, overlapping }) => /* timed: by start, then id; untimed: by id */,
   withResourceLock: async (resourceId, work) =>
     db.transaction(async (tx) => {
       await lock(tx, resourceId);
       return work({
         tx,
-        getBooking, listBookings, getRules, // the same reads, through tx
+        getBooking, listBookings, getRecord, listRecords, // the same reads, through tx
         insertBooking: async (booking) => /* { ok: true } or { ok: false, reason: "conflict" } */,
         updateBooking: async ({ expected, changes }) => /* compare-and-set; "changed" if the row moved on */,
-        replaceRules: async ({ resourceId, rules }) => { /* replace the whole set */ },
-        // With `defineAdapter<MyTx, "blocks">`: getBlock and listBlocks here and above, plus insertBlock, updateBlock, deleteBlock.
+        insertRecord: async (table, record) => { /* fasti minted record.id */ },
+        updateRecord: async (table, { expected, changes }) => /* compare-and-set; "changed" */,
+        deleteRecord: async (table, id) => /* { ok: true } or { ok: false, reason: "missing" } */,
+        replaceRecords: async (table, { resourceId, records }) => { /* replace that Resource's rows */ },
       });
     }),
 }));
 ```
 
-Expected outcomes (`conflict`, `changed`) are returned as values; anything else rejects with an `Error`, carrying your driver's error as `cause` when the driver failed. Records use logical names (`start`, `"booked"`); map them to your columns and stored values inside the Adapter.
+The `"records"` group stores every Plugin's tables, present and future, so you write it once. A schema whose Plugins declare tables (`availability()`, `blocks()`, …) needs it, and the types enforce it; a schema with none doesn't. `schema.tables` lists each table's physical name, whether it's `timed` (fasti-owned `start` and `end`), and its columns with their kinds: `text`, `uuid`, `integer`, `boolean`, `instant`, `date` (`Temporal.PlainDate`), `time` (`Temporal.PlainTime`), `json` and `dates` (a list of `PlainDate`). Compare `json` values by content, not by key order.
+
+Expected outcomes (`conflict`, `changed`, `missing`) are returned as values; anything else rejects with an `Error`, carrying your driver's error as `cause` when the driver failed. Records use logical names (`start`, `"booked"`); map them to your columns and stored values inside the Adapter.
 
 ### Running the Conformance Suite
 
@@ -767,7 +967,7 @@ testAdapter({
 });
 ```
 
-It registers one test per case, including the concurrency cases that catch a missing or broken lock, and the Hook cases that prove an in-transaction Hook's throw rolls the write back and a transient retry runs after-commit Hooks once. To run a subset, filter `conformanceCases` by `tags` and call `runCase` yourself.
+It registers one test per case, including the concurrency cases that catch a missing or broken lock, the `records` cases (round-trips of every column kind, half-open `overlapping`, compare-and-set, rollback) when your test schema installs `conformancePlugin` from `@fastijs/scheduler/testing` (do, if you implement `"records"`), the Blocks and availability cases when it installs `blocks()` and `availability()`, and the Hook cases that prove an in-transaction Hook's throw rolls the write back and a transient retry runs after-commit Hooks once. To run a subset, filter `conformanceCases` by `tags` and call `runCase` yourself.
 
 ## Architecture Decisions
 

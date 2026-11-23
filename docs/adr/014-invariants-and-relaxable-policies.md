@@ -84,3 +84,13 @@ Checkpoint 7 (`0.4`) ships `definePolicy`, `policies`, `relax`, `waived` and `no
 ## Amendment (2026-11-19): `policies` is optional
 
 From checkpoint 9a (`0.6`), `policies` can be left out of `createScheduler` and `Scheduler.layer`, and the Effect form's `P` defaults to `readonly []`. Requiring `[]` didn't make leaving out `notice` a conscious choice: a developer who doesn't know about `notice` types `[]` to silence the compiler. The docs carry that warning instead. `policies` and the new optional `hooks` (ADR 017) are treated alike. Past starts are still bookable unless `notice` is registered.
+
+## Amendment (2026-11-23): Plugins feed the overlap Invariant and bring Policies
+
+From checkpoint 9b (`0.7`), with Plugins (ADR 018):
+
+- **The overlap Invariant** is "no overlap with a blocking Booking or busy time on the same Resource". Busy time is what installed Plugins report through `busy` (Blocks among them), tagged in `SlotConflict` by `kind`. There are still four Invariants, and Plugins can't add any. Busy time may overlap busy time. The 2026-11-16 amendment's Block wording is this rule's first case.
+- **`availability` is no longer always present.** It's the Policy of the `availability()` Plugin, and applies only when that Plugin is installed. Without it, every time outside Bookings and busy time is bookable, and `relax: ["availability"]` is a type error. Nothing is on by default any more.
+- **Plugin Policies** join the same pass. They run before the app's, in Plugin order, so `availability` still comes first when installed first. They're typed into `relax`, `waived` and `PolicyViolation` like the app's. They target `book`, `reschedule` and `cancel` only, never Transition edges, and their `load` reads the Plugin's own tables through `records`.
+- **Names** are unique across the app's Policies and every installed Plugin's: a clash is a type error and throws in `createScheduler`. `definePolicy` no longer reserves `availability`.
+- **`load`'s `reads`** lose `getRules` and `listBlocks`, leaving `getBooking` and `listBookings`. An app Policy can't read Plugin tables yet.

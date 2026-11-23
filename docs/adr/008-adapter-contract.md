@@ -62,3 +62,16 @@ The contract now exists as types in `@fastijs/scheduler/adapter`. Building it se
 ## Amendment (2026-11-19): Plugin data uses one generic verb group
 
 ADR 018 adds one generic verb group for Plugin data, in records that each belong to one Resource, so "domain verbs only" no longer holds for Plugin data. Bookings keep their domain verbs. Availability rules and Blocks move to the generic group when they become first-party Plugins in checkpoint 9b.
+
+## Amendment (2026-11-23): the `records` group, as built in checkpoint 9b
+
+From `0.7`, Plugin data goes through one verb group, `"records"`, keyed by the table's logical name. "Domain verbs only" now holds for Bookings alone.
+
+- **Reads, on both handles:** `getRecord(table, id)` and `listRecords(table, { resourceId, overlapping? })`. `overlapping` is half-open and only ever passed for timed tables. A timed table lists sorted by `start`, then `id`; an untimed one by `id`.
+- **Writes, on the locked handle only:** `insertRecord(table, record)`, with the id minted by fasti; `updateRecord(table, { expected, changes })`, compare-and-set, returning `changed` when the stored record differs or is gone (JSON compares by value, not key order); `deleteRecord(table, id)`, returning `missing`; and `replaceRecords(table, { resourceId, records })`, which replaces one Resource's rows only.
+- **Records cross the seam as `StoredRecord`:** logical column names, values in fasti's types (`Temporal.Instant`, `PlainDate`, `PlainTime`, JSON, lists of dates). The Adapter maps them to physical names and encodings from `schema.tables`.
+- **Removed:** the `"blocks"` group (`getBlock`, `listBlocks`, `insertBlock`, `updateBlock`, `deleteBlock`) and the base `getRules`/`replaceRules`. Availability rules and Blocks are now records of the `availability()` and `blocks()` Plugins.
+- **Opting in:** an Adapter declares `Adapter<Tx, "records">`, and `GroupsOf<S>` requires it exactly when an installed Plugin declares tables. A custom Adapter that implements it once runs every Plugin, present and future.
+- **Conformance:** a `records` case group covers each verb on `conformancePlugin`'s timed and untimed tables, every column kind, sort order, compare-and-set, a rejected unit leaving no writes, and concurrent locked writes serialising. The Blocks and rule cases stay, now run through the Plugins.
+
+This removes the cost in the Consequences above: a new entity no longer widens the contract.
