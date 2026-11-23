@@ -165,7 +165,6 @@ export const lockCases: readonly ConformanceCase[] = [
       for (let rep = 0; rep < repetitions; rep += 1) {
         const slot = slotFor(rep);
 
-        // oxlint-disable-next-line no-await-in-loop -- each repetition is its own race.
         const results = await Promise.all(
           Array.from(
             { length: n },
@@ -185,7 +184,6 @@ export const lockCases: readonly ConformanceCase[] = [
 
         // Count successes, not only rows: a copy-and-swap store without the lock keeps just the last writer.
         expect(results.filter((r) => r === "won")).toHaveLength(1);
-        // oxlint-disable-next-line no-await-in-loop -- read back this repetition's slot.
         expect(await occupiedAt(ctx, r0, slot)).toHaveLength(1);
       }
     },
@@ -204,7 +202,6 @@ export const lockCases: readonly ConformanceCase[] = [
           status: "booked",
         });
 
-        // oxlint-disable-next-line no-await-in-loop -- each repetition is its own race.
         await insert(adapter, moving);
 
         const slot = slotFor(rep);
@@ -216,7 +213,6 @@ export const lockCases: readonly ConformanceCase[] = [
         >;
 
         // Only the destination is locked. The reschedule sits at a different place in each race.
-        // oxlint-disable-next-line no-await-in-loop -- each repetition is its own race.
         const results = await Promise.all(
           Array.from(
             { length: n },
@@ -241,7 +237,6 @@ export const lockCases: readonly ConformanceCase[] = [
         );
 
         expect(results.filter((r) => r === "won")).toHaveLength(1);
-        // oxlint-disable-next-line no-await-in-loop -- read back this repetition's slot.
         expect(await occupiedAt(ctx, to, slot)).toHaveLength(1);
       }
     },
@@ -262,7 +257,6 @@ export const lockCases: readonly ConformanceCase[] = [
         };
 
         // The Block write sits at a different place in each race.
-        // oxlint-disable-next-line no-await-in-loop -- each repetition is its own race.
         const results = await Promise.all(
           Array.from(
             { length: n },
@@ -291,7 +285,6 @@ export const lockCases: readonly ConformanceCase[] = [
 
         expect(results.filter((r) => r === "won")).toHaveLength(1);
 
-        // oxlint-disable-next-line no-await-in-loop -- read back this repetition's slot.
         expect(await occupiedAt(ctx, r0, slot)).toHaveLength(1);
       }
     },

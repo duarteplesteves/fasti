@@ -15,6 +15,7 @@ import type {
 } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdSchema } from "../test-utils/conformance-schemas.js";
+import { refuse } from "../test-utils/refuse.js";
 import { unwrap } from "../test-utils/results.js";
 import { mintBookingId } from "./booking-id.js";
 import type { TransitionCandidate } from "./policy.js";
@@ -42,12 +43,6 @@ const slot = {
   resourceId: "room",
   start: Temporal.Instant.from("2030-06-03T09:00:00Z"),
 } as const;
-
-/** A verb that must never be called. */
-// oxlint-disable-next-line require-await -- a verb must return a promise.
-async function refuse(): Promise<never> {
-  throw new Error("no Adapter call expected");
-}
 
 /** Breaks on every edge into `missed`. */
 const intoMissed = definePolicy(schema, {

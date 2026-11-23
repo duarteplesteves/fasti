@@ -18,6 +18,7 @@ import {
 } from "vitest";
 
 import { defineAdapter } from "../../adapter/contract.js";
+import { mintBookingId } from "../../framework/booking-id.js";
 import { createScheduler } from "../../framework/create-scheduler.js";
 import { noOverlapConstraint } from "../../schema/backstop-sql.js";
 import type { AnySchema } from "../../schema/define-schema.js";
@@ -36,7 +37,7 @@ import {
 import { postgresUrl, testDatabase } from "../../test-utils/postgres.js";
 import type { TestDatabase } from "../../test-utils/postgres.js";
 import { unwrap } from "../../test-utils/results.js";
-import { bookingId, insert, newBooking } from "../../testing/fixtures.js";
+import { insert, newBooking } from "../../testing/fixtures.js";
 import { conformanceCases, runCase, testAdapter } from "../../testing/index.js";
 import type { TestAdapterParams, TxProbe } from "../../testing/index.js";
 import { encodeBooking } from "../codec.js";
@@ -148,7 +149,6 @@ function suite<S extends AnySchema>(
       beforeAll(async () => {
         // As a developer would: backstopSql in a custom migration after drizzle-kit's own.
         for (const statement of backstopSql(schema)) {
-          // oxlint-disable-next-line no-await-in-loop -- in order: the extension before the constraint that needs it.
           await database.db.execute(sql.raw(statement));
         }
       });
@@ -177,7 +177,7 @@ function suite<S extends AnySchema>(
           database.db
             .insert(booking)
             .values(
-              encodeBooking(statusCodec(schema), { ...b, id: bookingId() })
+              encodeBooking(statusCodec(schema), { ...b, id: mintBookingId() })
             )
         ).rejects.toMatchObject({ cause: { code: "23P01", constraint } });
       });
@@ -304,7 +304,6 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
       });
 
       for (const resourceId of uuidIdResources) {
-        // oxlint-disable-next-line no-await-in-loop -- two Resources, setup only.
         await scheduler.availability.set({
           resourceId,
           rules: [
@@ -382,7 +381,6 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
       const reads = drizzleAdapter(database.db)(uuidIdSchema);
 
       for (const result of results) {
-        // oxlint-disable-next-line no-await-in-loop -- two results.
         await expect(
           reads.getBooking(unwrap(result).id)
         ).resolves.not.toBeNull();
@@ -483,7 +481,6 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
 
     beforeAll(async () => {
       for (const statement of backstopSql(schema)) {
-        // oxlint-disable-next-line no-await-in-loop -- in order: the extension before the constraint that needs it.
         await database.db.execute(sql.raw(statement));
       }
     });

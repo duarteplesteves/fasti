@@ -1,4 +1,3 @@
-/* eslint-disable vitest/no-standalone-expect */
 import { test } from "@fast-check/vitest";
 import { array, integer, nat, record, subarray } from "fast-check";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
@@ -31,6 +30,7 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { propConfig } from "../test-utils/prop-config.js";
+import { refuse } from "../test-utils/refuse.js";
 import { unwrap } from "../test-utils/results.js";
 import { mintBookingId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
@@ -78,11 +78,6 @@ async function seeded(
   );
 
   return { booking, reads: adapter(schema), scheduler };
-}
-
-/** Every verb of an Adapter that must never be called. */
-async function refuse(): Promise<never> {
-  return await Promise.reject(new Error("no Adapter call expected"));
 }
 
 /** Wrap `inner`, recording the Resource of every `withResourceLock`. */
@@ -497,7 +492,6 @@ describe("reschedule", () => {
             const id = mintBookingId();
 
             ids.push(id);
-            // oxlint-disable-next-line no-await-in-loop -- in order, so ids[0] is the blocking one.
             await locked.insertBooking({
               end: b.end,
               id,

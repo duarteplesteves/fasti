@@ -13,6 +13,7 @@ import {
 } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import type { AnySchema } from "../schema/define-schema.js";
+import { refuse } from "../test-utils/refuse.js";
 import { unwrap } from "../test-utils/results.js";
 import { mintBookingId } from "./booking-id.js";
 import type { ConflictOf } from "./occupancy.js";
@@ -48,12 +49,6 @@ function errorOf<E>(result: Result<unknown, E>): E {
   assert(!result.ok, "expected an error");
 
   return result.error;
-}
-
-/** A verb that must never be called. */
-// oxlint-disable-next-line require-await -- a verb must return a promise.
-async function refuse(): Promise<never> {
-  throw new Error("no Adapter call expected");
 }
 
 /** Every verb refuses: any Adapter call fails the test. */
@@ -173,7 +168,6 @@ describe("blocks.create and blocks.list", () => {
     });
 
     for (const end of [at(1), at(0)]) {
-      // oxlint-disable-next-line no-await-in-loop -- two independent cases, in order.
       const result = await scheduler.blocks.create({
         ...reason,
         end,
@@ -249,7 +243,6 @@ describe("blocks.create and blocks.list", () => {
     ] as const;
 
     for (const [start, end] of ranges) {
-      // oxlint-disable-next-line no-await-in-loop -- in order: each case sees the Blocks before it.
       const block = await scheduler.blocks.create({
         ...reason,
         end,
@@ -742,7 +735,6 @@ describe("blocks.update", () => {
       { id: block.id },
       { ...reason, end: at(2), id: block.id, start: at(1) },
     ]) {
-      // oxlint-disable-next-line no-await-in-loop -- independent cases, in order.
       expect(unwrap(await scheduler.blocks.update(params))).toStrictEqual(
         block
       );

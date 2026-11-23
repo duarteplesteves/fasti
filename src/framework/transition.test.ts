@@ -12,6 +12,7 @@ import {
 import type { Scheduler, TransitionParams } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdSchema } from "../test-utils/conformance-schemas.js";
+import { refuse } from "../test-utils/refuse.js";
 import { unwrap } from "../test-utils/results.js";
 import { mintBookingId } from "./booking-id.js";
 
@@ -71,16 +72,11 @@ async function seeded(adapter: Adapter<Tx, "records"> = memoryAdapter()) {
   return { booking, reads: adapter(schema), scheduler };
 }
 
-// oxlint-disable-next-line require-await -- a verb must return a promise.
-async function reject(): Promise<never> {
-  throw new Error("no Adapter call expected");
-}
-
-/** A memory Adapter whose unlocked read and lock both reject: any Adapter call shows up as an AdapterError. */
+/** A memory Adapter whose unlocked read and lock both refuse: any Adapter call shows up as an AdapterError. */
 const refusing = defineAdapter<Tx, "records">((s) => ({
   ...memoryAdapter()(s),
-  getBooking: reject,
-  withResourceLock: reject,
+  getBooking: refuse,
+  withResourceLock: refuse,
 }));
 
 describe("transition", () => {

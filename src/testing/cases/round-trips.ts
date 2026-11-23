@@ -1,7 +1,8 @@
 import { expect } from "vitest";
 
+import { mintBookingId } from "../../framework/booking-id.js";
 import type { ConformanceCase } from "../conformance-case.js";
-import { bookingId, insert, newBooking } from "../fixtures.js";
+import { insert, newBooking } from "../fixtures.js";
 
 /** Save and read back. */
 export const roundTripCases: readonly ConformanceCase[] = [
@@ -58,7 +59,7 @@ export const roundTripCases: readonly ConformanceCase[] = [
   {
     name: "getBooking of an unknown id returns null",
     async run({ adapter }) {
-      expect(await adapter.getBooking(bookingId())).toBeNull();
+      expect(await adapter.getBooking(mintBookingId())).toBeNull();
     },
     tags: [],
   },
