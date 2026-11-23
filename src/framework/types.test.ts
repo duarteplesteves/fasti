@@ -341,8 +341,8 @@ describe("Blocks types", () => {
     expectTypeOf<UpdateBlockParams<Reason>>().not.toHaveProperty("resourceId");
   });
 
-  it("types blocks()' table by its fields, and leaves fasti's own `block` null", () => {
-    expectTypeOf(bareBlockSchema.block).toEqualTypeOf<null>();
+  it("types blocks()' table by its fields; the schema has no `block` of its own", () => {
+    expectTypeOf(bareBlockSchema).not.toHaveProperty("block");
     expectTypeOf(
       blocks({ fields: {} }).tables.block.columns
     ).toEqualTypeOf<Bare>();

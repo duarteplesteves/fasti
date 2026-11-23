@@ -87,7 +87,6 @@ describe("book", () => {
     const adapter = defineAdapter<undefined, "records">(() => ({
       getRecord: refuse,
       getBooking: refuse,
-      getRules: refuse,
       listRecords: refuse,
       listBookings: refuse,
       withResourceLock: refuse,

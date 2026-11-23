@@ -8,7 +8,7 @@ import type {
   TableNamesOf,
 } from "./table.js";
 
-/** A Developer Field: an extra Booking or Block column the developer declares. */
+/** A Developer Field: an extra Booking column the developer declares. */
 export interface FieldDef {
   /** The column type. */
   readonly type: AnyColumn;
@@ -21,28 +21,8 @@ export type Fields = Readonly<Record<string, FieldDef>>;
 
 const BOOKING_COLUMNS = ["id", "resourceId", "start", "end", "status"] as const;
 
-const AVAILABILITY_RULE_COLUMNS = [
-  "id",
-  "resourceId",
-  "recurrence",
-  "windowStart",
-  "windowEnd",
-  "timezone",
-  "effectiveFrom",
-  "effectiveTo",
-  "exceptions",
-] as const;
-
-const BLOCK_COLUMNS = ["id", "resourceId", "start", "end"] as const;
-
 /** fasti's own Booking columns, by logical name. */
 export type BookingColumn = (typeof BOOKING_COLUMNS)[number];
-
-/** fasti's own Block columns, by logical name. */
-export type BlockColumn = (typeof BLOCK_COLUMNS)[number];
-
-/** fasti's own AvailabilityRule columns, by logical name. */
-export type AvailabilityRuleColumn = (typeof AVAILABILITY_RULE_COLUMNS)[number];
 
 /** The Statuses every schema has. */
 export type BaseStatus = "booked" | "cancelled";
@@ -96,7 +76,6 @@ type DistinctStored<N, St extends string> = {
  *
  * @typeParam R - The Resource id column.
  * @typeParam F - The Developer Fields.
- * @typeParam B - The Block's Developer Fields, or `null` for a schema without Blocks.
  * @typeParam D - The declared Statuses beyond the base.
  * @typeParam T - The declared Transitions.
  * @typeParam I - The Statuses `book` may create a Booking in.
@@ -106,7 +85,6 @@ type DistinctStored<N, St extends string> = {
 export interface DefineSchemaParams<
   R extends ResourceIdColumn,
   F extends Fields,
-  B extends Fields | null = null,
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Statuses" is exactly `{}`.
   D extends StatusDecls = Record<never, never>,
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Transitions" is exactly `{}`.
@@ -134,26 +112,18 @@ export interface DefineSchemaParams<
     readonly initial?: I &
       NoInfer<readonly [StatusesOf<D>, ...StatusesOf<D>[]]>;
   };
-  /** Declare Blocks, with their Developer Fields (`{}` for none); absent, the schema has no Blocks. A name that collides with a Block column is a type error. */
-  readonly block?: { readonly fields: B };
   /** The Plugins, from `definePlugin`; their Actions appear on `scheduler.<name>`. Two with one name, one named after a scheduler key (`book`, …), or two tables with one name (or one named `booking`) is a type error. */
   readonly plugins?: Ps & InstallablePlugins<Ps>;
   /** Physical names; each defaults to its logical name, and names of one kind must be distinct. A Plugin table is named by its logical name. */
   readonly names?: {
     readonly tables?: {
       readonly booking?: string;
-      readonly availabilityRule?: string;
-      readonly block?: string;
       // oxlint-disable-next-line typescript/no-generated-empty-object-type -- `{}` without Plugin tables.
     } & Partial<Record<NoInfer<TableNamesOf<Ps>>, string>>;
     readonly columns?: {
       readonly booking?: Partial<
         Record<BookingColumn | NoInfer<keyof F>, string>
       >;
-      readonly availabilityRule?: Partial<
-        Record<AvailabilityRuleColumn, string>
-      >;
-      readonly block?: Partial<Record<BlockColumn | NoInfer<keyof B>, string>>;
     } & {
       readonly [K in NoInfer<TableNamesOf<Ps>>]?: Partial<
         Record<ColumnNamesOf<TableIn<Ps, K>>, string>
@@ -183,20 +153,12 @@ export type ColumnNamesOf<T extends TableDef> =
   | (T["timed"] extends true ? "start" | "end" : never)
   | (keyof T["columns"] & string);
 
-/** Refuses a Block Developer Field named after a Block column, or `also` (reserved). Apart from `block`, so `fields: {}` still infers B (an intersection there drops the inference). */
-interface BlockFieldGuard {
-  readonly block?: {
-    readonly fields: Partial<Readonly<Record<BlockColumn | "also", never>>>;
-  };
-}
-
 /**
  * A resolved schema: every default filled in, so nothing downstream handles a missing option.
  *
  * @typeParam R - The Resource id column.
  * @typeParam F - The Developer Fields.
  * @typeParam St - The Statuses.
- * @typeParam B - The Block's Developer Fields, or `null` for a schema without Blocks.
  * @typeParam Tr - The resolved Transition table.
  * @typeParam In - The Statuses `book` may create a Booking in.
  * @typeParam Ps - The installed Plugins.
@@ -205,7 +167,6 @@ export interface Schema<
   R extends ResourceIdColumn = ResourceIdColumn,
   F extends Fields = Fields,
   St extends string = BaseStatus,
-  B extends Fields | null = null,
   Tr extends Transitions<St> = Transitions<St>,
   In extends St = Extract<St, "booked">,
   Ps extends readonly Plugin[] = readonly [],
@@ -214,8 +175,6 @@ export interface Schema<
   readonly resource: { readonly idType: R };
   /** The Developer Fields. */
   readonly booking: { readonly fields: F };
-  /** The Block's Developer Fields; `null`: this schema has no Blocks. */
-  readonly block: B extends Fields ? { readonly fields: B } : null;
   /** Each Status: whether it blocks the slot, and its stored value. */
   readonly statuses: Readonly<
     Record<St, { readonly blocking: boolean; readonly stored: string }>
@@ -230,19 +189,10 @@ export interface Schema<
   readonly names: {
     readonly tables: {
       readonly booking: string;
-      readonly availabilityRule: string;
-      /** Resolved even without Blocks, and then unused. */
-      readonly block: string;
       // oxlint-disable-next-line typescript/no-generated-empty-object-type -- `{}` without Plugin tables.
     } & Readonly<Record<TableNamesOf<Ps>, string>>;
     readonly columns: {
       readonly booking: Readonly<Record<BookingColumn | keyof F, string>>;
-      readonly availabilityRule: Readonly<
-        Record<AvailabilityRuleColumn, string>
-      >;
-      readonly block: Readonly<
-        Record<BlockColumn | (B extends Fields ? keyof B : never), string>
-      >;
     } & Readonly<Record<TableNamesOf<Ps>, Readonly<Record<string, string>>>>;
   };
 }
@@ -252,7 +202,6 @@ export type AnySchema = Schema<
   ResourceIdColumn,
   Fields,
   string,
-  Fields | null,
   Transitions<string>,
   string,
   readonly Plugin[]
@@ -274,16 +223,6 @@ export type TransitionEdge<S extends AnySchema> = {
         readonly to: Exclude<S["transitions"][K][number], "cancelled">;
       };
 }[keyof S["statuses"] & string];
-
-/** A schema that declares Blocks, for use as a constraint. */
-export type BlockSchema = AnySchema & {
-  readonly block: { readonly fields: Fields };
-};
-
-/** Whether a schema declares Blocks. */
-export type HasBlocks<S extends AnySchema> = [S["block"]] extends [null]
-  ? false
-  : true;
 
 function physicalNames<K extends PropertyKey>(
   logical: readonly K[],
@@ -485,7 +424,6 @@ function resolveLifecycle(
  *
  * @typeParam R - The Resource id column; defaults to `column.text()`.
  * @typeParam F - The Developer Fields.
- * @typeParam B - The Block's Developer Fields; `null` (no Blocks) when `block` is absent.
  * @typeParam D - The declared Statuses beyond the base.
  * @typeParam T - The declared Transitions.
  * @typeParam I - The initial Statuses; `["booked"]` when `initial` is absent.
@@ -498,7 +436,6 @@ export function defineSchema<
   R extends ResourceIdColumn = Column<"text", string>,
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no Developer Fields" is exactly `{}`.
   F extends Fields = Record<never, never>,
-  B extends Fields | null = null,
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Statuses" is exactly `{}`.
   const D extends StatusDecls = Record<never, never>,
   // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Transitions" is exactly `{}`.
@@ -508,12 +445,11 @@ export function defineSchema<
   const N = Record<never, never>,
   const Ps extends readonly Plugin[] = readonly [],
 >(
-  params: DefineSchemaParams<R, F, B, D, T, I, N, Ps> & BlockFieldGuard
+  params: DefineSchemaParams<R, F, D, T, I, N, Ps>
 ): Schema<
   R,
   F,
   StatusesOf<D>,
-  B,
   ResolveTransitions<T, StatusesOf<D>>,
   I[number] & StatusesOf<D>,
   Ps
@@ -527,7 +463,6 @@ export function defineSchema<
   // SAFETY: F falls back to its default, no fields, exactly when `fields` is absent.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above, for F.
   const fields = (params.booking?.fields ?? {}) as F;
-  const blockFields = params.block?.fields ?? {};
   // SAFETY: Ps falls back to its default, no Plugins, exactly when `plugins` is absent.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above, for Ps.
   const plugins = (params.plugins ?? []) as Ps;
@@ -535,12 +470,11 @@ export function defineSchema<
   checkPlugins(plugins);
 
   assertNotReserved("Booking", fields, ["also", "waived"]);
-  assertNotReserved("Block", blockFields, ["also"]);
 
   // SAFETY: resolveLifecycle has an entry for every St, adds booked → cancelled, and checks that transitions and initial name only St.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the Status names are only known at runtime.
   const lifecycle = resolveLifecycle(params.booking, names?.statuses) as Pick<
-    Schema<R, F, St, B, ResolveTransitions<T, St>, I[number] & St>,
+    Schema<R, F, St, ResolveTransitions<T, St>, I[number] & St>,
     "initial" | "statuses" | "transitions"
   >;
 
@@ -549,64 +483,25 @@ export function defineSchema<
     names?.columns?.booking
   );
 
-  const ruleColumns = physicalNames(
-    AVAILABILITY_RULE_COLUMNS,
-    names?.columns?.availabilityRule
-  );
-
-  // SAFETY: the keys are the Block columns plus B's field names, exactly the declared key type.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- B's keys are only known at runtime.
-  const blockColumns = physicalNames<string>(
-    [...BLOCK_COLUMNS, ...Object.keys(blockFields)],
-    names?.columns?.block
-  ) as Schema<R, F, St, B>["names"]["columns"]["block"];
-
-  const tables = physicalNames(
-    ["booking", "availabilityRule", "block"],
-    names?.tables
-  );
+  const tables = physicalNames(["booking"], names?.tables);
 
   const { columns: pluginColumns, tables: pluginTableNames } =
     resolvePluginNames(plugins, names);
 
   assertDistinct("column name", bookingColumns);
-  assertDistinct("column name", ruleColumns);
 
   for (const columns of Object.values(pluginColumns)) {
     assertDistinct("column name", columns);
   }
 
-  // Unused Block names can't collide with anything.
-  if (params.block) {
-    assertDistinct("column name", blockColumns);
-  }
-
-  assertDistinct("table name", {
-    ...(params.block
-      ? tables
-      : { availabilityRule: tables.availabilityRule, booking: tables.booking }),
-    ...pluginTableNames,
-  });
-
-  // SAFETY: B is inferred from `block.fields` when present, and defaults to null exactly when it is absent.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
-  const block = (params.block ? { fields: blockFields } : null) as Schema<
-    R,
-    F,
-    St,
-    B
-  >["block"];
+  assertDistinct("table name", { ...tables, ...pluginTableNames });
 
   return {
-    block,
     booking: { fields },
-    // A Plugin table named like one of fasti's own (`availabilityRule`, `block`) takes its entry: the same columns.
     // SAFETY: one entry per Plugin table, keyed by its logical name, which is all TableNamesOf<Ps> adds.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries can't keep the key type.
     names: {
       columns: {
-        availabilityRule: ruleColumns,
-        block: blockColumns,
         booking: bookingColumns,
         ...pluginColumns,
       },
@@ -615,7 +510,6 @@ export function defineSchema<
       R,
       F,
       St,
-      B,
       ResolveTransitions<T, St>,
       I[number] & St,
       Ps

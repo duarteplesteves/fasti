@@ -20,7 +20,7 @@ import {
 } from "../test-utils/conformance-schemas.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
-import { replaceRules } from "../testing/plugin-stores.js";
+import { blockVerbs, replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import { mintBlockId } from "./plugins/blocks.js";
 
@@ -253,7 +253,7 @@ describe("race safety", () => {
         // Blocks may overlap anything stored outside fasti; they only take time away.
         await Promise.all(
           blocks.map(async (b) => {
-            await locked.insertBlock({
+            await blockVerbs(locked).insertBlock({
               end: b.end,
               id: mintBlockId(),
               resourceId: room,

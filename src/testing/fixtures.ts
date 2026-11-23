@@ -4,7 +4,6 @@ import { expect } from "vitest";
 
 import type { SchemaAdapter } from "../adapter/contract.js";
 import type {
-  BlockRecord,
   BookingRecord,
   ResourceIdOf,
   StatusOf,
@@ -14,7 +13,7 @@ import type { AnyColumn } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { Columns } from "../schema/table.js";
 import { blockFieldsOf } from "./plugin-stores.js";
-import type { BlockStore } from "./plugin-stores.js";
+import type { BlockRecord, BlockStore } from "./plugin-stores.js";
 
 /** A fresh Booking id (a UUID, as the Framework will mint). */
 export function bookingId(): BookingId {
@@ -146,15 +145,13 @@ export function newBlock<S extends AnySchema>(
   schema: S,
   { optionalFields, resourceId, start = instant() }: NewBlockParams<S>
 ): BlockRecord<S> {
-  // SAFETY: `fields` holds one value of the declared kind per Block Developer Field (null when optional and unset).
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the values are generated from the schema at runtime.
   return {
     ...fieldValues(blockFieldsOf(schema), optionalFields),
     end: start.add({ hours: 1 }),
     id: blockId(),
     resourceId,
     start,
-  } as BlockRecord<S>;
+  };
 }
 
 /** Insert a Block in its own unit of work. */

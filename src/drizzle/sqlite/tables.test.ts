@@ -10,12 +10,7 @@ import { describe, expect, it } from "vitest";
 import { definePlugin } from "../../framework/plugin.js";
 import { column } from "../../schema/column.js";
 import { defineSchema } from "../../schema/define-schema.js";
-import {
-  availabilityRuleTable,
-  blockTable,
-  bookingTable,
-  recordTables,
-} from "./index.js";
+import { bookingTable, recordTables } from "./index.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
 
@@ -133,61 +128,6 @@ describe(bookingTable, () => {
 
     expect(fk?.reference().foreignTable).toBe(staff);
     expect(fk?.onDelete).toBe("restrict");
-  });
-});
-
-describe(blockTable, () => {
-  const schema = defineSchema({
-    block: { fields: { reason: { required: true, type: column.text() } } },
-    names: { tables: { block: "time_off" } },
-    resource: { idType: column.integer<StaffId>() },
-  });
-
-  it("applies the physical names and column kinds", () => {
-    const table = blockTable(schema);
-
-    expect(getTableConfig(table).name).toBe("time_off");
-    expect(columnsOf(table)).toStrictEqual([
-      ["id", "text", "SQLiteText", true, true],
-      ["resourceId", "integer", "SQLiteInteger", true, false],
-      ["start", "integer", "SQLiteTimestamp", true, false],
-      ["end", "integer", "SQLiteTimestamp", true, false],
-      ["reason", "text", "SQLiteText", true, false],
-    ]);
-  });
-
-  it("adds a foreign key with ON DELETE RESTRICT when given references", () => {
-    const [fk] = getTableConfig(
-      blockTable(schema, { references: () => staff.id })
-    ).foreignKeys;
-
-    expect(fk?.reference().foreignTable).toBe(staff);
-    expect(fk?.onDelete).toBe("restrict");
-  });
-
-  it("does not type-check on a schema without block", () => {
-    expect(() =>
-      // @ts-expect-error a schema without `block` has no Block table
-      blockTable(defineSchema({}))
-    ).toThrow(TypeError);
-  });
-});
-
-describe(availabilityRuleTable, () => {
-  it("stores recurrence and exceptions as JSON text, dates and times as text", () => {
-    const table = availabilityRuleTable(defineSchema({}));
-
-    expect(columnsOf(table)).toStrictEqual([
-      ["id", "text", "SQLiteText", true, true],
-      ["resourceId", "text", "SQLiteText", true, false],
-      ["recurrence", "text", "SQLiteTextJson", true, false],
-      ["windowStart", "text", "SQLiteText", true, false],
-      ["windowEnd", "text", "SQLiteText", true, false],
-      ["timezone", "text", "SQLiteText", true, false],
-      ["effectiveFrom", "text", "SQLiteText", false, false],
-      ["effectiveTo", "text", "SQLiteText", false, false],
-      ["exceptions", "text", "SQLiteTextJson", true, false],
-    ]);
   });
 });
 

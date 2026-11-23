@@ -76,7 +76,6 @@ function rejectingVerbs(inner: Inner) {
     return {
       getRecord: reject,
       getBooking: reject,
-      getRules: reject,
       listRecords: reject,
       listBookings: reject,
       withResourceLock: async (id, work) =>
@@ -87,7 +86,6 @@ function rejectingVerbs(inner: Inner) {
               ...locked,
               getRecord: reject,
               getBooking: reject,
-              getRules: reject,
               insertRecord: reject,
               insertBooking: reject,
               listRecords: reject,

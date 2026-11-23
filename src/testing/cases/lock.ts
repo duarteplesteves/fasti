@@ -5,7 +5,6 @@ import { expect } from "vitest";
 import type { LockedAdapter } from "../../adapter/contract.js";
 import { toCoreBooking } from "../../adapter/records.js";
 import type {
-  BlockRecord,
   BookingChanges,
   BookingRecord,
   ResourceIdOf,
@@ -17,6 +16,7 @@ import { statusCodec } from "../../schema/status-codec.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
 import { insert, newBlock, newBooking } from "../fixtures.js";
 import { blockVerbs, installs } from "../plugin-stores.js";
+import type { BlockRecord } from "../plugin-stores.js";
 
 /** Parallel units of work per race (spec: N = 20). */
 const n = 20;

@@ -4,8 +4,6 @@ import { defineAdapter } from "../adapter/contract.js";
 import type {
   Adapter,
   AdapterReads,
-  BlockReads,
-  BlockWrites,
   ListBookingsQuery,
   RecordReads,
   RecordWrites,
@@ -19,13 +17,9 @@ import { statusCodec } from "../schema/status-codec.js";
 import { physicalColumns, physicalTable, tablesOf } from "../schema/table.js";
 import type { TableDef } from "../schema/table.js";
 import {
-  decodeBlock,
   decodeBooking,
-  decodeRule,
   decodeStored,
   encodeBooking,
-  encodeRecord,
-  encodeRule,
   encodeStored,
   physical,
 } from "./codec.js";
@@ -383,11 +377,11 @@ export interface CreatePrismaAdapterParams {
 export function createPrismaAdapter<DB extends AnyPostgresClient>(
   db: DB,
   { lock }: CreatePrismaAdapterParams
-): Adapter<PrismaTxOf<DB>, "blocks" | "records"> {
+): Adapter<PrismaTxOf<DB>, "records"> {
   return defineAdapter(
     <S extends AnySchema>(
       schema: S
-    ): SchemaAdapter<S, PrismaTxOf<DB>, "blocks" | "records"> => {
+    ): SchemaAdapter<S, PrismaTxOf<DB>, "records"> => {
       const { columns, tables } = schema.names;
       const codec = statusCodec(schema);
       const noOverlap = noOverlapConstraint(schema);
@@ -398,44 +392,9 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
         names: columns.booking,
       };
 
-      const blocks: PhysicalTable | null =
-        schema.block === null
-          ? null
-          : { name: tables.block, names: columns.block };
-
-      const rules: PhysicalTable = {
-        name: tables.availabilityRule,
-        names: columns.availabilityRule,
-      };
-
-      /** The Block table, for a write. */
-      function blockWriteTable(verb: string): PhysicalTable {
-        // shortcut: a schema without `block` has no Block table, and the Framework never calls a Block write for it
-        // (its liftAdapter dies first), so this only guards direct misuse; keep it if a caller ever can reach it.
-        if (blocks === null) {
-          throw new Error(`prismaAdapter: ${verb} on a schema without block`);
-        }
-
-        return blocks;
-      }
-
-      function reads(
-        q: Queryable
-      ): AdapterReads<S> & BlockReads<S> & RecordReads<S> {
+      function reads(q: Queryable): AdapterReads<S> & RecordReads<S> {
         return {
           ...recordReads<S>(q, pluginTable),
-          getBlock: async (id) => {
-            if (blocks === null) {
-              return null;
-            }
-
-            const row = await query(
-              "getBlock",
-              async () => await byId(q, blocks, id)
-            );
-
-            return row === undefined ? null : decodeBlock<S>(blocks.names, row);
-          },
           getBooking: async (id) => {
             const row = await query(
               "getBooking",
@@ -445,35 +404,6 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
             return row === undefined
               ? null
               : decodeBooking<S>(codec, bookings.names, row);
-          },
-          getRules: async (resourceId) => {
-            const rows = await query("getRules", async () => {
-              const plan = tableOf(q, rules.name)
-                .select(...Object.values(rules.names))
-                .where((f, fns) =>
-                  fns.eq(
-                    ref(f, physical(rules.names, "resourceId")),
-                    resourceId
-                  )
-                )
-                .build();
-
-              return await rowsOf(q, plan);
-            });
-
-            return rows.map((row) => decodeRule(rules.names, row));
-          },
-          listBlocks: async (range) => {
-            if (blocks === null) {
-              return [];
-            }
-
-            const rows = await query(
-              "listBlocks",
-              async () => await overlapping(q, blocks, range)
-            );
-
-            return rows.map((row) => decodeBlock<S>(blocks.names, row));
           },
           listBookings: async (range) => {
             const rows = await query(
@@ -488,11 +418,7 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
         };
       }
 
-      const singleAttempt: SchemaAdapter<
-        S,
-        PrismaTxOf<DB>,
-        "blocks" | "records"
-      > = {
+      const singleAttempt: SchemaAdapter<S, PrismaTxOf<DB>, "records"> = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
           await db.transaction(async (tx: Queryable) => {
@@ -552,60 +478,8 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
               });
             }
 
-            const blockWrites: BlockWrites<S> = {
-              deleteBlock: async (id) => {
-                const { name, names } = blockWriteTable("deleteBlock");
-
-                const deleted = await query("deleteBlock", async () => {
-                  const plan = tableOf(tx, name)
-                    .delete()
-                    .where((f, fns) =>
-                      fns.eq(ref(f, physical(names, "id")), id)
-                    )
-                    .returning(physical(names, "id"))
-                    .build();
-
-                  return await rowsOf(tx, plan);
-                });
-
-                return deleted.length === 1
-                  ? { ok: true }
-                  : { ok: false, reason: "missing" };
-              },
-              insertBlock: async (block) => {
-                const { name, names } = blockWriteTable("insertBlock");
-
-                await query("insertBlock", async () => {
-                  await tx.execute(
-                    tableOf(tx, name)
-                      .insert([encodeRecord(names, block)])
-                      .build()
-                  );
-                });
-              },
-              updateBlock: async ({ changes, expected }) => {
-                const t = blockWriteTable("updateBlock");
-
-                const updated = await query(
-                  "updateBlock",
-                  async () =>
-                    await compareAndSet(
-                      tx,
-                      t,
-                      encodeRecord(t.names, expected),
-                      encodeRecord(t.names, changes)
-                    )
-                );
-
-                return updated
-                  ? { ok: true }
-                  : { ok: false, reason: "changed" };
-              },
-            };
-
             return await work({
               ...reads(tx),
-              ...blockWrites,
               ...recordWrites<S>(tx, pluginTable),
               insertBooking: async (booking) => {
                 const inserted = await backstopped(
@@ -622,32 +496,6 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
                 return inserted === "conflict"
                   ? { ok: false, reason: "conflict" }
                   : { ok: true };
-              },
-              replaceRules: async ({ resourceId, rules: next }) => {
-                await query("replaceRules", async () => {
-                  const t = tableOf(tx, rules.name);
-                  const resource = physical(rules.names, "resourceId");
-
-                  await tx.execute(
-                    t
-                      .delete()
-                      .where((f, fns) => fns.eq(ref(f, resource), resourceId))
-                      .build()
-                  );
-
-                  if (next.length > 0) {
-                    await tx.execute(
-                      t
-                        .insert(
-                          next.map((rule) => ({
-                            ...encodeRule(rules.names, rule),
-                            [resource]: resourceId,
-                          }))
-                        )
-                        .build()
-                    );
-                  }
-                });
               },
               // SAFETY: `tx` is what DB's own transaction callback receives, which PrismaTxOf<DB> names.
               // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve PrismaTxOf<DB> for a generic DB.
@@ -697,6 +545,6 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
  */
 export function prismaAdapter<DB extends AnyPostgresClient>(
   db: DB
-): Adapter<PrismaTxOf<DB>, "blocks" | "records"> {
+): Adapter<PrismaTxOf<DB>, "records"> {
   return createPrismaAdapter(db, { lock: true });
 }

@@ -8,12 +8,7 @@ import type {
   UpdateRecordResult,
   VerbGroup,
 } from "../adapter/contract.js";
-import type {
-  BlockChanges,
-  BlockRecord,
-  ResourceIdOf,
-  RuleRecord,
-} from "../adapter/records.js";
+import type { ResourceIdOf, RuleRecord } from "../adapter/records.js";
 import type { BlockId } from "../core/types.js";
 import { uuidV7 } from "../framework/booking-id.js";
 import type { AnySchema } from "../schema/define-schema.js";
@@ -21,6 +16,19 @@ import { tablesOf } from "../schema/table.js";
 import type { Columns } from "../schema/table.js";
 import type { CaseContext, ConformanceCase } from "./conformance-case.js";
 import { conformancePlugin } from "./conformance-plugin.js";
+
+/** A Block as the cases store it: `blocks()`'s `block` row, Developer Fields untyped. */
+export type BlockRecord<S extends AnySchema> = {
+  readonly id: BlockId;
+  readonly resourceId: ResourceIdOf<S>;
+  readonly start: Temporal.Instant;
+  readonly end: Temporal.Instant;
+} & Readonly<Record<string, StoredRecord[string]>>;
+
+/** The columns a Block update may change: anything but `id` and `resourceId`. */
+export type BlockChanges<S extends AnySchema> = Partial<
+  Omit<BlockRecord<S>, "id" | "resourceId">
+>;
 
 /** Whether `schema` installs the Plugin named `name`. */
 export function installs(schema: AnySchema, name: string): boolean {
