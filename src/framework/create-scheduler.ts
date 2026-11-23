@@ -7,7 +7,7 @@ import type { PolicyNamesOf } from "../schema/table.js";
 import type { ErasedError } from "./errors.js";
 import type { AnyHookOf } from "./hook.js";
 import type { AnyPolicyOf, UniqueNames } from "./policy.js";
-import { makeScheduler } from "./scheduler-service.js";
+import { bindActions } from "./scheduler-service.js";
 import type { SchedulerActions } from "./scheduler-service.js";
 
 /** Params of {@link createScheduler}. */
@@ -59,9 +59,8 @@ type PlainAlso = (
   ctx: unknown
 ) => Result<unknown, ErasedError> | Promise<Result<unknown, ErasedError>>;
 
-/** Params with a plain `also` swapped for its Effect form; a throw or rejection inside it becomes a defect. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- params pass through untouched apart from `also`.
-function effectParams(params: unknown): unknown {
+/** `params` with a plain `also` swapped for its Effect form, typed as they came: the Action's own type, not this swap, owns the params'. A throw or rejection inside `also` becomes a defect. */
+function effectParams<P>(params: P): P {
   // Plain-JS callers may pass anything as params.
   if (!Predicate.hasProperty(params, "also")) {
     return params;
@@ -71,7 +70,6 @@ function effectParams(params: unknown): unknown {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
   const also = params.also as PlainAlso;
 
-  // oxlint-disable-next-line anti-slop/no-known-value-widening -- as above: the Action, not this walk, owns the params' type.
   return {
     ...params,
     // oxlint-disable-next-line anti-slop/no-unknown-parameters -- as in PlainAlso.
@@ -84,46 +82,12 @@ function effectParams(params: unknown): unknown {
   };
 }
 
-/** An Action in the walk below; its params pass through untouched, so they stay `unknown` here. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SchedulerActions types the params at the call site.
-type AnyAction = (params: unknown) => Effect.Effect<unknown, ErasedError>;
-
-/** The plain form as {@link toPlain} builds it, before it's typed as a {@link Scheduler}. */
-interface PlainTree {
-  readonly [name: string]:
-    | PlainTree
-    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- as in AnyAction.
-    | ((params: unknown) => Promise<Result<unknown, unknown>>);
-}
-
-/** Wrap every Action in `service`, recursing into groups, to run its Effect and map the Exit. */
-// oxlint-disable-next-line anti-slop/no-object-parameters -- our own service tree, typed by SchedulerActions at createScheduler.
-function toPlain(service: object): PlainTree {
-  const entries = Object.entries(service).map(
-    ([name, member]: [string, unknown]) => {
-      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- our own service tree: a member is an Action or a group.
-      if (typeof member !== "function") {
-        // SAFETY: a non-function member of a service is a group of Actions.
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-        return [name, toPlain(member as object)] as const;
-      }
-
-      // SAFETY: a function member of a service is an Action.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-      const action = member as AnyAction;
-
-      // oxlint-disable-next-line anti-slop/no-unknown-parameters -- as in AnyAction.
-      async function plain(params: unknown) {
-        return exitToResult(
-          await Effect.runPromiseExit(action(effectParams(params)))
-        );
-      }
-
-      return [name, plain] as const;
-    }
-  );
-
-  return Object.fromEntries<PlainTree[string]>(entries);
+/** `action` in plain form: runs its Effect, with a plain `also` swapped in, and maps the Exit. */
+function plain<P, A, E>(
+  action: (params: P) => Effect.Effect<A, E>
+): (params: P) => Promise<Result<A, E>> {
+  return async (params) =>
+    exitToResult(await Effect.runPromiseExit(action(effectParams(params))));
 }
 
 /**
@@ -140,7 +104,29 @@ export function createScheduler<
   Tx,
   const P extends readonly AnyPolicyOf<S>[] = readonly [],
 >(params: CreateSchedulerParams<S, Tx, P>): Scheduler<S, Tx, P> {
-  // SAFETY: SchedulerActions<S, Tx, "plain"> is the "effect" form with each Run mapped as this walk does.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the walk can't carry the form parameter.
-  return toPlain(makeScheduler(params)) as Scheduler<S, Tx, P>;
+  const { base, plugins } = bindActions<S, Tx, P>(params);
+
+  const actions = {
+    book: plain(base.book),
+    cancel: plain(base.cancel),
+    findSlots: plain(base.findSlots),
+    reschedule: plain(base.reschedule),
+    transition: plain(base.transition),
+    ...Object.fromEntries(
+      Object.entries(plugins).map(([name, group]) => [
+        name,
+        Object.fromEntries(
+          // A plain `also` runs as an Effect that needs no services.
+          Object.entries(group).map(([action, run]) => [
+            action,
+            plain(run<never>),
+          ])
+        ),
+      ])
+    ),
+  };
+
+  // SAFETY: SchedulerActions<S, Tx, P, "plain"> is the "effect" form, which makeScheduler returns, with each Run mapped by `plain`.
+  // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- an overloaded interface can't be implemented by a single-signature arrow.
+  return actions as unknown as Scheduler<S, Tx, P>;
 }

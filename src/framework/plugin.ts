@@ -490,11 +490,10 @@ interface ErasedUnit {
   readonly conflicts: Unit<Tables>["conflicts"];
 }
 
-/** A Plugin Action bound to a scheduler: what the Effect form's `scheduler.<plugin>.<name>` runs. */
-type BoundAction = (
-  // oxlint-disable-next-line anti-slop/no-object-parameters -- typed by PluginActionsOf at the call site.
-  params: object
-) => Effect.Effect<unknown, ErasedError, unknown>;
+/** A Plugin Action bound to a scheduler: what the Effect form's `scheduler.<plugin>.<name>` runs. `R` is what its `also` requires, as for the built-in Actions. */
+type BoundAction = <R = never>(params: {
+  readonly also?: EffectAlso<object, unknown, R>;
+}) => Effect.Effect<unknown, ErasedError, R>;
 
 /** The record handles on `tables`: reads from `reads`, and writes on `locked` when given. */
 function handles<S extends AnySchema, Tx>(
@@ -552,11 +551,11 @@ function bind<S extends AnySchema, Tx>(
     return (params) => Effect.suspend(() => action.run(params, { records }));
   }
 
-  return ({
+  return <R = never>({
     also,
     ...params
   }: {
-    readonly also?: EffectAlso<object, Tx, unknown>;
+    readonly also?: EffectAlso<object, Tx, R>;
   }) => {
     function lock(
       resourceId: ResourceIdOf<S>,
@@ -565,7 +564,6 @@ function bind<S extends AnySchema, Tx>(
       ) => Effect.Effect<Outcome<unknown, object>, ErasedError>
     ) {
       return Effect.map(
-        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- `also`'s services are erased here; the Action's type restores them.
         writeUnit(
           ctx,
           { action: name, resourceId },

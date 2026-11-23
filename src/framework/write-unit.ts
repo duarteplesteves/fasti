@@ -18,7 +18,7 @@ export type Outcome<V, C> =
 /** An `also` context without the `tx` and `now` that `writeUnit` adds. */
 export type AlsoContext<T> = Omit<T, "tx" | "now">;
 
-/** The `also` an Action receives, in Effect form: the plain form's is adapted in `toPlain`. */
+/** The `also` an Action receives, in Effect form: the plain form's is adapted in `createScheduler`. */
 export type EffectAlso<C, Tx, R> = (
   ctx: C & { readonly tx: Tx; readonly now: Temporal.Instant }
 ) => Effect.Effect<unknown, ErasedError, R>;
