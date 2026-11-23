@@ -45,3 +45,7 @@ The suite does not assert that `makeAdapter` supplies at least N connections. No
 
 - **SQLite.** Each test file gets a libsql file in a fresh temp directory, set to WAL by the test helper (the developer's setup, not fasti's). drizzle-kit `1.0.0-rc.5` exports no SQLite `pushSchema`, so tables are pushed with the `drizzle-kit push` CLI. `:memory:` can't be used: it has one connection, so a read during a locked unit would fail.
 - **Prisma** runs on Postgres only. Each test file gets a fresh database, and the contract built with `prismaModels` is applied through Prisma's own `db init`, never hand-written SQL. The backstop is added as a developer would through `prisma migration new`.
+
+## Amendment (2026-11-23): Nub replaces Bun as the package manager
+
+Nub installs and runs scripts (`nub install`, `nub run test`); the lockfile is `nub.lock`, converted from `bun.lock`. `.npmrc` sets `node-linker=hoisted`: under Nub's default isolated layout, `tsc` can't name Prisma's transitive types in emitted declarations (TS2883). Bun stays in the unit-test matrix as a runtime fasti supports, not as tooling.

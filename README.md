@@ -977,21 +977,21 @@ See the [decision record](./docs/adr/) for detailed ADRs on primitives, date han
 
 ```bash
 # Install dependencies
-bun install
+nub install
 
 # Lint and format check
-bun run check
+nub run check
 
 # Type-check (including tests)
-bun run typecheck
+nub run typecheck
 
 # Run tests
-bun run test
+nub run test
 
 # Build, then check the published package
-bun run build
-bun run publint
-bun run attw
+nub run build
+nub run publint
+nub run attw
 ```
 
 ## License
