@@ -1,7 +1,12 @@
 import { column } from "./column.js";
 import type { AnyColumn, Column, ResourceIdColumn } from "./column.js";
-import { checkPlugins } from "./table.js";
-import type { InstallablePlugins, Plugin } from "./table.js";
+import { checkPlugins, tablesOf } from "./table.js";
+import type {
+  InstallablePlugins,
+  Plugin,
+  TableDef,
+  TableNamesOf,
+} from "./table.js";
 
 /** A Developer Field: an extra Booking or Block column the developer declares. */
 export interface FieldDef {
@@ -133,13 +138,14 @@ export interface DefineSchemaParams<
   readonly block?: { readonly fields: B };
   /** The Plugins, from `definePlugin`; their Actions appear on `scheduler.<name>`. Two with one name, one named after a scheduler key (`book`, …), or two tables with one name (or one named `booking`) is a type error. */
   readonly plugins?: Ps & InstallablePlugins<Ps>;
-  /** Physical names; each defaults to its logical name, and names of one kind must be distinct. */
+  /** Physical names; each defaults to its logical name, and names of one kind must be distinct. A Plugin table is named by its logical name. */
   readonly names?: {
     readonly tables?: {
       readonly booking?: string;
       readonly availabilityRule?: string;
       readonly block?: string;
-    };
+      // oxlint-disable-next-line typescript/no-generated-empty-object-type -- `{}` without Plugin tables.
+    } & Partial<Record<NoInfer<TableNamesOf<Ps>>, string>>;
     readonly columns?: {
       readonly booking?: Partial<
         Record<BookingColumn | NoInfer<keyof F>, string>
@@ -148,6 +154,10 @@ export interface DefineSchemaParams<
         Record<AvailabilityRuleColumn, string>
       >;
       readonly block?: Partial<Record<BlockColumn | NoInfer<keyof B>, string>>;
+    } & {
+      readonly [K in NoInfer<TableNamesOf<Ps>>]?: Partial<
+        Record<ColumnNamesOf<TableIn<Ps, K>>, string>
+      >;
     };
     /** Stored Status values; two Statuses sharing one is a type error. */
     readonly statuses?: N &
@@ -155,6 +165,23 @@ export interface DefineSchemaParams<
       NoInfer<DistinctStored<N, StatusesOf<D>>>;
   };
 }
+
+/** Plugin table `K` among the tables of Plugins `Ps`. */
+type TableIn<
+  Ps extends readonly Plugin[],
+  K extends string,
+> = Ps[number]["tables"] extends infer T
+  ? T extends Readonly<Record<K, TableDef>>
+    ? T[K]
+    : never
+  : never;
+
+/** The logical column names of Plugin table `T`: fasti's own (`id`, `resourceId`, a timed table's `start` and `end`) and its declared ones. */
+export type ColumnNamesOf<T extends TableDef> =
+  | "id"
+  | "resourceId"
+  | (T["timed"] extends true ? "start" | "end" : never)
+  | (keyof T["columns"] & string);
 
 /** Refuses a Block Developer Field named after a Block column, or `also` (reserved). Apart from `block`, so `fields: {}` still infers B (an intersection there drops the inference). */
 interface BlockFieldGuard {
@@ -199,14 +226,15 @@ export interface Schema<
   readonly initial: readonly [In, ...In[]];
   /** The installed Plugins, in order. */
   readonly plugins: Ps;
-  /** Physical names, keyed by logical name. */
+  /** Physical names, keyed by logical name: fasti's tables, then each Plugin table. */
   readonly names: {
     readonly tables: {
       readonly booking: string;
       readonly availabilityRule: string;
       /** Resolved even without Blocks, and then unused. */
       readonly block: string;
-    };
+      // oxlint-disable-next-line typescript/no-generated-empty-object-type -- `{}` without Plugin tables.
+    } & Readonly<Record<TableNamesOf<Ps>, string>>;
     readonly columns: {
       readonly booking: Readonly<Record<BookingColumn | keyof F, string>>;
       readonly availabilityRule: Readonly<
@@ -215,7 +243,7 @@ export interface Schema<
       readonly block: Readonly<
         Record<BlockColumn | (B extends Fields ? keyof B : never), string>
       >;
-    };
+    } & Readonly<Record<TableNamesOf<Ps>, Readonly<Record<string, string>>>>;
   };
 }
 
@@ -270,6 +298,43 @@ function physicalNames<K extends PropertyKey>(
         String(name),
     ])
   ) as Record<K, string>;
+}
+
+/** The physical names of every Plugin table and its columns (fasti's own and its declared ones), by logical name. */
+function resolvePluginNames(
+  plugins: readonly Plugin[],
+  // Plain data, read by logical table name: TableNamesOf<Ps> keys the Plugin tables' entries.
+  names:
+    | {
+        readonly tables?: Partial<Record<string, string>>;
+        readonly columns?: Partial<
+          Record<string, Partial<Record<string, string>>>
+        >;
+      }
+    | undefined
+) {
+  const pluginTables = Object.entries(tablesOf(plugins));
+
+  return {
+    columns: Object.fromEntries(
+      pluginTables.map(([table, def]) => [
+        table,
+        physicalNames(
+          [
+            "id",
+            "resourceId",
+            ...(def.timed ? ["start", "end"] : []),
+            ...Object.keys(def.columns),
+          ],
+          names?.columns?.[table]
+        ),
+      ])
+    ),
+    tables: physicalNames(
+      pluginTables.map(([table]) => table),
+      names?.tables
+    ),
+  };
 }
 
 /** Throw when two logical names share one physical name: a definition-time defect. */
@@ -501,20 +566,27 @@ export function defineSchema<
     names?.tables
   );
 
+  const { columns: pluginColumns, tables: pluginTableNames } =
+    resolvePluginNames(plugins, names);
+
   assertDistinct("column name", bookingColumns);
   assertDistinct("column name", ruleColumns);
+
+  for (const columns of Object.values(pluginColumns)) {
+    assertDistinct("column name", columns);
+  }
 
   // Unused Block names can't collide with anything.
   if (params.block) {
     assertDistinct("column name", blockColumns);
   }
 
-  assertDistinct(
-    "table name",
-    params.block
+  assertDistinct("table name", {
+    ...(params.block
       ? tables
-      : { availabilityRule: tables.availabilityRule, booking: tables.booking }
-  );
+      : { availabilityRule: tables.availabilityRule, booking: tables.booking }),
+    ...pluginTableNames,
+  });
 
   // SAFETY: B is inferred from `block.fields` when present, and defaults to null exactly when it is absent.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
@@ -528,14 +600,26 @@ export function defineSchema<
   return {
     block,
     booking: { fields },
+    // A Plugin table named like one of fasti's own (`availabilityRule`, `block`) takes its entry: the same columns.
+    // SAFETY: one entry per Plugin table, keyed by its logical name, which is all TableNamesOf<Ps> adds.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries can't keep the key type.
     names: {
       columns: {
         availabilityRule: ruleColumns,
         block: blockColumns,
         booking: bookingColumns,
+        ...pluginColumns,
       },
-      tables,
-    },
+      tables: { ...tables, ...pluginTableNames },
+    } as Schema<
+      R,
+      F,
+      St,
+      B,
+      ResolveTransitions<T, St>,
+      I[number] & St,
+      Ps
+    >["names"],
     plugins,
     resource: { idType },
     ...lifecycle,

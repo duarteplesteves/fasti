@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from "vitest";
 
-import { column, defineSchema } from "../index.js";
+import { availability, blocks, column, defineSchema } from "../index.js";
 import type {
   // oxlint-disable-next-line typescript/no-deprecated -- the alias under test.
   ActionTarget,
@@ -11,7 +11,7 @@ import type {
 } from "../index.js";
 
 const withBlocks = defineSchema({
-  block: { fields: {} },
+  plugins: [availability(), blocks({ fields: {} })],
   booking: {
     statuses: { inProgress: { blocking: true } },
     transitions: { booked: ["inProgress"] },
@@ -19,7 +19,7 @@ const withBlocks = defineSchema({
   resource: { idType: column.uuid() },
 });
 
-const withoutBlocks = defineSchema({});
+const withoutBlocks = defineSchema({ plugins: [availability()] });
 
 describe("target names", () => {
   it("BookingActionName is the three Booking Actions, and ActionTarget is it", () => {

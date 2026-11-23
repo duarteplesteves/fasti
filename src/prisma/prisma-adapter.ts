@@ -16,7 +16,7 @@ import { retryTransient } from "../adapter/retry.js";
 import { noOverlapConstraint } from "../schema/backstop-sql.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { statusCodec } from "../schema/status-codec.js";
-import { tablesOf } from "../schema/table.js";
+import { physicalColumns, physicalTable, tablesOf } from "../schema/table.js";
 import type { TableDef } from "../schema/table.js";
 import {
   decodeBlock,
@@ -236,7 +236,8 @@ function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
       throw new Error(`prismaAdapter: no Plugin table "${table}"`);
     }
 
-    // prismaModels names a Plugin table and its columns logically.
+    const names = physicalColumns(schema, table);
+
     const columns = [
       "id",
       "resourceId",
@@ -247,8 +248,8 @@ function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
     return {
       def,
       t: {
-        name: table,
-        names: Object.fromEntries(columns.map((c) => [c, c])),
+        name: physicalTable(schema, table),
+        names: Object.fromEntries(columns.map((c) => [c, names(c)])),
       },
     };
   };
@@ -264,7 +265,7 @@ function recordReads<S extends AnySchema>(
       const { def, t } = pluginTable(table);
       const row = await query("getRecord", async () => await byId(q, t, id));
 
-      return row === undefined ? null : decodeStored(def, row);
+      return row === undefined ? null : decodeStored(def, t.names, row);
     },
     listRecords: async (table, { overlapping: range, resourceId }) => {
       const { def, t } = pluginTable(table);
@@ -276,19 +277,23 @@ function recordReads<S extends AnySchema>(
 
         const select = tableOf(q, t.name)
           .select(...Object.values(t.names))
-          .where((f, fns) => fns.eq(ref(f, "resourceId"), resourceId));
+          .where((f, fns) =>
+            fns.eq(ref(f, physical(t.names, "resourceId")), resourceId)
+          );
+
+        const id = physical(t.names, "id");
 
         const plan = def.timed
           ? select
-              .orderBy("start", { direction: "asc" })
-              .orderBy("id", { direction: "asc" })
+              .orderBy(physical(t.names, "start"), { direction: "asc" })
+              .orderBy(id, { direction: "asc" })
               .build()
-          : select.orderBy("id", { direction: "asc" }).build();
+          : select.orderBy(id, { direction: "asc" }).build();
 
         return await rowsOf(q, plan);
       });
 
-      return rows.map((row) => decodeStored(def, row));
+      return rows.map((row) => decodeStored(def, t.names, row));
     },
   };
 }
@@ -305,8 +310,8 @@ function recordWrites<S extends AnySchema>(
       const deleted = await query("deleteRecord", async () => {
         const plan = tableOf(tx, t.name)
           .delete()
-          .where((f, fns) => fns.eq(ref(f, "id"), id))
-          .returning("id")
+          .where((f, fns) => fns.eq(ref(f, physical(t.names, "id")), id))
+          .returning(physical(t.names, "id"))
           .build();
 
         return await rowsOf(tx, plan);
@@ -322,7 +327,7 @@ function recordWrites<S extends AnySchema>(
       await query("insertRecord", async () => {
         await tx.execute(
           tableOf(tx, t.name)
-            .insert([encodeStored(record)])
+            .insert([encodeStored(t.names, record)])
             .build()
         );
       });
@@ -336,12 +341,16 @@ function recordWrites<S extends AnySchema>(
         await tx.execute(
           builder
             .delete()
-            .where((f, fns) => fns.eq(ref(f, "resourceId"), resourceId))
+            .where((f, fns) =>
+              fns.eq(ref(f, physical(t.names, "resourceId")), resourceId)
+            )
             .build()
         );
 
         if (records.length > 0) {
-          await tx.execute(builder.insert(records.map(encodeStored)).build());
+          await tx.execute(
+            builder.insert(records.map((r) => encodeStored(t.names, r))).build()
+          );
         }
       });
     },
@@ -354,8 +363,8 @@ function recordWrites<S extends AnySchema>(
           await compareAndSet(
             tx,
             t,
-            encodeStored(expected),
-            encodeStored(changes)
+            encodeStored(t.names, expected),
+            encodeStored(t.names, changes)
           )
       );
 

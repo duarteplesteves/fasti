@@ -5,6 +5,7 @@ import type { BookingChanges } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
 import { insert, newBooking } from "../fixtures.js";
+import { installs, ruleStore } from "../plugin-stores.js";
 
 const rule = {
   exceptions: [],
@@ -65,13 +66,23 @@ export const rollbackCases: readonly ConformanceCase[] = [
           await l.updateBooking({ changes, expected: existing })
         ).toStrictEqual({ ok: true });
       });
-      await throwAfter(ctx, async (l) => {
-        await l.replaceRules({ resourceId: resources[0], rules: [rule] });
-      });
+
+      // With availability(), a replace of its records too.
+      if (installs(schema, "availability")) {
+        const rules = ruleStore(ctx);
+        const reason = new Error("work failed");
+
+        await expect(
+          rules.withResourceLock(resources[0], async (l) => {
+            await l.replaceRules({ resourceId: resources[0], rules: [rule] });
+            throw reason;
+          })
+        ).rejects.toBe(reason);
+        expect(await rules.getRules(resources[0])).toStrictEqual([]);
+      }
 
       expect(await adapter.getBooking(fresh.id)).toBeNull();
       expect(await adapter.getBooking(existing.id)).toStrictEqual(existing);
-      expect(await adapter.getRules(resources[0])).toStrictEqual([]);
 
       // The lock was released: the next unit of work on the same Resource runs and commits.
       await insert(adapter, fresh);

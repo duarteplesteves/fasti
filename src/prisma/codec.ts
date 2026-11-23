@@ -181,12 +181,16 @@ function encodeValue(value: StoredValue): PrismaValue {
   return canonical(value);
 }
 
-/** Plugin record → row, column by column (physical names are the logical ones); works on a partial record (an update's changes) too. */
+/** Plugin record → row, column by column, logical keys to physical names; works on a partial record (an update's changes) too. */
 export function encodeStored(
+  names: ColumnNames,
   record: Readonly<Record<string, StoredValue>>
 ): PrismaRow {
   return Object.fromEntries(
-    Object.entries(record).map(([key, value]) => [key, encodeValue(value)])
+    Object.entries(record).map(([key, value]) => [
+      physical(names, key),
+      encodeValue(value),
+    ])
   );
 }
 
@@ -238,14 +242,18 @@ function decodeValue(
   }
 }
 
-/** Row → Plugin record of `table`, column by column. */
-export function decodeStored(table: TableDef, row: PrismaRow): StoredRecord {
+/** Row → Plugin record of `table`, column by column, physical names to logical keys. */
+export function decodeStored(
+  table: TableDef,
+  names: ColumnNames,
+  row: PrismaRow
+): StoredRecord {
   // SAFETY: the row comes from the model prismaModels builds for `table`: `id`, `resourceId`, and one column per declared one, of its kind.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
   return Object.fromEntries(
-    Object.entries(row).map(([key, value]) => [
+    Object.entries(names).map(([key, name]) => [
       key,
-      decodeValue(table.columns[key]?.type.kind, value),
+      decodeValue(table.columns[key]?.type.kind, row[name] ?? null),
     ])
   ) as StoredRecord;
 }

@@ -1,21 +1,21 @@
 import { Effect } from "effect";
 
-import type { ListBlocksQuery } from "../adapter/contract.js";
+import type { ListBookingsQuery } from "../adapter/contract.js";
 import { toCoreBooking } from "../adapter/records.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import { detectConflicts } from "../core/detect-conflicts.js";
 import type { DetectConflictsParams } from "../core/detect-conflicts.js";
-import type { BlockId, Booking, BookingId } from "../core/types.js";
+import type { Booking, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { BusyConflictOf, BusyRange } from "../schema/table.js";
 import type { EffectReads } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
-import type { Conflict, SlotConflict } from "./errors.js";
+import type { Conflict, ConflictingBooking, SlotConflict } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
 
-/** Something a requested slot overlaps on schema `S`: a Booking, a Block, or an installed Plugin's busy time, by its `kind`. */
+/** Something a requested slot overlaps on schema `S`: a Booking, or an installed Plugin's busy time, by its `kind`. */
 export type ConflictOf<S extends AnySchema> =
-  | Conflict
+  | ConflictingBooking
   | BusyConflictOf<S["plugins"][number]>;
 
 /** A source of busy time on a Resource, beside Bookings: `kind` tags the Conflicts it causes. */
@@ -23,18 +23,9 @@ export interface BusySource<K extends string = string> {
   readonly kind: K;
   readonly list: <S extends AnySchema>(
     reads: EffectReads<S>,
-    query: ListBlocksQuery<S>
+    query: ListBookingsQuery<S>
   ) => Effect.Effect<readonly BusyRange[], AdapterError>;
 }
-
-/** Blocks, as busy time: `[]` on a schema without `block` (ADR 016). */
-const blockBusy: BusySource<"block"> = {
-  kind: "block",
-  list: (reads, query) => reads.listBlocks(query),
-};
-
-/** fasti's own busy sources, checked before the Plugins'. */
-export const busySources: readonly BusySource[] = [blockBusy];
 
 /** What a Conflict can be: `booking`, or a busy source's kind; a candidate of any other kind sees Bookings only. */
 type Kind = string;
@@ -47,7 +38,7 @@ type OccupancyContext<S extends AnySchema, Tx> = Pick<
 
 /** What occupies a Resource over a range, as the Core sees it, plus each occupant's kind for mapping hits back. */
 interface Occupants {
-  readonly bookings: readonly Booking<BookingId | BlockId>[];
+  readonly bookings: readonly Booking[];
   readonly kindById: ReadonlyMap<string, Kind>;
 }
 
@@ -87,9 +78,8 @@ export function occupants<S extends AnySchema, Tx>(
           ...bookings.map((b) => toCoreBooking(codec, b)),
           ...busyRanges.map(({ range: { end, id, start } }) => ({
             end,
-            // SAFETY: the Core only compares ids; `kindById` keeps each one's kind.
-            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a busy id is a BlockId until Plugins add kinds.
-            id: id as BlockId,
+            // The Core only compares ids; `kindById` keeps each one's kind.
+            id,
             isBlocking: true,
             resourceId: String(resourceId),
             start,
@@ -106,7 +96,7 @@ export function occupants<S extends AnySchema, Tx>(
 
 /** The Core's hits as Conflicts, sorted by start, then id. Ids, kinds and times only: no Developer Fields. */
 export function toConflicts(
-  hits: readonly Booking<BookingId | BlockId>[],
+  hits: readonly Booking[],
   kindById: ReadonlyMap<string, Kind>
 ): readonly Conflict[] {
   return hits
@@ -120,7 +110,7 @@ export function toConflicts(
 
       // SAFETY: `kindById` tags each id with the kind it came from, so the id has that kind's brand.
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the pairing lives in the map, not the type.
-      return { end, id, kind, start } as Conflict;
+      return { end, id, kind, start };
     })
     .toSorted(
       (a, b) =>
@@ -131,7 +121,7 @@ export function toConflicts(
 
 /**
  * What a candidate `[start, end)` on `resourceId` would overlap, as Conflicts: the overlap Invariant's one check (ADR 014, ADR 016).
- * `kind` is the candidate's: any but `booking` (a Block, a Plugin's busy time) conflicts with blocking Bookings only.
+ * `kind` is the candidate's: any but `booking` (a Plugin's busy time) conflicts with blocking Bookings only.
  */
 export function conflictsAt<S extends AnySchema, Tx>(
   ctx: OccupancyContext<S, Tx>,
@@ -154,7 +144,7 @@ export function conflictsAt<S extends AnySchema, Tx>(
   return Effect.flatMap(
     occupants(ctx, reads, kind, resourceId, { from: start, to: end }),
     ({ bookings, kindById }) => {
-      const params: DetectConflictsParams<BookingId | BlockId> = {
+      const params: DetectConflictsParams = {
         bookings,
         candidate: { end, start },
         resourceId: String(resourceId),
@@ -188,12 +178,15 @@ export function checkOverlap<S extends AnySchema, Tx>(
   ctx: OccupancyContext<S, Tx>,
   reads: EffectReads<S>,
   range: CheckOverlapParams<S>
-): Effect.Effect<void, SlotConflict | AdapterError> {
+): Effect.Effect<void, SlotConflict<Conflict> | AdapterError> {
   return Effect.flatMap(
     conflictsAt(ctx, reads, { ...range, kind: "booking" }),
     (conflicts) =>
       conflicts.length > 0
-        ? Effect.fail<SlotConflict>({ _tag: "SlotConflict", conflicts })
+        ? Effect.fail<SlotConflict<Conflict>>({
+            _tag: "SlotConflict",
+            conflicts,
+          })
         : Effect.void
   );
 }

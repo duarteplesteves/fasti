@@ -8,7 +8,12 @@ import type { AnySchema, InitialOf } from "../schema/define-schema.js";
 import { mintBookingId } from "./booking-id.js";
 import { fieldValues, floorMs } from "./booking.js";
 import type { Booking, FieldsParam } from "./booking.js";
-import type { AdapterError, PolicyViolation, SlotConflict } from "./errors.js";
+import type {
+  AdapterError,
+  Conflict,
+  PolicyViolation,
+  SlotConflict,
+} from "./errors.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
 import type { ConflictOf } from "./occupancy.js";
 import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
@@ -62,7 +67,11 @@ export type BookError<S extends AnySchema = AnySchema> =
 export function book<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: BookParams<S> & AlsoParam<{ readonly booking: Booking<S> }, Tx, R>
-): WriteEffect<Booking<S>, BookError | PolicyViolation, R> {
+): WriteEffect<
+  Booking<S>,
+  BookError | SlotConflict<Conflict> | PolicyViolation,
+  R
+> {
   const { resourceId } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
@@ -153,7 +162,7 @@ export function book<S extends AnySchema, Tx, R = never>(
 
         if (!inserted.ok) {
           // The backstop caught an outside write the lock can't see: report what is there now.
-          return yield* Effect.fail<SlotConflict>({
+          return yield* Effect.fail<SlotConflict<Conflict>>({
             _tag: "SlotConflict",
             conflicts: yield* conflictsAt(ctx, locked, range),
           });

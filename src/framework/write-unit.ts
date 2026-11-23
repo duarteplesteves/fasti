@@ -10,7 +10,7 @@ import type { AnyHookOf, Committed, HookEvent } from "./hook.js";
 import type { ActionContext } from "./scheduler-service.js";
 import type { CalledTarget } from "./target.js";
 
-/** What a write unit did. Done: run `also` with `context`. NoOp: skip `also` (a repeat cancel; a no-op `blocks.update` still returns Done, by ADR 015). */
+/** What a write unit did. Done: run `also` with `context`. NoOp: skip `also` (a repeat cancel; a no-op update still returns Done, by ADR 015). */
 export type Outcome<V, C> =
   | { readonly _tag: "Done"; readonly value: V; readonly context: C }
   | { readonly _tag: "NoOp"; readonly value: V };

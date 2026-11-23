@@ -20,7 +20,7 @@ import { drizzleAdapter } from "../drizzle/pg/index.js";
 import { createScheduler } from "../framework/create-scheduler.js";
 import { backstopSql, noOverlapConstraint } from "../schema/backstop-sql.js";
 import type { AnySchema } from "../schema/define-schema.js";
-import { tablesOf } from "../schema/table.js";
+import { physicalTable, tablesOf } from "../schema/table.js";
 import {
   recordsResources,
   recordsSchema,
@@ -202,15 +202,16 @@ const probe: TxProbe<Tx> = {
 async function truncate(schema: AnySchema): Promise<void> {
   const { tables } = schema.names;
 
-  const names = [
-    tables.booking,
-    tables.availabilityRule,
-    ...(schema.block === null ? [] : [tables.block]),
-    ...Object.keys(tablesOf(schema.plugins)).map((t) => `"${t}"`),
+  // The Plugin tables by physical name: availability()'s and blocks()' are the 0.6 rule and Block tables.
+  const names = new Set([
+    `"${tables.booking}"`,
+    ...Object.keys(tablesOf(schema.plugins)).map(
+      (t) => `"${physicalTable(schema, t)}"`
+    ),
     "test_probe",
-  ];
+  ]);
 
-  await database.pool.query(`truncate ${names.join(", ")}`);
+  await database.pool.query(`truncate ${[...names].join(", ")}`);
 }
 
 /** `hour`:00 UTC on Monday 3 June 2030. */
@@ -686,7 +687,7 @@ function adapterTests(): void {
         assert(moving.ok && outside.ok, "expected both seed bookings");
 
         // Hides the outside Booking from the unit's first read, as a write the lock can't see would be.
-        const adapter = defineAdapter<Tx, "blocks">((s) => {
+        const adapter = defineAdapter<Tx, "records">((s) => {
           const raw = inner(s);
 
           return {

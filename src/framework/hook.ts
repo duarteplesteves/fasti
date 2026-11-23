@@ -2,13 +2,7 @@ import type { Effect } from "effect";
 
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
-import type { AnySchema, HasBlocks } from "../schema/define-schema.js";
-import type { SetAvailabilityAlso } from "./availability.js";
-import type {
-  CreateBlockAlso,
-  DeleteBlockAlso,
-  UpdateBlockAlso,
-} from "./blocks.js";
+import type { AnySchema } from "../schema/define-schema.js";
 import type { BookAlso } from "./book.js";
 import type { ChangeAlso } from "./booking.js";
 import type { Fill, Written } from "./plugin.js";
@@ -49,13 +43,6 @@ export type HookEvent<S extends AnySchema, Tx> =
   | ({ readonly action: "reschedule" } & ChangeAlso<S, Tx>)
   | ({ readonly action: "cancel" } & ChangeAlso<S, Tx>)
   | ({ readonly action: "transition" } & ChangeAlso<S, Tx>)
-  | ({ readonly action: "availability.set" } & SetAvailabilityAlso<S, Tx>)
-  | (HasBlocks<S> extends true
-      ?
-          | ({ readonly action: "blocks.create" } & CreateBlockAlso<S, Tx>)
-          | ({ readonly action: "blocks.update" } & UpdateBlockAlso<S, Tx>)
-          | ({ readonly action: "blocks.delete" } & DeleteBlockAlso<S, Tx>)
-      : never)
   | PluginWriteEvent<S, Tx>;
 
 /** The events a Hook with targets `T` sees: names by `action`, edges as `"transition"`. */
@@ -132,7 +119,7 @@ export type AnyHookOf<S extends AnySchema, Tx> =
 /**
  * A Hook: `run` observes every saved write it applies to, in the Action's transaction or after the commit.
  * The `adapter` only types `tx`; it is never called.
- * Throws on an empty `appliesTo`, an unknown name, a name in a group the schema lacks (`blocks.*` without `block`), an undeclared edge, or an edge into `cancelled`.
+ * Throws on an empty `appliesTo`, an unknown name, a name in a group the schema lacks (`blocks.*` without `blocks()`), an undeclared edge, or an edge into `cancelled`.
  *
  * @example
  * ```ts
@@ -178,7 +165,7 @@ export function defineHook<
 
     const [group = target, action] = target.split(".");
 
-    // A name in a group the schema lacks, e.g. `blocks.*` without `block`.
+    // A name in a group the schema lacks, e.g. `blocks.*` without the Plugin.
     throw new Error(
       action === undefined || groups.has(group)
         ? `fasti: a Hook applies to ${target}, which isn't a write Action`

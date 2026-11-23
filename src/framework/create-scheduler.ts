@@ -17,9 +17,9 @@ export interface CreateSchedulerParams<
 > {
   /** The schema from `defineSchema`. */
   readonly schema: S;
-  /** The Adapter over the developer's database, e.g. `drizzleAdapter(db)`. A schema with `block` needs one that implements Blocks. */
+  /** The Adapter over the developer's database, e.g. `drizzleAdapter(db)`. A schema whose Plugins declare tables needs one that implements `records`. */
   readonly adapter: Adapter<Tx, GroupsOf<S>>;
-  /** The Policies from `definePolicy`, names unique, and not an installed Plugin's Policy's; leave out for none. The built-in `availability` always runs, then the Plugins'; without `notice`, past starts are bookable. */
+  /** The Policies from `definePolicy`, names unique, and not an installed Plugin's Policy's; leave out for none. The installed Plugins' run first; without `notice`, past starts are bookable. */
   readonly policies?: P & UniqueNames<P, PolicyNamesOf<S["plugins"][number]>>;
   /** The Hooks from `defineHook`, run in this order on every write they apply to; leave out for none. */
   readonly hooks?: readonly AnyHookOf<S, NoInfer<Tx>>[];

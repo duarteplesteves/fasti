@@ -1,19 +1,18 @@
-import { column, defineSchema } from "@fastijs/scheduler";
-import {
-  availabilityRuleTable,
-  blockTable,
-  bookingTable,
-} from "@fastijs/scheduler/drizzle/pg";
+import { availability, blocks, column, defineSchema } from "@fastijs/scheduler";
+import { bookingTable, recordTables } from "@fastijs/scheduler/drizzle/pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { integer, pgTable, uuid } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 
 /** Default names: tables `booking`, `availabilityRule` and `block`, text Resource ids. */
 export const schema = defineSchema({
-  block: { fields: { reason: { required: true, type: column.text() } } },
   booking: {
     fields: { customerName: { required: true, type: column.text() } },
   },
+  plugins: [
+    availability(),
+    blocks({ fields: { reason: { required: true, type: column.text() } } }),
+  ],
 });
 
 /** A table of your own: prepaid packs of sessions, spent by `also` in the same transaction as `book`. */
@@ -24,8 +23,7 @@ export const pack = pgTable("pack", {
 
 /** The tables to migrate: fasti's, built from `schema`, and your own. */
 export const tables = {
-  availabilityRule: availabilityRuleTable(schema),
-  block: blockTable(schema),
+  ...recordTables(schema),
   booking: bookingTable(schema),
   pack,
 };

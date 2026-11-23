@@ -16,6 +16,7 @@ import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
 import { insert, newBlock, newBooking } from "../fixtures.js";
+import { blockVerbs, installs } from "../plugin-stores.js";
 
 /** Parallel units of work per race (spec: N = 20). */
 const n = 20;
@@ -54,15 +55,6 @@ function bookingAt<S extends AnySchema>(
   };
 }
 
-/** The locked handle with its Block verbs; only for a schema with `block`. */
-function withBlocks<S extends AnySchema, Tx>(
-  locked: LockedAdapter<S, Tx>
-): LockedAdapter<S, Tx, "blocks"> {
-  // SAFETY: callers check `schema.block !== null`, so GroupsOf<S> is "blocks".
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
-  return locked as LockedAdapter<S, Tx, "blocks">;
-}
-
 /**
  * Read–check–write, as the Framework will: list the slot's occupants, check them with the Core,
  * sleep to widen the race window, then write. `"won"` only when the write succeeds.
@@ -81,8 +73,9 @@ async function claim<S extends AnySchema, Tx>(
   const existing = await locked.listBookings(query);
 
   // Blocks occupy time too, when the schema has them.
-  const blocks =
-    schema.block === null ? [] : await withBlocks(locked).listBlocks(query);
+  const blocks = installs(schema, "blocks")
+    ? await blockVerbs(locked).listBlocks(query)
+    : [];
 
   const conflicts = detectConflicts<BookingId | BlockId>({
     bookings: [
@@ -124,13 +117,12 @@ async function occupiedAt<S extends AnySchema, Tx>(
   const query = { overlapping: { from: slot.start, to: slot.end }, resourceId };
   const bookings = await adapter.listBookings(query);
 
-  const blocks =
-    schema.block === null
-      ? []
-      : await adapter.withResourceLock(
-          resourceId,
-          async (locked) => await withBlocks(locked).listBlocks(query)
-        );
+  const blocks = installs(schema, "blocks")
+    ? await adapter.withResourceLock(
+        resourceId,
+        async (locked) => await blockVerbs(locked).listBlocks(query)
+      )
+    : [];
 
   return [...bookings.filter((b) => codec.isBlocking(b.status)), ...blocks];
 }
@@ -278,7 +270,7 @@ export const lockCases: readonly ConformanceCase[] = [
                   { resourceId: r0, slot },
                   i === rep
                     ? async () => {
-                        await withBlocks(locked).insertBlock(block);
+                        await blockVerbs(locked).insertBlock(block);
 
                         return { ok: true };
                       }

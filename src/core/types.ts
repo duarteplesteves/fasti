@@ -36,8 +36,15 @@ export interface AvailabilityRule {
 /** A Booking id the Framework mints. A plain TypeScript brand on `string`. */
 export type BookingId = string & { readonly __brand: "BookingId" };
 
-/** A Block id the Framework mints. A plain TypeScript brand on `string`. */
-export type BlockId = string & { readonly __brand: "BlockId" };
+declare const recordBrand: unique symbol;
+
+/** The id of a record in Plugin table `T`: a UUIDv7 fasti mints, branded so ids of two tables can't mix. */
+export type RecordId<T extends string> = string & {
+  readonly [recordBrand]: T;
+};
+
+/** A Block id: the id of a record in the `blocks()` Plugin's `block` table. */
+export type BlockId = RecordId<"block">;
 
 /**
  * An existing booking that occupies a resource.

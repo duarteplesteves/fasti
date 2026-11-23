@@ -9,7 +9,13 @@ import type {
   BlockId,
   BookingId,
 } from "../core/types.js";
-import { column, createScheduler, defineSchema } from "../index.js";
+import {
+  availability,
+  blocks,
+  column,
+  createScheduler,
+  defineSchema,
+} from "../index.js";
 import type {
   BookError,
   Booking,
@@ -17,16 +23,16 @@ import type {
   CancelError,
   CancelValue,
   Scheduler,
-  UpdateBlockAlso,
   Vetoed,
 } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdResources } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
+import { getRules, replaceRules } from "../testing/plugin-stores.js";
 
 /** UUID ids, Blocks, and one Transition besides cancel's, so every write Action exists. */
 const schema = defineSchema({
-  block: { fields: {} },
+  plugins: [availability(), blocks({ fields: {} })],
   booking: {
     statuses: { inProgress: { blocking: true } },
     transitions: { booked: ["inProgress"] },
@@ -124,7 +130,7 @@ describe("also on book", () => {
 
     let beforeInsert = 0;
 
-    const slowInsert = defineAdapter<undefined, "blocks">((s) => {
+    const slowInsert = defineAdapter<undefined, "records">((s) => {
       const inner = raw(s);
 
       return {
@@ -254,10 +260,10 @@ async function recordingRejections() {
   const reasons: unknown[] = [];
 
   await inner(schema).withResourceLock(room, async (locked) => {
-    await locked.replaceRules({ resourceId: room, rules: [weekdays] });
+    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
   });
 
-  const adapter = defineAdapter<undefined, "blocks">((s) => {
+  const adapter = defineAdapter<undefined, "records">((s) => {
     const bound = inner(s);
 
     return {
@@ -300,7 +306,7 @@ describe("what the Adapter sees when a unit fails", () => {
     const { adapter, reasons } = await recordingRejections();
     const driverError = new Error("serialization failure");
 
-    const failing = defineAdapter<undefined, "blocks">((s) => {
+    const failing = defineAdapter<undefined, "records">((s) => {
       const bound = adapter(s);
 
       return {
@@ -312,7 +318,7 @@ describe("what the Adapter sees when a unit fails", () => {
               await work({
                 ...locked,
                 // oxlint-disable-next-line require-await -- a verb must return a promise.
-                getRules: async () => {
+                listRecords: async () => {
                   throw driverError;
                 },
               })
@@ -369,7 +375,7 @@ async function seeded() {
     await scheduler.blocks.create({ ...later, resourceId: room })
   );
 
-  const rules = await reads.getRules(room);
+  const rules = await getRules(reads, room);
 
   return { block, booking, reads, rules, scheduler };
 }
@@ -485,7 +491,7 @@ const cases: readonly AlsoCase[] = [
         rules: [newRule],
       }),
     unchanged: async ({ reads, rules }) => {
-      await expect(reads.getRules(room)).resolves.toStrictEqual(rules);
+      await expect(getRules(reads, room)).resolves.toStrictEqual(rules);
     },
     value: () => ({ rules: [{ ...newRule, exceptions: [] }] }),
   },
@@ -510,7 +516,9 @@ const cases: readonly AlsoCase[] = [
     run: async ({ block, scheduler }, also) =>
       await scheduler.blocks.update({ ...longer, also, id: block.id }),
     unchanged: async ({ block, reads }) => {
-      await expect(reads.getBlock(block.id)).resolves.toStrictEqual(block);
+      await expect(reads.getRecord("block", block.id)).resolves.toStrictEqual(
+        block
+      );
     },
     value: ({ block }) => ({ ...block, ...longer }),
   },
@@ -520,7 +528,9 @@ const cases: readonly AlsoCase[] = [
     run: async ({ block, scheduler }, also) =>
       await scheduler.blocks.delete({ also, id: block.id }),
     unchanged: async ({ block, reads }) => {
-      await expect(reads.getBlock(block.id)).resolves.toStrictEqual(block);
+      await expect(reads.getRecord("block", block.id)).resolves.toStrictEqual(
+        block
+      );
     },
     // void, so the value is `also` alone.
     value: () => ({}),
@@ -588,7 +598,11 @@ describe("also when nothing changes", () => {
 
   it("runs `also` on a no-op blocks.update, with block === previous", async () => {
     const { block, scheduler } = await seeded();
-    const seen: UpdateBlockAlso<S, undefined>[] = [];
+
+    const seen: (SeenContext & {
+      readonly block: unknown;
+      readonly previous: unknown;
+    })[] = [];
 
     const result = await scheduler.blocks.update({
       also: (ctx) => {
@@ -662,8 +676,8 @@ type Err<R> = R extends { readonly ok: false; readonly error: infer E }
   ? E
   : never;
 
-/** `book`'s error with no developer Policies: the built-in `availability` only. */
-type BookErr = BookError | PolicyViolation<AvailabilityViolation>;
+/** `book`'s error with no developer Policies: the `availability()` Plugin's only. */
+type BookErr = BookError<S> | PolicyViolation<AvailabilityViolation>;
 
 describe("also types", () => {
   it("adds neither an `also` key nor Vetoed without `also`", () => {

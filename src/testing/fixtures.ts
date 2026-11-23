@@ -11,7 +11,10 @@ import type {
 } from "../adapter/records.js";
 import type { BlockId, BookingId } from "../core/types.js";
 import type { AnyColumn } from "../schema/column.js";
-import type { AnySchema, Fields } from "../schema/define-schema.js";
+import type { AnySchema } from "../schema/define-schema.js";
+import type { Columns } from "../schema/table.js";
+import { blockFieldsOf } from "./plugin-stores.js";
+import type { BlockStore } from "./plugin-stores.js";
 
 /** A fresh Booking id (a UUID, as the Framework will mint). */
 export function bookingId(): BookingId {
@@ -66,15 +69,24 @@ export function valueOf(type: AnyColumn): FieldValue {
   }
 }
 
+/** A Booking or Block Developer Field's column: Developer Field kinds only. */
+function developer(type: Columns[string]["type"]): AnyColumn {
+  // SAFETY: Booking and Block Developer Fields are Developer Field kinds; a Block field is typed as a Plugin column.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
+  return type as AnyColumn;
+}
+
 /** A generated value for every Developer Field; optional ones `null` unless `set`. */
 function fieldValues(
-  fields: Fields,
+  fields: Columns,
   optionalFields: "set" | "null"
 ): Record<string, FieldValue | null> {
   return Object.fromEntries(
     Object.entries(fields).map(([name, field]) => [
       name,
-      field.required || optionalFields === "set" ? valueOf(field.type) : null,
+      field.required || optionalFields === "set"
+        ? valueOf(developer(field.type))
+        : null,
     ])
   );
 }
@@ -137,7 +149,7 @@ export function newBlock<S extends AnySchema>(
   // SAFETY: `fields` holds one value of the declared kind per Block Developer Field (null when optional and unset).
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the values are generated from the schema at runtime.
   return {
-    ...fieldValues(schema.block?.fields ?? {}, optionalFields),
+    ...fieldValues(blockFieldsOf(schema), optionalFields),
     end: start.add({ hours: 1 }),
     id: blockId(),
     resourceId,
@@ -147,7 +159,7 @@ export function newBlock<S extends AnySchema>(
 
 /** Insert a Block in its own unit of work. */
 export async function insertBlock<S extends AnySchema, Tx>(
-  adapter: SchemaAdapter<S, Tx, "blocks">,
+  adapter: BlockStore<S, Tx>,
   block: BlockRecord<S>
 ): Promise<void> {
   await adapter.withResourceLock(block.resourceId, async (locked) => {

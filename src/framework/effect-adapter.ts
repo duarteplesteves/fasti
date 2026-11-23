@@ -2,35 +2,24 @@ import { Cause, Effect, Exit, Result as EffectResult } from "effect";
 
 import type {
   AdapterReads,
-  BlockReads,
-  BlockWrites,
-  DeleteBlockResult,
   DeleteRecordResult,
   GroupsOf,
   InsertBookingResult,
-  ListBlocksQuery,
   ListBookingsQuery,
   ListRecordsQuery,
   LockedAdapter,
   RecordReads,
   ReplaceRecordsParams,
-  ReplaceRulesParams,
   SchemaAdapter,
   StoredRecord,
-  UpdateBlockResult,
   UpdateBookingParams,
   UpdateBookingResult,
   UpdateRecordParams,
   UpdateRecordResult,
   VerbGroup,
 } from "../adapter/contract.js";
-import type {
-  BlockRecord,
-  BookingRecord,
-  ResourceIdOf,
-  RuleRecord,
-} from "../adapter/records.js";
-import type { BlockId, BookingId } from "../core/types.js";
+import type { BookingRecord, ResourceIdOf } from "../adapter/records.js";
+import type { BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { AdapterError } from "./errors.js";
 
@@ -42,17 +31,6 @@ export interface EffectReads<S extends AnySchema> {
   readonly listBookings: (
     query: ListBookingsQuery<S>
   ) => Effect.Effect<BookingRecord<S>[], AdapterError>;
-  readonly getRules: (
-    resourceId: ResourceIdOf<S>
-  ) => Effect.Effect<RuleRecord[], AdapterError>;
-  /** Dies on a schema without `block`: no Action calls it there. */
-  readonly getBlock: (
-    id: BlockId
-  ) => Effect.Effect<BlockRecord<S> | null, AdapterError>;
-  /** `[]` on a schema without `block`, with no database read. */
-  readonly listBlocks: (
-    query: ListBlocksQuery<S>
-  ) => Effect.Effect<BlockRecord<S>[], AdapterError>;
   /** Only called for a table some Plugin declares, so only on an Adapter with `records`. */
   readonly getRecord: (
     table: string,
@@ -72,21 +50,6 @@ export interface EffectLocked<S extends AnySchema, Tx> extends EffectReads<S> {
   readonly insertBooking: (
     booking: BookingRecord<S>
   ) => Effect.Effect<InsertBookingResult, AdapterError>;
-  /** Dies on a schema without `block`: no Action calls it there. */
-  readonly insertBlock: (
-    block: BlockRecord<S>
-  ) => Effect.Effect<void, AdapterError>;
-  /** Dies on a schema without `block`, as `insertBlock`. */
-  readonly updateBlock: (
-    params: Parameters<BlockWrites<S>["updateBlock"]>[0]
-  ) => Effect.Effect<UpdateBlockResult, AdapterError>;
-  /** Dies on a schema without `block`, as `insertBlock`. */
-  readonly deleteBlock: (
-    id: BlockId
-  ) => Effect.Effect<DeleteBlockResult, AdapterError>;
-  readonly replaceRules: (
-    params: ReplaceRulesParams<S>
-  ) => Effect.Effect<void, AdapterError>;
   /** Store a new Plugin record; only called for a table some Plugin declares, so only on an Adapter with `records`. */
   readonly insertRecord: (
     table: string,
@@ -129,56 +92,25 @@ function attempt<A>(run: () => Promise<A>): Effect.Effect<A, AdapterError> {
   });
 }
 
-/** A Block verb: run it with `block`, die without (the Framework never calls it there). */
-function blockVerb<A>(
-  hasBlocks: boolean,
-  name: string,
-  run: () => Promise<A>
-): Effect.Effect<A, AdapterError> {
-  return hasBlocks
-    ? attempt(run)
-    : Effect.die(new Error(`fasti: ${name} on a schema without block`));
-}
-
 function liftReads<S extends AnySchema>(
-  raw: AdapterReads<S> & BlockReads<S> & RecordReads<S>,
-  hasBlocks: boolean
+  raw: AdapterReads<S> & RecordReads<S>
 ): EffectReads<S> {
   return {
     getRecord: (table, id) =>
       attempt(async () => await raw.getRecord(table, id)),
     listRecords: (table, query) =>
       attempt(async () => await raw.listRecords(table, query)),
-    getBlock: (id) =>
-      blockVerb(hasBlocks, "getBlock", async () => await raw.getBlock(id)),
     getBooking: (id) => attempt(async () => await raw.getBooking(id)),
-    getRules: (resourceId) =>
-      attempt(async () => await raw.getRules(resourceId)),
-    listBlocks: (query) =>
-      hasBlocks
-        ? attempt(async () => await raw.listBlocks(query))
-        : Effect.succeed([]),
     listBookings: (query) => attempt(async () => await raw.listBookings(query)),
   };
 }
 
 function liftLocked<S extends AnySchema, Tx>(
-  raw: LockedAdapter<S, Tx, VerbGroup>,
-  hasBlocks: boolean
+  raw: LockedAdapter<S, Tx, VerbGroup>
 ): EffectLocked<S, Tx> {
   return {
-    ...liftReads(raw, hasBlocks),
+    ...liftReads(raw),
     tx: raw.tx,
-    deleteBlock: (id) =>
-      blockVerb(
-        hasBlocks,
-        "deleteBlock",
-        async () => await raw.deleteBlock(id)
-      ),
-    insertBlock: (block) =>
-      blockVerb(hasBlocks, "insertBlock", async () => {
-        await raw.insertBlock(block);
-      }),
     insertBooking: (booking) =>
       attempt(async () => await raw.insertBooking(booking)),
     insertRecord: (table, record) =>
@@ -193,16 +125,6 @@ function liftLocked<S extends AnySchema, Tx>(
       attempt(async () => {
         await raw.replaceRecords(table, params);
       }),
-    replaceRules: (params) =>
-      attempt(async () => {
-        await raw.replaceRules(params);
-      }),
-    updateBlock: (params) =>
-      blockVerb(
-        hasBlocks,
-        "updateBlock",
-        async () => await raw.updateBlock(params)
-      ),
     updateBooking: (params) =>
       attempt(async () => await raw.updateBooking(params)),
   };
@@ -220,19 +142,16 @@ function rejectionFor(cause: Cause.Cause<unknown>, rollback: Error): unknown {
   return found.success instanceof AdapterError ? found.success.cause : rollback;
 }
 
-/** Wrap a Promise Adapter bound to `schema` as an {@link EffectAdapter}. Without `block`, the Block verbs never reach it. */
+/** Wrap a Promise Adapter bound to a schema as an {@link EffectAdapter}: the Booking verbs, and `records` for the Plugin tables. */
 export function liftAdapter<S extends AnySchema, Tx>(
-  bound: SchemaAdapter<S, Tx, GroupsOf<S>>,
-  schema: S
+  bound: SchemaAdapter<S, Tx, GroupsOf<S>>
 ): EffectAdapter<S, Tx> {
-  const hasBlocks = schema.block !== null;
-  // SAFETY: GroupsOf<S> has "blocks" exactly when `schema.block` isn't null, and the Block verbs are only called then;
-  // it has "records" exactly when a Plugin declares tables, and the record verbs are only called with those tables.
+  // SAFETY: GroupsOf<S> has "records" exactly when a Plugin declares tables, and the record verbs are only called with those tables.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
   const raw = bound as SchemaAdapter<S, Tx, VerbGroup>;
 
   return {
-    ...liftReads(raw, hasBlocks),
+    ...liftReads(raw),
     withResourceLock: <A, E, R>(
       resourceId: ResourceIdOf<S>,
       work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E, R>
@@ -247,7 +166,7 @@ export function liftAdapter<S extends AnySchema, Tx>(
             try {
               return await raw.withResourceLock(resourceId, async (locked) => {
                 const exit = await Effect.runPromiseExitWith(services)(
-                  work(liftLocked(locked, hasBlocks))
+                  work(liftLocked(locked))
                 );
 
                 if (Exit.isFailure(exit)) {

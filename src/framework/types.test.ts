@@ -3,14 +3,9 @@ import { describe, expectTypeOf, it } from "vitest";
 
 import type {
   Adapter,
-  BlockChanges,
-  BlockReads,
-  BlockRecord,
-  BlockWrites,
-  DeleteBlockResult,
+  DeleteRecordResult,
   GroupsOf,
-  ListBlocksQuery,
-  UpdateBlockResult,
+  UpdateRecordResult,
 } from "../adapter/index.js";
 import type { RuleRecord } from "../adapter/records.js";
 import type { InvalidParams, Result } from "../core/result.js";
@@ -21,7 +16,6 @@ import type {
   BlockId,
   Block,
   BlockActions,
-  BlockColumn,
   BlockNotFound,
   BookCandidate,
   CancelCandidate,
@@ -30,7 +24,6 @@ import type {
   CreateSchedulerParams,
   DeleteBlockError,
   DeleteBlockParams,
-  HasBlocks,
   ListBlocksError,
   ListBlocksParams,
   RescheduleCandidate,
@@ -39,7 +32,12 @@ import type {
   UpdateBlockParams,
   Violation,
 } from "../index.js";
-import { createScheduler, definePolicy } from "../index.js";
+import {
+  availability,
+  blocks,
+  createScheduler,
+  definePolicy,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { column } from "../schema/column.js";
 import { defineSchema } from "../schema/define-schema.js";
@@ -49,15 +47,8 @@ import type {
   textIdSchema,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
-import type {
-  GetAvailabilityError,
-  GetAvailabilityParams,
-  SetAvailabilityError,
-  SetAvailabilityParams,
-  SetAvailabilityValue,
-} from "./availability.js";
 import type { BookError, BookParams } from "./book.js";
-import { mintBlockId, mintBookingId } from "./booking-id.js";
+import { mintBookingId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
 import type { CancelError, CancelParams, CancelValue } from "./cancel.js";
 import type { EffectLocked } from "./effect-adapter.js";
@@ -68,6 +59,15 @@ import type {
   Vetoed,
 } from "./errors.js";
 import type { FindSlotsError, Slot } from "./find-slots.js";
+import type { Fill } from "./plugin.js";
+import type {
+  GetAvailabilityError,
+  GetAvailabilityParams,
+  SetAvailabilityError,
+  SetAvailabilityParams,
+  SetAvailabilityValue,
+} from "./plugins/availability.js";
+import { mintBlockId } from "./plugins/blocks.js";
 import type { RescheduleError } from "./reschedule.js";
 
 type StaffId = number & { readonly __brand: "StaffId" };
@@ -76,8 +76,11 @@ const brandedSchema = defineSchema({
   resource: { idType: column.integer<StaffId>() },
 });
 
-/** Defaults: text ids, no Developer Fields. */
-const defaultSchema = defineSchema({});
+/** Defaults: text ids, no Developer Fields; availability() installed. */
+const defaultSchema = defineSchema({ plugins: [availability()] });
+
+/** A Plugin Action's types as an app over text ids sees them. */
+type App<X> = Fill<string, X>;
 
 type NoFields = BookParams<typeof uuidIdSchema>;
 
@@ -182,7 +185,8 @@ describe("book types", () => {
       Promise<
         Result<
           Booking<typeof textIdSchema>,
-          BookError | PolicyViolation<AvailabilityViolation>
+          | BookError<typeof textIdSchema>
+          | PolicyViolation<AvailabilityViolation>
         >
       >
     >();
@@ -192,15 +196,29 @@ describe("book types", () => {
   });
 });
 
+const reasonFields = {
+  reason: { required: true, type: column.text() },
+} as const;
+
+const noteFields = { note: { required: false, type: column.text() } } as const;
+
+type Reason = typeof reasonFields;
+
+type Note = typeof noteFields;
+
+// oxlint-disable-next-line typescript/no-generated-empty-object-type -- no Developer Fields.
+type Bare = Record<never, never>;
+
 const blockSchema = defineSchema({
-  block: { fields: { reason: { required: true, type: column.text() } } },
+  plugins: [availability(), blocks({ fields: reasonFields })],
 });
 
-const optionalBlockSchema = defineSchema({
-  block: { fields: { note: { required: false, type: column.text() } } },
+const bareBlockSchema = defineSchema({
+  plugins: [availability(), blocks({ fields: {} })],
 });
 
-const bareBlockSchema = defineSchema({ block: { fields: {} } });
+/** No Plugins: no tables, so any Adapter fits. */
+const pluginFreeSchema = defineSchema({});
 
 /** A custom 0.1-style Adapter: no verb groups declared. */
 declare const plainAdapter: Adapter<{ readonly txBrand: true }>;
@@ -214,7 +232,7 @@ declare function txOf<S extends AnySchema, Tx>(
 function schedulerCalls() {
   return [
     createScheduler({
-      // @ts-expect-error -- a Blocks schema needs an Adapter that declares "blocks".
+      // @ts-expect-error -- a Blocks schema needs an Adapter that declares "records".
       adapter: plainAdapter,
       policies: [],
       schema: blockSchema,
@@ -222,7 +240,7 @@ function schedulerCalls() {
     createScheduler({
       policies: [],
       adapter: plainAdapter,
-      schema: defaultSchema,
+      schema: pluginFreeSchema,
     }),
     createScheduler({
       policies: [],
@@ -248,12 +266,12 @@ function txViaMemory() {
 /** Never called: only the inferred Tx is checked. */
 function txViaPlain() {
   return {
-    tx: txOf({ adapter: plainAdapter, policies: [], schema: defaultSchema }),
+    tx: txOf({ adapter: plainAdapter, policies: [], schema: pluginFreeSchema }),
   };
 }
 
 describe("Blocks types", () => {
-  it("rejects an Adapter without the blocks group at createScheduler for a Blocks schema", () => {
+  it("rejects an Adapter without the records group at createScheduler for a Blocks schema", () => {
     expectTypeOf(schedulerCalls).toBeFunction();
   });
 
@@ -264,7 +282,7 @@ describe("Blocks types", () => {
     }>();
   });
 
-  it("has `blocks` only when the schema declares `block`", () => {
+  it("has `blocks` only when the schema installs blocks()", () => {
     expectTypeOf<
       Scheduler<typeof defaultSchema, undefined, readonly []>
     >().not.toHaveProperty("blocks");
@@ -279,97 +297,82 @@ describe("Blocks types", () => {
           readonly []
         >["blocks"]["create"]
       >
-    >().toEqualTypeOf<
-      Promise<Result<Block<typeof blockSchema>, CreateBlockError>>
-    >();
-    expectTypeOf<Block<typeof blockSchema>["id"]>().toEqualTypeOf<BlockId>();
+    >().toEqualTypeOf<Promise<Result<App<Block<Reason>>, CreateBlockError>>>();
+    expectTypeOf<Block<Reason>["id"]>().toEqualTypeOf<BlockId>();
   });
 
   it("makes Block `fields` required, optional or absent as the Developer Fields demand", () => {
     const at = { end: instant, resourceId: "staff-a", start: instant } as const;
 
-    expectTypeOf<
-      CreateBlockParams<typeof bareBlockSchema>
-    >().not.toHaveProperty("fields");
-    expectTypeOf(at).toExtend<CreateBlockParams<typeof optionalBlockSchema>>();
+    expectTypeOf<App<CreateBlockParams<Bare>>>().not.toHaveProperty("fields");
+    expectTypeOf(at).toExtend<App<CreateBlockParams<Note>>>();
     expectTypeOf({ ...at, fields: { note: null } }).toExtend<
-      CreateBlockParams<typeof optionalBlockSchema>
+      App<CreateBlockParams<Note>>
     >();
-    expectTypeOf(at).not.toExtend<CreateBlockParams<typeof blockSchema>>();
+    expectTypeOf(at).not.toExtend<App<CreateBlockParams<Reason>>>();
     expectTypeOf({ ...at, fields: { reason: "x" } }).toExtend<
-      CreateBlockParams<typeof blockSchema>
+      App<CreateBlockParams<Reason>>
     >();
     expectTypeOf({ ...at, fields: { reason: null } }).not.toExtend<
-      CreateBlockParams<typeof blockSchema>
+      App<CreateBlockParams<Reason>>
     >();
   });
 
   it("takes an id, a whole range or none, and fields only when the Block has them, in update", () => {
     const id = mintBlockId();
 
-    expectTypeOf({ id }).toExtend<UpdateBlockParams<typeof blockSchema>>();
+    expectTypeOf({ id }).toExtend<UpdateBlockParams<Reason>>();
     expectTypeOf({ end: instant, id, start: instant }).toExtend<
-      UpdateBlockParams<typeof blockSchema>
+      UpdateBlockParams<Reason>
     >();
     expectTypeOf({ fields: { reason: "x" }, id }).toExtend<
-      UpdateBlockParams<typeof blockSchema>
+      UpdateBlockParams<Reason>
     >();
     expectTypeOf({ id, start: instant }).not.toExtend<
-      UpdateBlockParams<typeof blockSchema>
+      UpdateBlockParams<Reason>
     >();
     expectTypeOf({ end: instant, id }).not.toExtend<
-      UpdateBlockParams<typeof blockSchema>
+      UpdateBlockParams<Reason>
     >();
     expectTypeOf({ fields: { reason: null }, id }).not.toExtend<
-      UpdateBlockParams<typeof blockSchema>
+      UpdateBlockParams<Reason>
     >();
-    expectTypeOf<
-      UpdateBlockParams<typeof bareBlockSchema>
-    >().not.toHaveProperty("fields");
-    expectTypeOf<UpdateBlockParams<typeof blockSchema>>().not.toHaveProperty(
-      "resourceId"
-    );
+    expectTypeOf<UpdateBlockParams<Bare>>().not.toHaveProperty("fields");
+    expectTypeOf<UpdateBlockParams<Reason>>().not.toHaveProperty("resourceId");
   });
 
-  it("types `block` as null without it, and as its fields with it", () => {
-    expectTypeOf(defaultSchema.block).toEqualTypeOf<null>();
-    expectTypeOf(bareBlockSchema.block).toEqualTypeOf<{
-      // oxlint-disable-next-line typescript/no-generated-empty-object-type -- no Developer Fields.
-      readonly fields: Record<never, never>;
-    }>();
+  it("types blocks()' table by its fields, and leaves fasti's own `block` null", () => {
+    expectTypeOf(bareBlockSchema.block).toEqualTypeOf<null>();
+    expectTypeOf(
+      blocks({ fields: {} }).tables.block.columns
+    ).toEqualTypeOf<Bare>();
+    expectTypeOf(
+      blocks({ fields: reasonFields }).tables.block.columns
+    ).toEqualTypeOf<Reason>();
   });
 });
 
 describe("Block exports", () => {
-  it("puts the Block types on the root and the contract types on /adapter", () => {
+  it("puts the Block types on the root, and Blocks on `records`", () => {
     type S = typeof blockSchema;
 
-    expectTypeOf<HasBlocks<S>>().toEqualTypeOf<true>();
-    expectTypeOf<GroupsOf<S>>().toEqualTypeOf<"blocks">();
-    expectTypeOf<BlockColumn>().toEqualTypeOf<
-      "id" | "resourceId" | "start" | "end"
-    >();
-    expectTypeOf<Block<S>>().toEqualTypeOf<BlockRecord<S>>();
-    expectTypeOf<ListBlocksQuery<S>>().toHaveProperty("overlapping");
-    expectTypeOf<BlockReads<S>>().toHaveProperty("listBlocks");
-    expectTypeOf<BlockWrites<S>>().toHaveProperty("insertBlock");
+    expectTypeOf<GroupsOf<S>>().toEqualTypeOf<"records">();
+    expectTypeOf<Block<Reason>>().toHaveProperty("reason");
+    expectTypeOf<Block<Reason>>().toHaveProperty("start");
     expectTypeOf<
-      Parameters<BlockActions<S, Tx, "effect">["list"]>[0]
-    >().toEqualTypeOf<ListBlocksParams<S>>();
+      Parameters<BlockActions<Reason>["list"]["run"]>[0]
+    >().toEqualTypeOf<ListBlocksParams>();
     expectTypeOf<ListBlocksError>().toExtend<CreateBlockError>();
     expectTypeOf<
-      Parameters<BlockActions<S, Tx, "effect">["update"]>[0]
-    >().toEqualTypeOf<UpdateBlockParams<S>>();
+      Parameters<BlockActions<Reason>["update"]["run"]>[0]
+    >().toEqualTypeOf<UpdateBlockParams<Reason>>();
     expectTypeOf<
-      Parameters<BlockActions<S, Tx, "effect">["delete"]>[0]
+      Parameters<BlockActions<Reason>["delete"]["run"]>[0]
     >().toEqualTypeOf<DeleteBlockParams>();
     expectTypeOf<BlockNotFound>().toExtend<UpdateBlockError>();
     expectTypeOf<BlockNotFound>().toExtend<DeleteBlockError>();
-    expectTypeOf<BlockWrites<S>>().toHaveProperty("updateBlock");
-    expectTypeOf<BlockWrites<S>>().toHaveProperty("deleteBlock");
-    expectTypeOf<BlockChanges<S>>().not.toHaveProperty("resourceId");
-    expectTypeOf<UpdateBlockResult>().toExtend<{ ok: boolean }>();
-    expectTypeOf<DeleteBlockResult>().toExtend<{ ok: boolean }>();
+    expectTypeOf<UpdateRecordResult>().toExtend<{ ok: boolean }>();
+    expectTypeOf<DeleteRecordResult>().toExtend<{ ok: boolean }>();
   });
 });
 
@@ -393,7 +396,7 @@ function schedulersByAdapter() {
     plain: createScheduler({
       policies: [],
       adapter: plainAdapter,
-      schema: defaultSchema,
+      schema: pluginFreeSchema,
     }),
   };
 }
@@ -444,12 +447,12 @@ describe("forms", () => {
     >();
     expectTypeOf<Single<Plain["availability"]["set"]>>().toEqualTypeOf<
       (
-        params: SetAvailabilityParams<S>
+        params: App<SetAvailabilityParams>
       ) => Promise<Result<SetAvailabilityValue, SetAvailabilityError>>
     >();
     expectTypeOf<Single<Plain["availability"]["get"]>>().toEqualTypeOf<
       (
-        params: GetAvailabilityParams<S>
+        params: App<GetAvailabilityParams>
       ) => Promise<Result<readonly RuleRecord[], GetAvailabilityError>>
     >();
     expectTypeOf<keyof Plain>().toEqualTypeOf<
@@ -464,21 +467,21 @@ describe("forms", () => {
 
     expectTypeOf<Single<Blocks["create"]>>().toEqualTypeOf<
       (
-        params: CreateBlockParams<S>
-      ) => Promise<Result<Block<S>, CreateBlockError>>
+        params: App<CreateBlockParams<Reason>>
+      ) => Promise<Result<App<Block<Reason>>, CreateBlockError>>
     >();
     expectTypeOf<Single<Blocks["update"]>>().toEqualTypeOf<
       (
-        params: UpdateBlockParams<S>
-      ) => Promise<Result<Block<S>, UpdateBlockError>>
+        params: App<UpdateBlockParams<Reason>>
+      ) => Promise<Result<App<Block<Reason>>, UpdateBlockError>>
     >();
     expectTypeOf<Single<Blocks["delete"]>>().toEqualTypeOf<
       (params: DeleteBlockParams) => Promise<Result<void, DeleteBlockError>>
     >();
     expectTypeOf<Single<Blocks["list"]>>().toEqualTypeOf<
       (
-        params: ListBlocksParams<S>
-      ) => Promise<Result<readonly Block<S>[], ListBlocksError>>
+        params: App<ListBlocksParams>
+      ) => Promise<Result<readonly App<Block<Reason>>[], ListBlocksError>>
     >();
     expectTypeOf<keyof Scheduler<S, Tx, readonly []>>().toEqualTypeOf<
       "book" | "reschedule" | "cancel" | "findSlots" | "availability" | "blocks"
@@ -498,7 +501,7 @@ describe("forms", () => {
     expectTypeOf<ReturnType<typeof bookCall>>().toEqualTypeOf<
       Effect.Effect<
         Booking<S>,
-        BookError | PolicyViolation<AvailabilityViolation>
+        BookError<S> | PolicyViolation<AvailabilityViolation>
       >
     >();
 
@@ -515,38 +518,38 @@ describe("forms", () => {
     >();
     expectTypeOf<Single<Service["availability"]["set"]>>().toEqualTypeOf<
       (
-        params: SetAvailabilityParams<S>
+        params: App<SetAvailabilityParams>
       ) => Effect.Effect<SetAvailabilityValue, SetAvailabilityError>
     >();
     expectTypeOf<Single<Service["availability"]["get"]>>().toEqualTypeOf<
       (
-        params: GetAvailabilityParams<S>
+        params: App<GetAvailabilityParams>
       ) => Effect.Effect<readonly RuleRecord[], GetAvailabilityError>
     >();
     expectTypeOf<Single<Service["blocks"]["create"]>>().toEqualTypeOf<
       (
-        params: CreateBlockParams<S>
-      ) => Effect.Effect<Block<S>, CreateBlockError>
+        params: App<CreateBlockParams<Reason>>
+      ) => Effect.Effect<App<Block<Reason>>, CreateBlockError>
     >();
     expectTypeOf<Single<Service["blocks"]["update"]>>().toEqualTypeOf<
       (
-        params: UpdateBlockParams<S>
-      ) => Effect.Effect<Block<S>, UpdateBlockError>
+        params: App<UpdateBlockParams<Reason>>
+      ) => Effect.Effect<App<Block<Reason>>, UpdateBlockError>
     >();
     expectTypeOf<Single<Service["blocks"]["delete"]>>().toEqualTypeOf<
       (params: DeleteBlockParams) => Effect.Effect<void, DeleteBlockError>
     >();
     expectTypeOf<Single<Service["blocks"]["list"]>>().toEqualTypeOf<
       (
-        params: ListBlocksParams<S>
-      ) => Effect.Effect<readonly Block<S>[], ListBlocksError>
+        params: App<ListBlocksParams>
+      ) => Effect.Effect<readonly App<Block<Reason>>[], ListBlocksError>
     >();
   });
 
   it("infers Tx from the Adapter in createScheduler", () => {
     expectTypeOf(schedulersByAdapter).returns.toEqualTypeOf<{
       memory: Scheduler<typeof blockSchema, undefined, readonly []>;
-      plain: Scheduler<typeof defaultSchema, Tx, readonly []>;
+      plain: Scheduler<typeof pluginFreeSchema, Tx, readonly []>;
     }>();
   });
 

@@ -1,4 +1,5 @@
 import type { FieldValues } from "../adapter/records.js";
+import type { RecordId } from "../core/types.js";
 import type { RecordColumn } from "./column.js";
 
 /** A Plugin table column. */
@@ -26,17 +27,14 @@ export interface TableDef<
   readonly timed: Tm;
   /** The table's own columns; `required` maps to `NOT NULL`. None can be named `id`, `resourceId`, `start` or `end`. */
   readonly columns: C;
+  /** Whether the table keeps a database default on `id` (fasti mints ids either way); defaults to `true`. `false` only to match a table that never had one. */
+  readonly idDefault?: boolean;
 }
 
 /** Plugin tables by logical name. */
 export type Tables = Readonly<Record<string, TableDef>>;
 
-declare const recordBrand: unique symbol;
-
-/** The id of a record in Plugin table `T`: a UUIDv7 fasti mints, branded so ids of two tables can't mix. */
-export type RecordId<T extends string> = string & {
-  readonly [recordBrand]: T;
-};
+export type { RecordId } from "../core/types.js";
 
 declare const resourceSlot: unique symbol;
 
@@ -162,8 +160,6 @@ export type HasTables<S extends { readonly plugins: readonly Plugin[] }> = [
 
 /** The scheduler's own keys: a Plugin can't take one. */
 const schedulerKeys = [
-  "availability",
-  "blocks",
   "book",
   "cancel",
   "findSlots",
@@ -182,12 +178,12 @@ type NamesOf<P> = P extends { readonly name: infer Nm extends string }
 /** The names of Plugin `Pl`'s Policies (a union of Plugins: all of theirs). */
 export type PolicyNamesOf<Pl> = NamesOf<PoliciesOf<Pl>>;
 
-/** `unknown` when `Ps` can be installed together; `never` when a Plugin name repeats or is a scheduler key, a table name repeats or is `booking`, or a Policy name repeats across Plugins or is `availability`. */
+/** `unknown` when `Ps` can be installed together; `never` when a Plugin name repeats or is a scheduler key, a table name repeats or is `booking`, or a Policy name repeats across Plugins. */
 export type InstallablePlugins<
   Ps extends readonly Plugin[],
   Names extends string = never,
   Taken extends string = "booking",
-  Policies = "availability",
+  Policies = never,
 > = Ps extends readonly [
   infer H extends Plugin,
   ...infer Rest extends readonly Plugin[],
@@ -205,6 +201,32 @@ export type InstallablePlugins<
         >
       : never
   : unknown;
+
+/** The physical name of Plugin table `table` on a resolved schema; its logical name when the schema has none for it. */
+export function physicalTable(
+  schema: {
+    readonly names: { readonly tables: Readonly<Record<string, string>> };
+  },
+  table: string
+): string {
+  return schema.names.tables[table] ?? table;
+}
+
+/** The physical column names of Plugin table `table` on a resolved schema, by logical name; a column's logical name when it has none. */
+export function physicalColumns(
+  schema: {
+    readonly names: {
+      readonly columns: Readonly<
+        Partial<Record<string, Readonly<Record<string, string>>>>
+      >;
+    };
+  },
+  table: string
+): (column: string) => string {
+  const names = schema.names.columns[table];
+
+  return (column) => names?.[column] ?? column;
+}
 
 /** Every table the Plugins declare, by logical name. */
 export function tablesOf(plugins: readonly Plugin[]): Tables {

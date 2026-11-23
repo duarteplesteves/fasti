@@ -293,12 +293,13 @@ describe("a Plugin's busy time and Policies, as the app sees them", () => {
 
   it("adds the Plugin's own kind to SlotConflict, for both styles", () => {
     expectTypeOf<KindOf<typeof holidaySchemas.native>>().toEqualTypeOf<
-      "booking" | "block" | "holiday"
+      "booking" | "holiday"
     >();
     expectTypeOf<KindOf<typeof holidaySchemas.promise>>().toEqualTypeOf<
-      "booking" | "block" | "holiday"
+      "booking" | "holiday"
     >();
-    expectTypeOf<KindOf<S>>().toEqualTypeOf<"booking" | "block">();
+    // Blocks are a Plugin too: no `block` kind without `blocks()`.
+    expectTypeOf<KindOf<S>>().toEqualTypeOf<"booking">();
   });
 
   it("lets `relax` name a Plugin Policy, and types its Violation in `waived` and PolicyViolation", () => {
@@ -313,14 +314,15 @@ describe("a Plugin's busy time and Policies, as the app sees them", () => {
     expectTypeOf<
       Extract<Relaxed, { ok: true }>["value"]["waived"]
     >().toEqualTypeOf<readonly Violation<"holidayEve", HolidayEve>[]>();
+    // `availability` is a Plugin's Policy too: not relaxable without `availability()`.
     expectTypeOf<Parameters<Book>[0]["relax"]>().toEqualTypeOf<
-      readonly ("availability" | "holidayEve")[] | undefined
+      readonly "holidayEve"[] | undefined
     >();
 
     type PromiseBook = BookOf<typeof holidaySchemas.promise>;
 
     expectTypeOf<Parameters<PromiseBook>[0]["relax"]>().toEqualTypeOf<
-      readonly ("availability" | "holidayEve")[] | undefined
+      readonly "holidayEve"[] | undefined
     >();
   });
 });
@@ -377,7 +379,6 @@ describe("Hook targets on Plugin Actions", () => {
       | "reschedule"
       | "cancel"
       | "transition"
-      | "availability.set"
       | "notes.add"
       | "notes.noop"
     >();

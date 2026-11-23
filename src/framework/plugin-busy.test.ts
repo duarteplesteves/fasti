@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { definePlugin } from "../effect/index.js";
 import {
+  availability,
   column,
   createScheduler,
   definePolicy,
@@ -58,7 +59,7 @@ describe.each(styles)("a %s holiday Plugin", (_style, make) => {
   function setup() {
     const schema = defineSchema({
       booking: { transitions: { cancelled: ["booked"] } },
-      plugins: [make({ eveHours: 1 })],
+      plugins: [availability(), make({ eveHours: 1 })],
       resource: { idType: column.uuid<StaffId>() },
     });
 

@@ -5,6 +5,7 @@ import type { BookingChanges, BookingRecord } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
 import { insert, newBooking } from "../fixtures.js";
+import { installs, ruleStore } from "../plugin-stores.js";
 
 /** Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record. */
 function asChanges<S extends AnySchema>(
@@ -162,7 +163,9 @@ export const changeCases: readonly ConformanceCase[] = [
   },
   {
     name: "reads inside a unit of work see that unit's own writes",
-    async run({ adapter, resources, schema }) {
+    async run(ctx) {
+      const { adapter, resources, schema } = ctx;
+
       const b = newBooking(schema, {
         optionalFields: "null",
         resourceId: resources[0],
@@ -181,7 +184,9 @@ export const changeCases: readonly ConformanceCase[] = [
         timezone: "UTC",
       } as const;
 
-      await adapter.withResourceLock(resources[0], async (locked) => {
+      async function bookingWrites(
+        locked: Parameters<Parameters<typeof adapter.withResourceLock>[1]>[0]
+      ): Promise<void> {
         await locked.insertBooking(b);
         expect(await locked.getBooking(b.id)).toStrictEqual(b);
         expect(
@@ -196,7 +201,17 @@ export const changeCases: readonly ConformanceCase[] = [
           ...b,
           status: "cancelled",
         });
+      }
 
+      // With availability(), its records too.
+      if (!installs(schema, "availability")) {
+        await adapter.withResourceLock(resources[0], bookingWrites);
+
+        return;
+      }
+
+      await ruleStore(ctx).withResourceLock(resources[0], async (locked) => {
+        await bookingWrites(locked);
         await locked.replaceRules({ resourceId: resources[0], rules: [rule] });
         expect(await locked.getRules(resources[0])).toStrictEqual([rule]);
       });

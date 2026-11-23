@@ -58,7 +58,11 @@ export type {
   Scheduler,
 } from "./framework/create-scheduler.js";
 
+export { availability } from "./framework/plugins/availability.js";
+
 export type {
+  AvailabilityDetail,
+  AvailabilityPlugin,
   AvailabilityRuleInput,
   GetAvailabilityError,
   GetAvailabilityParams,
@@ -66,11 +70,19 @@ export type {
   SetAvailabilityError,
   SetAvailabilityParams,
   SetAvailabilityValue,
-} from "./framework/availability.js";
+} from "./framework/plugins/availability.js";
+
+export { blocks } from "./framework/plugins/blocks.js";
 
 export type {
   Block,
   BlockActions,
+  BlockNotFound,
+  BlockOverBooking,
+  BlocksPlugin,
+  BlockTable,
+  BlockTables,
+  ConflictingBlock,
   CreateBlockAlso,
   CreateBlockError,
   CreateBlockParams,
@@ -82,7 +94,7 @@ export type {
   UpdateBlockAlso,
   UpdateBlockError,
   UpdateBlockParams,
-} from "./framework/blocks.js";
+} from "./framework/plugins/blocks.js";
 
 export type {
   BookAlso,
@@ -154,10 +166,8 @@ export type {
 export { AdapterError } from "./framework/errors.js";
 
 export type {
-  BlockNotFound,
   BookingNotFound,
   Conflict,
-  ConflictingBlock,
   ConflictingBooking,
   PolicyViolation,
   SlotConflict,

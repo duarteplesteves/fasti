@@ -7,14 +7,14 @@ import type {
   Result,
   Scheduler,
 } from "../index.js";
-import { createScheduler } from "../index.js";
+import { createScheduler, defineSchema } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { issuePaths, unwrap } from "../test-utils/results.js";
-import type { SetAvailabilityValue } from "./availability.js";
+import type { SetAvailabilityValue } from "./plugins/availability.js";
 
 const schema = uuidIdSchema;
 const [room, otherRoom] = uuidIdResources;
@@ -136,5 +136,55 @@ describe("availability", () => {
     expectTypeOf<Awaited<ReturnType<Availability["get"]>>>().toEqualTypeOf<
       Result<readonly RuleRecord[], AdapterError>
     >();
+  });
+});
+
+describe("without availability()", () => {
+  const bare = defineSchema({});
+
+  function bareScheduler() {
+    return createScheduler({ adapter: memoryAdapter(), schema: bare });
+  }
+
+  /** A `book` relaxing `availability`, which no installed Policy is. */
+  async function relaxAvailability() {
+    return await bareScheduler().book({
+      end: Temporal.Instant.from("2030-06-09T04:00:00Z"),
+      // @ts-expect-error -- no `availability` Policy to relax without availability().
+      relax: ["availability"],
+      resourceId: "room",
+      start: Temporal.Instant.from("2030-06-09T03:00:00Z"),
+    });
+  }
+
+  it("books any free time, even a Sunday at 03:00, and has no scheduler.availability", async () => {
+    const scheduler = bareScheduler();
+
+    expect("availability" in scheduler).toBeFalsy();
+    expectTypeOf(scheduler).not.toHaveProperty("availability");
+
+    const sunday = Temporal.Instant.from("2030-06-09T03:00:00Z");
+
+    const slot = {
+      end: sunday.add({ hours: 1 }),
+      resourceId: "room",
+      start: sunday,
+    };
+
+    expect(unwrap(await scheduler.book(slot))).toMatchObject(slot);
+    // The same time again is taken: the overlap Invariant still holds.
+    await expect(scheduler.book(slot)).resolves.toMatchObject({
+      error: { _tag: "SlotConflict" },
+      ok: false,
+    });
+  });
+
+  it('refuses relax: ["availability"] by type, and at runtime as InvalidParams', async () => {
+    expectTypeOf(relaxAvailability).toBeFunction();
+
+    await expect(relaxAvailability()).resolves.toMatchObject({
+      error: { _tag: "InvalidParams", issues: [{ path: ["relax", 0] }] },
+      ok: false,
+    });
   });
 });

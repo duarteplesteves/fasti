@@ -16,6 +16,8 @@ import type { Adapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import { mintBookingId } from "../framework/booking-id.js";
 import {
+  availability,
+  blocks,
   column,
   createScheduler,
   defineHook,
@@ -25,6 +27,8 @@ import {
 } from "../index.js";
 import type {
   BlockNotFound,
+  ConflictingBlock,
+  ConflictingBooking,
   SlotConflict,
   StatusMismatch,
   TransitionError,
@@ -73,7 +77,7 @@ function at(hours: number): Temporal.Instant {
 
 /** Run `use` against the Effect form over `adapter`, to its Exit. */
 async function viaEffect<A, E>(
-  adapter: Adapter<undefined, "blocks">,
+  adapter: Adapter<undefined, "records">,
   use: (service: Service) => Effect.Effect<A, E>
 ): Promise<Exit.Exit<A, E>> {
   return await Effect.runPromiseExit(
@@ -113,8 +117,8 @@ async function seeded() {
 
 /** Wrap `inner` so a locked `listBookings` breaks the contract by resolving to a non-array. */
 function listingNonArray(
-  inner: Adapter<undefined, "blocks">
-): Adapter<undefined, "blocks"> {
+  inner: Adapter<undefined, "records">
+): Adapter<undefined, "records"> {
   return (s) => {
     const bound = inner(s);
 
@@ -170,7 +174,9 @@ describe("Effect form", () => {
     const exit = await viaEffect(adapter, (s) =>
       s.book({ end: at(3), resourceId: room, start: at(1) }).pipe(
         Effect.catchTag("SlotConflict", (error) => {
-          expectTypeOf(error).toEqualTypeOf<SlotConflict>();
+          expectTypeOf(error).toEqualTypeOf<
+            SlotConflict<ConflictingBooking | ConflictingBlock>
+          >();
 
           return Effect.succeed(error.conflicts);
         })
@@ -311,7 +317,7 @@ describe("Effect form", () => {
     }
 
     expectTypeOf<Tx>().toEqualTypeOf<undefined>();
-    expectTypeOf<TxOf<Adapter<DbTx, "blocks">>>().toEqualTypeOf<DbTx>();
+    expectTypeOf<TxOf<Adapter<DbTx, "records">>>().toEqualTypeOf<DbTx>();
 
     function bookWithTx(s: SchedulerService<typeof schema, DbTx, readonly []>) {
       return s.book({
@@ -408,7 +414,7 @@ describe("Effect form", () => {
 
 /** UUID ids, Blocks, and `booked → inProgress`, so the Effect form has `transition`. */
 const lifecycleSchema = defineSchema({
-  block: { fields: {} },
+  plugins: [availability(), blocks({ fields: {} })],
   booking: {
     statuses: { inProgress: { blocking: true } },
     transitions: { booked: ["inProgress"] },
@@ -945,7 +951,7 @@ describe("Effect form Hooks", () => {
     }
 
     /** Type-checked only: never called. */
-    function layersOver(dbAdapter: Adapter<DbTx, "blocks">) {
+    function layersOver(dbAdapter: Adapter<DbTx, "records">) {
       const adapter = memoryAdapter();
       const elsewhere = { appliesTo: ["book"], run: () => {} } as const;
 

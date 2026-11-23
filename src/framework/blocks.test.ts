@@ -4,20 +4,30 @@ import { defineAdapter } from "../adapter/contract.js";
 import type { Adapter, LockedAdapter } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { BlockId, BookingId } from "../core/types.js";
-import { column, createScheduler, defineSchema } from "../index.js";
+import {
+  availability,
+  blocks,
+  column,
+  createScheduler,
+  defineSchema,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import { unwrap } from "../test-utils/results.js";
-import { mintBlockId, mintBookingId } from "./booking-id.js";
-import type { Conflict } from "./errors.js";
+import { mintBookingId } from "./booking-id.js";
+import type { ConflictOf } from "./occupancy.js";
+import { mintBlockId } from "./plugins/blocks.js";
 
 const schema = defineSchema({
-  block: {
-    fields: {
-      note: { required: false, type: column.text() },
-      reason: { required: true, type: column.text() },
-    },
-  },
+  plugins: [
+    availability(),
+    blocks({
+      fields: {
+        note: { required: false, type: column.text() },
+        reason: { required: true, type: column.text() },
+      },
+    }),
+  ],
 });
 
 const room = "room-a";
@@ -47,23 +57,23 @@ async function refuse(): Promise<never> {
 }
 
 /** Every verb refuses: any Adapter call fails the test. */
-const spyAdapter = defineAdapter<undefined, "blocks">(() => ({
-  getBlock: refuse,
+const spyAdapter = defineAdapter<undefined, "records">(() => ({
+  getRecord: refuse,
   getBooking: refuse,
   getRules: refuse,
-  listBlocks: refuse,
   listBookings: refuse,
+  listRecords: refuse,
   withResourceLock: refuse,
 }));
 
 /** Wrap `inner` so each locked unit of work sees `overrides(locked)` over its verbs. */
 function wrapLocked(
-  inner: Adapter<undefined, "blocks">,
+  inner: Adapter<undefined, "records">,
   overrides: <S extends AnySchema>(
-    locked: LockedAdapter<S, undefined, "blocks">
-  ) => Partial<LockedAdapter<S, undefined, "blocks">>
-): Adapter<undefined, "blocks"> {
-  return defineAdapter<undefined, "blocks">((s) => {
+    locked: LockedAdapter<S, undefined, "records">
+  ) => Partial<LockedAdapter<S, undefined, "records">>
+): Adapter<undefined, "records"> {
+  return defineAdapter<undefined, "records">((s) => {
     const raw = inner(s);
 
     return {
@@ -304,12 +314,12 @@ describe("blocks.create and blocks.list", () => {
     });
   });
 
-  it("an insertBlock that rejects gives AdapterError, and the unit rolls back", async () => {
+  it("an insertRecord that rejects gives AdapterError, and the unit rolls back", async () => {
     const inner = memoryAdapter();
     const boom = new Error("boom");
 
     // Writes the Block, then fails: only a rollback leaves the store empty.
-    const adapter = defineAdapter<undefined, "blocks">((s) => {
+    const adapter = defineAdapter<undefined, "records">((s) => {
       const raw = inner(s);
 
       return {
@@ -320,8 +330,8 @@ describe("blocks.create and blocks.list", () => {
             async (locked) =>
               await work({
                 ...locked,
-                insertBlock: async (block) => {
-                  await locked.insertBlock(block);
+                insertRecord: async (table, record) => {
+                  await locked.insertRecord(table, record);
                   throw boom;
                 },
               })
@@ -452,10 +462,10 @@ describe("Blocks occupy time", () => {
 
   it("narrows a Conflict on kind to its id type", () => {
     expectTypeOf<
-      Extract<Conflict, { kind: "block" }>["id"]
+      Extract<ConflictOf<typeof schema>, { kind: "block" }>["id"]
     >().toEqualTypeOf<BlockId>();
     expectTypeOf<
-      Extract<Conflict, { kind: "booking" }>["id"]
+      Extract<ConflictOf<typeof schema>, { kind: "booking" }>["id"]
     >().toEqualTypeOf<BookingId>();
   });
 
@@ -472,11 +482,11 @@ describe("Blocks occupy time", () => {
     };
 
     await inner(schema).withResourceLock(room, async (locked) => {
-      await locked.insertBlock(hidden);
+      await locked.insertRecord("block", hidden);
     });
 
     // Hides the Block from the unit's first read, then plays the backstop refusing the insert.
-    const adapter = defineAdapter<undefined, "blocks">((s) => {
+    const adapter = defineAdapter<undefined, "records">((s) => {
       const raw = inner(s);
 
       return {
@@ -489,10 +499,10 @@ describe("Blocks occupy time", () => {
               ...locked,
               insertBooking: async () =>
                 await Promise.resolve({ ok: false, reason: "conflict" }),
-              listBlocks: async (q) => {
+              listRecords: async (table, q) => {
                 reads += 1;
 
-                return reads === 1 ? [] : await locked.listBlocks(q);
+                return reads === 1 ? [] : await locked.listRecords(table, q);
               },
             });
           }),
@@ -534,39 +544,23 @@ describe("Blocks occupy time", () => {
     expect(slots.map((s) => s.start.toInstant())).toStrictEqual([at(0), at(2)]);
   });
 
-  it("makes no Block read on a schema without block", async () => {
+  it("makes no Block read on a schema without blocks(), and books any free time without availability()", async () => {
     const plain = defineSchema({});
     const inner = memoryAdapter();
 
-    const adapter = defineAdapter<undefined, "blocks">((s) => ({
+    const adapter = defineAdapter<undefined, "records">((s) => ({
       ...inner(s),
-      getBlock: refuse,
-      listBlocks: refuse,
+      getRecord: refuse,
+      listRecords: refuse,
       withResourceLock: async (id, work) =>
         await inner(s).withResourceLock(
           id,
           async (locked) =>
-            await work({ ...locked, getBlock: refuse, listBlocks: refuse })
+            await work({ ...locked, getRecord: refuse, listRecords: refuse })
         ),
     }));
 
     const scheduler = createScheduler({ policies: [], adapter, schema: plain });
-
-    unwrap(
-      await scheduler.availability.set({
-        resourceId: room,
-        rules: [
-          {
-            recurrence: { daysOfWeek: [1], frequency: "weekly", interval: 1 },
-            timeWindow: {
-              end: Temporal.PlainTime.from("17:00"),
-              start: Temporal.PlainTime.from("09:00"),
-            },
-            timezone: "UTC",
-          },
-        ],
-      })
-    );
 
     await expect(
       scheduler.book({ end: at(2), resourceId: room, start: at(1) })
@@ -741,7 +735,7 @@ describe("blocks.update", () => {
 
     const scheduler = createScheduler({
       policies: [],
-      adapter: wrapLocked(inner, () => ({ updateBlock: refuse })),
+      adapter: wrapLocked(inner, () => ({ updateRecord: refuse })),
       schema,
     });
 
@@ -764,12 +758,12 @@ describe("blocks.update", () => {
     const scheduler = createScheduler({
       policies: [],
       adapter: wrapLocked(inner, (locked) => ({
-        updateBlock: async (params) => {
+        updateRecord: async (table, params) => {
           calls += 1;
 
           return calls === 1
             ? { ok: false, reason: "changed" }
-            : await locked.updateBlock(params);
+            : await locked.updateRecord(table, params);
         },
       })),
       schema,
@@ -826,7 +820,7 @@ describe("blocks.delete", () => {
     const scheduler = createScheduler({
       policies: [],
       adapter: wrapLocked(inner, () => ({
-        deleteBlock: async () =>
+        deleteRecord: async () =>
           await Promise.resolve({ ok: false, reason: "missing" } as const),
       })),
       schema,

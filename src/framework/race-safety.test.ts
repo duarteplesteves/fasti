@@ -20,7 +20,9 @@ import {
 } from "../test-utils/conformance-schemas.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
-import { mintBlockId, mintBookingId } from "./booking-id.js";
+import { replaceRules } from "../testing/plugin-stores.js";
+import { mintBookingId } from "./booking-id.js";
+import { mintBlockId } from "./plugins/blocks.js";
 
 const schema = uuidIdSchema;
 const [room] = uuidIdResources;
@@ -45,7 +47,7 @@ async function seeded() {
   const adapter = memoryAdapter();
 
   await adapter(schema).withResourceLock(room, async (locked) => {
-    await locked.replaceRules({ resourceId: room, rules: [weekdays] });
+    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
   });
 
   return adapter;
@@ -68,7 +70,7 @@ describe("race safety", () => {
     });
 
     // Plays an outside write landing after the unit's first read: hidden from it, then caught by the backstop.
-    const adapter = defineAdapter<undefined, "blocks">((s) => {
+    const adapter = defineAdapter<undefined, "records">((s) => {
       const raw = inner(s);
 
       return {
@@ -209,7 +211,7 @@ describe("race safety", () => {
       const adapter = memoryAdapter();
 
       await adapter(schema).withResourceLock(room, async (locked) => {
-        await locked.replaceRules({
+        await replaceRules(locked, {
           resourceId: room,
           rules: rules.map(({ resourceId: _, ...r }) => ({
             ...r,

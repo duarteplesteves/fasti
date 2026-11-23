@@ -2,7 +2,13 @@ import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import type { Adapter } from "../adapter/contract.js";
 import type { TxOf } from "../effect/index.js";
-import { column, createScheduler, defineHook, defineSchema } from "../index.js";
+import {
+  availability,
+  column,
+  createScheduler,
+  defineHook,
+  defineSchema,
+} from "../index.js";
 import type { Booking } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdResources } from "../test-utils/conformance-schemas.js";
@@ -11,6 +17,7 @@ import type { AnyHookOf } from "./hook.js";
 
 const schema = defineSchema({
   booking: {},
+  plugins: [availability()],
   resource: { idType: column.uuid() },
 });
 
@@ -283,7 +290,7 @@ describe("Hook types", () => {
     }
 
     /** Type-checked only: never called. */
-    function hooksOver(dbAdapter: Adapter<DbTx>) {
+    function hooksOver(dbAdapter: Adapter<DbTx, "records">) {
       return [
         defineHook(schema, dbAdapter, {
           appliesTo: ["book"],

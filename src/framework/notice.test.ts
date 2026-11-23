@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createScheduler, defineSchema, notice } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { unwrap } from "../test-utils/results.js";
+import { replaceRules } from "../testing/plugin-stores.js";
 
 /** `booked → done`; `done` doesn't block. */
 const schema = defineSchema({
@@ -43,7 +44,7 @@ async function seeded(slot: typeof past | typeof future) {
   const adapter = memoryAdapter();
 
   await adapter(schema).withResourceLock("room", async (locked) => {
-    await locked.replaceRules({ resourceId: "room", rules: [weekdays] });
+    await replaceRules(locked, { resourceId: "room", rules: [weekdays] });
   });
 
   const booking = unwrap(

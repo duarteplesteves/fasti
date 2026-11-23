@@ -1,4 +1,4 @@
-import type { BlockId, BookingId } from "../core/types.js";
+import type { BookingId } from "../core/types.js";
 import type { Violation } from "./policy.js";
 
 /** A blocking Booking that a requested slot overlaps; no Developer Fields, so no customer data. */
@@ -9,19 +9,20 @@ export interface ConflictingBooking {
   readonly end: Temporal.Instant;
 }
 
-/** A Block that a requested slot overlaps; no Developer Fields. */
-export interface ConflictingBlock {
-  readonly kind: "block";
-  readonly id: BlockId;
-  readonly start: Temporal.Instant;
-  readonly end: Temporal.Instant;
-}
+/** Something a requested slot overlaps: a blocking Booking, or an installed Plugin's busy time, tagged by its `kind`. `ConflictOf<S>` is a schema's exact union. */
+export type Conflict =
+  | ConflictingBooking
+  | {
+      readonly kind: string;
+      readonly id: string;
+      readonly start: Temporal.Instant;
+      readonly end: Temporal.Instant;
+    };
 
-/** Something a requested slot overlaps; narrow on `kind`. */
-export type Conflict = ConflictingBooking | ConflictingBlock;
-
-/** The slot overlaps what occupies the Resource: the overlap Invariant (ADR 014). Sorted by start, then id. `C` is what it can overlap. */
-export interface SlotConflict<C extends { readonly kind: string } = Conflict> {
+/** The slot overlaps what occupies the Resource: the overlap Invariant (ADR 014). Sorted by start, then id. `C` is what it can overlap: Bookings, unless Plugins add busy time. */
+export interface SlotConflict<
+  C extends { readonly kind: string } = ConflictingBooking,
+> {
   readonly _tag: "SlotConflict";
   readonly conflicts: readonly C[];
 }
@@ -45,12 +46,6 @@ export interface StatusMismatch<St extends string = string> {
   readonly _tag: "StatusMismatch";
   readonly id: BookingId;
   readonly status: St;
-}
-
-/** No Block has this id. */
-export interface BlockNotFound {
-  readonly _tag: "BlockNotFound";
-  readonly id: BlockId;
 }
 
 /** The Adapter or its database failed. `cause` is the original rejection. A plain `Error`, so no Effect import is needed. */

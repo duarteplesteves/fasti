@@ -1,0 +1,1073 @@
+{
+  "pg": {
+    "defaults": {
+      "availabilityRule": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "PgUUID",
+            "default": "gen_random_uuid()",
+            "dimensions": 0,
+            "name": "id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "uuid"
+          },
+          {
+            "columnType": "PgText",
+            "default": null,
+            "dimensions": 0,
+            "name": "resourceId",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "PgJsonb",
+            "default": null,
+            "dimensions": 0,
+            "name": "recurrence",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "jsonb"
+          },
+          {
+            "columnType": "PgTime",
+            "default": null,
+            "dimensions": 0,
+            "name": "windowStart",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "time"
+          },
+          {
+            "columnType": "PgTime",
+            "default": null,
+            "dimensions": 0,
+            "name": "windowEnd",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "time"
+          },
+          {
+            "columnType": "PgText",
+            "default": null,
+            "dimensions": 0,
+            "name": "timezone",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "PgDateString",
+            "default": null,
+            "dimensions": 0,
+            "name": "effectiveFrom",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "date"
+          },
+          {
+            "columnType": "PgDateString",
+            "default": null,
+            "dimensions": 0,
+            "name": "effectiveTo",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "date"
+          },
+          {
+            "columnType": "PgDateString",
+            "default": null,
+            "dimensions": 1,
+            "name": "exceptions",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "date"
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": 0,
+        "name": "availabilityRule",
+        "uniques": 0
+      },
+      "block": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "PgUUID",
+            "default": null,
+            "dimensions": 0,
+            "name": "id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "uuid"
+          },
+          {
+            "columnType": "PgText",
+            "default": null,
+            "dimensions": 0,
+            "name": "resourceId",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "PgTimestamp",
+            "default": null,
+            "dimensions": 0,
+            "name": "start",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "timestamp (3) with time zone"
+          },
+          {
+            "columnType": "PgTimestamp",
+            "default": null,
+            "dimensions": 0,
+            "name": "end",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "timestamp (3) with time zone"
+          },
+          {
+            "columnType": "PgText",
+            "default": null,
+            "dimensions": 0,
+            "name": "note",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": 0,
+        "name": "block",
+        "uniques": 0
+      }
+    },
+    "renamed": {
+      "availabilityRule": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "PgUUID",
+            "default": "gen_random_uuid()",
+            "dimensions": 0,
+            "name": "p_rule_id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "uuid"
+          },
+          {
+            "columnType": "PgInteger",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_staff_id",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "PgJsonb",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_recurrence",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "jsonb"
+          },
+          {
+            "columnType": "PgTime",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_window_start",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "time"
+          },
+          {
+            "columnType": "PgTime",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_window_end",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "time"
+          },
+          {
+            "columnType": "PgText",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_tz",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "PgDateString",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_effective_from",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "date"
+          },
+          {
+            "columnType": "PgDateString",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_effective_to",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "date"
+          },
+          {
+            "columnType": "PgDateString",
+            "default": null,
+            "dimensions": 1,
+            "name": "p_exceptions",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "date"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "columns": ["p_staff_id"],
+            "foreignColumns": ["id"],
+            "foreignTable": "test_staff",
+            "onDelete": "restrict",
+            "onUpdate": "no action"
+          }
+        ],
+        "indexes": 0,
+        "name": "p_hours",
+        "uniques": 0
+      },
+      "block": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "PgUUID",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_off_id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "uuid"
+          },
+          {
+            "columnType": "PgInteger",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_off_staff_id",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "PgTimestamp",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_off_starts_at",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "timestamp (3) with time zone"
+          },
+          {
+            "columnType": "PgTimestamp",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_off_ends_at",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "timestamp (3) with time zone"
+          },
+          {
+            "columnType": "PgInteger",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_count",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "PgInteger",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_count_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "PgBoolean",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_flag",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "boolean"
+          },
+          {
+            "columnType": "PgBoolean",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_flag_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "boolean"
+          },
+          {
+            "columnType": "PgText",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_note",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "PgText",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_note_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "PgUUID",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_ref",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "uuid"
+          },
+          {
+            "columnType": "PgUUID",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_ref_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "uuid"
+          },
+          {
+            "columnType": "PgTimestamp",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_until",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "timestamp (3) with time zone"
+          },
+          {
+            "columnType": "PgTimestamp",
+            "default": null,
+            "dimensions": 0,
+            "name": "p_until_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "timestamp (3) with time zone"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "columns": ["p_off_staff_id"],
+            "foreignColumns": ["id"],
+            "foreignTable": "test_staff",
+            "onDelete": "restrict",
+            "onUpdate": "no action"
+          }
+        ],
+        "indexes": 0,
+        "name": "p_time_off",
+        "uniques": 0
+      }
+    }
+  },
+  "prisma": {
+    "defaults": {
+      "availabilityRule": {
+        "columns": {
+          "id": {
+            "dataType": "pg/uuid",
+            "codecId": "pg/uuid@1",
+            "nullable": false,
+            "many": false,
+            "default": {
+              "kind": "function",
+              "expression": "gen_random_uuid()"
+            }
+          },
+          "resourceId": {
+            "dataType": "pg/text",
+            "codecId": "pg/text@1",
+            "nullable": false,
+            "many": false
+          },
+          "recurrence": {
+            "dataType": "pg/jsonb",
+            "codecId": "pg/jsonb@1",
+            "nullable": false,
+            "many": false
+          },
+          "windowStart": {
+            "dataType": "pg/time",
+            "codecId": "pg/time-string@1",
+            "nullable": false,
+            "many": false
+          },
+          "windowEnd": {
+            "dataType": "pg/time",
+            "codecId": "pg/time-string@1",
+            "nullable": false,
+            "many": false
+          },
+          "timezone": {
+            "dataType": "pg/text",
+            "codecId": "pg/text@1",
+            "nullable": false,
+            "many": false
+          },
+          "effectiveFrom": {
+            "dataType": "pg/date",
+            "codecId": "pg/date-string@1",
+            "nullable": true,
+            "many": false
+          },
+          "effectiveTo": {
+            "dataType": "pg/date",
+            "codecId": "pg/date-string@1",
+            "nullable": true,
+            "many": false
+          },
+          "exceptions": {
+            "dataType": "pg/date",
+            "codecId": "pg/date-string@1",
+            "nullable": false,
+            "many": {
+              "elementNullable": true
+            }
+          }
+        },
+        "uniques": [],
+        "indexes": [],
+        "foreignKeys": [],
+        "primaryKey": {
+          "columns": ["id"]
+        }
+      },
+      "block": {
+        "columns": {
+          "id": {
+            "dataType": "pg/uuid",
+            "codecId": "pg/uuid@1",
+            "nullable": false,
+            "many": false
+          },
+          "resourceId": {
+            "dataType": "pg/text",
+            "codecId": "pg/text@1",
+            "nullable": false,
+            "many": false
+          },
+          "start": {
+            "dataType": "pg/timestamptz",
+            "codecId": "pg/timestamptz-temporal@1",
+            "nullable": false,
+            "many": false,
+            "typeParams": {
+              "precision": 3
+            }
+          },
+          "end": {
+            "dataType": "pg/timestamptz",
+            "codecId": "pg/timestamptz-temporal@1",
+            "nullable": false,
+            "many": false,
+            "typeParams": {
+              "precision": 3
+            }
+          },
+          "note": {
+            "dataType": "pg/text",
+            "codecId": "pg/text@1",
+            "nullable": true,
+            "many": false
+          }
+        },
+        "uniques": [],
+        "indexes": [],
+        "foreignKeys": [],
+        "primaryKey": {
+          "columns": ["id"]
+        }
+      }
+    },
+    "renamed": {
+      "p_hours": {
+        "columns": {
+          "p_rule_id": {
+            "dataType": "pg/uuid",
+            "codecId": "pg/uuid@1",
+            "nullable": false,
+            "many": false,
+            "default": {
+              "kind": "function",
+              "expression": "gen_random_uuid()"
+            }
+          },
+          "p_staff_id": {
+            "dataType": "pg/int4",
+            "codecId": "pg/int4@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_recurrence": {
+            "dataType": "pg/jsonb",
+            "codecId": "pg/jsonb@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_window_start": {
+            "dataType": "pg/time",
+            "codecId": "pg/time-string@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_window_end": {
+            "dataType": "pg/time",
+            "codecId": "pg/time-string@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_tz": {
+            "dataType": "pg/text",
+            "codecId": "pg/text@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_effective_from": {
+            "dataType": "pg/date",
+            "codecId": "pg/date-string@1",
+            "nullable": true,
+            "many": false
+          },
+          "p_effective_to": {
+            "dataType": "pg/date",
+            "codecId": "pg/date-string@1",
+            "nullable": true,
+            "many": false
+          },
+          "p_exceptions": {
+            "dataType": "pg/date",
+            "codecId": "pg/date-string@1",
+            "nullable": false,
+            "many": {
+              "elementNullable": true
+            }
+          }
+        },
+        "uniques": [],
+        "indexes": [],
+        "foreignKeys": [
+          {
+            "source": {
+              "namespaceId": "public",
+              "tableName": "p_hours",
+              "columns": ["p_staff_id"]
+            },
+            "target": {
+              "namespaceId": "public",
+              "tableName": "test_staff",
+              "columns": ["id"]
+            },
+            "onDelete": "restrict"
+          }
+        ],
+        "primaryKey": {
+          "columns": ["p_rule_id"]
+        }
+      },
+      "p_time_off": {
+        "columns": {
+          "p_off_id": {
+            "dataType": "pg/uuid",
+            "codecId": "pg/uuid@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_off_staff_id": {
+            "dataType": "pg/int4",
+            "codecId": "pg/int4@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_off_starts_at": {
+            "dataType": "pg/timestamptz",
+            "codecId": "pg/timestamptz-temporal@1",
+            "nullable": false,
+            "many": false,
+            "typeParams": {
+              "precision": 3
+            }
+          },
+          "p_off_ends_at": {
+            "dataType": "pg/timestamptz",
+            "codecId": "pg/timestamptz-temporal@1",
+            "nullable": false,
+            "many": false,
+            "typeParams": {
+              "precision": 3
+            }
+          },
+          "p_count": {
+            "dataType": "pg/int4",
+            "codecId": "pg/int4@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_count_opt": {
+            "dataType": "pg/int4",
+            "codecId": "pg/int4@1",
+            "nullable": true,
+            "many": false
+          },
+          "p_flag": {
+            "dataType": "pg/bool",
+            "codecId": "pg/bool@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_flag_opt": {
+            "dataType": "pg/bool",
+            "codecId": "pg/bool@1",
+            "nullable": true,
+            "many": false
+          },
+          "p_note": {
+            "dataType": "pg/text",
+            "codecId": "pg/text@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_note_opt": {
+            "dataType": "pg/text",
+            "codecId": "pg/text@1",
+            "nullable": true,
+            "many": false
+          },
+          "p_ref": {
+            "dataType": "pg/uuid",
+            "codecId": "pg/uuid@1",
+            "nullable": false,
+            "many": false
+          },
+          "p_ref_opt": {
+            "dataType": "pg/uuid",
+            "codecId": "pg/uuid@1",
+            "nullable": true,
+            "many": false
+          },
+          "p_until": {
+            "dataType": "pg/timestamptz",
+            "codecId": "pg/timestamptz-temporal@1",
+            "nullable": false,
+            "many": false,
+            "typeParams": {
+              "precision": 3
+            }
+          },
+          "p_until_opt": {
+            "dataType": "pg/timestamptz",
+            "codecId": "pg/timestamptz-temporal@1",
+            "nullable": true,
+            "many": false,
+            "typeParams": {
+              "precision": 3
+            }
+          }
+        },
+        "uniques": [],
+        "indexes": [],
+        "foreignKeys": [
+          {
+            "source": {
+              "namespaceId": "public",
+              "tableName": "p_time_off",
+              "columns": ["p_off_staff_id"]
+            },
+            "target": {
+              "namespaceId": "public",
+              "tableName": "test_staff",
+              "columns": ["id"]
+            },
+            "onDelete": "restrict"
+          }
+        ],
+        "primaryKey": {
+          "columns": ["p_off_id"]
+        }
+      }
+    }
+  },
+  "sqlite": {
+    "defaults": {
+      "availabilityRule": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "SQLiteText",
+            "default": "defaultFn",
+            "name": "id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "resourceId",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteTextJson",
+            "default": null,
+            "name": "recurrence",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "windowStart",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "windowEnd",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "timezone",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "effectiveFrom",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "effectiveTo",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteTextJson",
+            "default": null,
+            "name": "exceptions",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": 0,
+        "name": "availabilityRule",
+        "uniques": 0
+      },
+      "block": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "resourceId",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteTimestamp",
+            "default": null,
+            "name": "start",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteTimestamp",
+            "default": null,
+            "name": "end",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "note",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": 0,
+        "name": "block",
+        "uniques": 0
+      }
+    },
+    "renamed": {
+      "availabilityRule": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "SQLiteText",
+            "default": "defaultFn",
+            "name": "p_rule_id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteInteger",
+            "default": null,
+            "name": "p_staff_id",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteTextJson",
+            "default": null,
+            "name": "p_recurrence",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_window_start",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_window_end",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_tz",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_effective_from",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_effective_to",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteTextJson",
+            "default": null,
+            "name": "p_exceptions",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "columns": ["p_staff_id"],
+            "foreignColumns": ["id"],
+            "foreignTable": "test_staff",
+            "onDelete": "restrict",
+            "onUpdate": null
+          }
+        ],
+        "indexes": 0,
+        "name": "p_hours",
+        "uniques": 0
+      },
+      "block": {
+        "checks": [],
+        "columns": [
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_off_id",
+            "notNull": true,
+            "primary": true,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteInteger",
+            "default": null,
+            "name": "p_off_staff_id",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteTimestamp",
+            "default": null,
+            "name": "p_off_starts_at",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteTimestamp",
+            "default": null,
+            "name": "p_off_ends_at",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteInteger",
+            "default": null,
+            "name": "p_count",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteInteger",
+            "default": null,
+            "name": "p_count_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteBoolean",
+            "default": null,
+            "name": "p_flag",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteBoolean",
+            "default": null,
+            "name": "p_flag_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_note",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_note_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_ref",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteText",
+            "default": null,
+            "name": "p_ref_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "text"
+          },
+          {
+            "columnType": "SQLiteTimestamp",
+            "default": null,
+            "name": "p_until",
+            "notNull": true,
+            "primary": false,
+            "sqlType": "integer"
+          },
+          {
+            "columnType": "SQLiteTimestamp",
+            "default": null,
+            "name": "p_until_opt",
+            "notNull": false,
+            "primary": false,
+            "sqlType": "integer"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "columns": ["p_off_staff_id"],
+            "foreignColumns": ["id"],
+            "foreignTable": "test_staff",
+            "onDelete": "restrict",
+            "onUpdate": null
+          }
+        ],
+        "indexes": 0,
+        "name": "p_time_off",
+        "uniques": 0
+      }
+    }
+  }
+}

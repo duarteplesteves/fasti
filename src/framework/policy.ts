@@ -1,13 +1,6 @@
-import type {
-  ListBlocksQuery,
-  ListBookingsQuery,
-} from "../adapter/contract.js";
-import type {
-  BlockRecord,
-  ResourceIdOf,
-  RuleRecord,
-} from "../adapter/records.js";
-import type { AvailabilityViolation, BookingId } from "../core/types.js";
+import type { ListBookingsQuery } from "../adapter/contract.js";
+import type { ResourceIdOf } from "../adapter/records.js";
+import type { BookingId } from "../core/types.js";
 import type { AnySchema, TransitionEdge } from "../schema/define-schema.js";
 import type { Booking } from "./booking.js";
 import type { PolicyViolation } from "./errors.js";
@@ -105,9 +98,6 @@ export type CandidateFor<
 export interface PolicyReads<S extends AnySchema> {
   readonly getBooking: (id: BookingId) => Promise<Booking<S> | null>;
   readonly listBookings: (query: ListBookingsQuery<S>) => Promise<Booking<S>[]>;
-  /** `[]` on a schema without `block`. */
-  readonly listBlocks: (query: ListBlocksQuery<S>) => Promise<BlockRecord<S>[]>;
-  readonly getRules: (resourceId: ResourceIdOf<S>) => Promise<RuleRecord[]>;
 }
 
 /** What `load` gets: the candidate's Resource and range (on `cancel`, the stored Booking's), the unit's `now`, and fasti's reads. */
@@ -185,13 +175,8 @@ type Applies<P, A> = P extends {
     : never
   : never;
 
-/** The built-in `availability`, where it applies. */
-type Builtin<A> = A extends "book" | "reschedule"
-  ? AvailabilityViolation
-  : never;
-
-/** Every Violation `A` (an Action, or declared edges) can report: the built-in `availability`'s where it applies, and each applicable Policy's in union `P`. */
-export type ViolationFor<P, A> = Builtin<A> | ViolationOf<Applies<P, A>>;
+/** Every Violation `A` (an Action, or declared edges) can report: each applicable Policy's in union `P`. */
+export type ViolationFor<P, A> = ViolationOf<Applies<P, A>>;
 
 /** The names a `relax` value `X` may list; `never` without `relax`. */
 export type RelaxedNames<X> = X extends readonly (infer N)[] ? N : never;
@@ -263,8 +248,8 @@ export interface DefinePolicyParams<
   D,
   Data,
 > {
-  /** Unique per scheduler; `availability` is fasti's own. */
-  readonly name: N & (N extends "availability" ? never : unknown);
+  /** Unique per scheduler, across the app's Policies and the installed Plugins'. */
+  readonly name: N;
   /** The Actions and declared Transition edges that run it; at least one. */
   readonly appliesTo: readonly [T, ...T[]];
   /** Optional. Runs once per Action call, under the Resource Lock: does the I/O. */
@@ -275,7 +260,7 @@ export interface DefinePolicyParams<
 
 /**
  * Define a Policy over `schema`: a rule a booking must keep, reported as `PolicyViolation` when broken.
- * Throws on an empty `appliesTo`, the name `availability`, an undeclared edge, or `{ to }` with no declared edge into it.
+ * Throws on an empty `appliesTo`, an undeclared edge, or `{ to }` with no declared edge into it.
  *
  * @example
  * ```ts
@@ -302,10 +287,6 @@ export function definePolicy<
   // Plain-JS callers can get past the types.
   if (appliesTo.length === 0) {
     throw new Error(`fasti: Policy ${name} must apply to at least one Action`);
-  }
-
-  if (name === "availability") {
-    throw new Error("fasti: the Policy name availability is fasti's own");
   }
 
   for (const target of appliesTo) {

@@ -11,6 +11,7 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
+import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 
 const schema = uuidIdSchema;
@@ -83,11 +84,11 @@ describe("book", () => {
   });
 
   it("refuses end <= start as InvalidParams at end, before any Adapter call", async () => {
-    const adapter = defineAdapter<undefined, "blocks">(() => ({
-      getBlock: refuse,
+    const adapter = defineAdapter<undefined, "records">(() => ({
+      getRecord: refuse,
       getBooking: refuse,
       getRules: refuse,
-      listBlocks: refuse,
+      listRecords: refuse,
       listBookings: refuse,
       withResourceLock: refuse,
     }));
@@ -111,7 +112,7 @@ describe("book", () => {
     const adapter = memoryAdapter();
 
     await adapter(schema).withResourceLock(room, async (locked) => {
-      await locked.replaceRules({ resourceId: room, rules: [weekdays] });
+      await replaceRules(locked, { resourceId: room, rules: [weekdays] });
     });
 
     const scheduler = createScheduler({ policies: [], adapter, schema });
@@ -176,7 +177,7 @@ describe("book", () => {
       const adapter = memoryAdapter();
 
       await adapter(textIdSchema).withResourceLock(staff, async (locked) => {
-        await locked.replaceRules({ resourceId: staff, rules });
+        await replaceRules(locked, { resourceId: staff, rules });
       });
 
       return {
