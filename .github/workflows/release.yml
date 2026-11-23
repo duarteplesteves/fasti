@@ -27,16 +27,18 @@ jobs:
         with:
           node-version-file: .nvmrc # Node 26's bundled npm (>= 11.5) does the OIDC exchange
           registry-url: https://registry.npmjs.org
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun install --frozen-lockfile
+      - uses: nubjs/setup-nub@8c7bade1432a9acf9a7ad169aa7288713d046161 # v0.6.2
+        with:
+          provision-node: false # setup-node above already reads .nvmrc
+      - run: nub install --frozen-lockfile
 
-      - run: bun run check
-      - run: bun run typecheck
-      - run: bun run test:ci
-      - run: bun run build
-      - run: bun run publint
-      - run: bun run attw
+      - run: nub run check
+      - run: nub run typecheck
+      - run: nub run test:ci
+      - run: nub run build
+      - run: nub run publint
+      - run: nub run attw
 
       - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          publish-script: bun run release
+          publish-script: nub run release

@@ -8,15 +8,15 @@ CI runs this on every push, and the [quickstart](../../README.md#quickstart) and
 
 ```bash
 # From the repo root: the example installs the built package (file:../..) as a copy.
-bun run build
+nub run build
 
 cd examples/basic
-bun install --no-save  # again after every rebuild; the copy doesn't update itself
+nub install            # again after every rebuild; the copy doesn't update itself
 export DATABASE_URL=postgres://user:pass@localhost:5432/empty_db
 
-bun run migrate  # once, on an empty database
-bun run plain
-bun run effect   # both can run again: each run uses a fresh Resource
+nub run migrate  # once, on an empty database
+nub run plain
+nub run effect   # both can run again: each run uses a fresh Resource
 ```
 
 Node 26 runs the `.ts` files directly; there is no build step here.

@@ -67,7 +67,7 @@
     "test:ci": "vitest run --project unit",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
-    "prepublishOnly": "bun run clean && bun run build",
+    "prepublishOnly": "nub run clean && nub run build",
     "prepare": "husky && effect-tsgo patch --oxlint",
     "check": "ultracite check",
     "fix": "ultracite fix",
@@ -76,7 +76,7 @@
     "publint": "publint",
     "attw": "attw --pack --profile esm-only",
     "test:integration": "vitest run --project conformance",
-    "release": "bun run build && changeset publish"
+    "release": "nub run build && changeset publish"
   },
   "dependencies": {
     "effect": "^4.1"
@@ -124,11 +124,17 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
-      "bun x ultracite fix --no-error-on-unmatched-pattern"
+      "ultracite fix --no-error-on-unmatched-pattern"
     ]
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "nub",
+      "version": "^0.11.1",
+      "onFail": "ignore"
+    }
   },
   "engines": {
     "node": ">=26.0.0"
-  },
-  "packageManager": "bun@1.4.4"
+  }
 }
