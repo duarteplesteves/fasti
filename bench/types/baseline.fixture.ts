@@ -1,8 +1,10 @@
-// The type-check baseline: a typical app on the built-ins only, as on 0.6. `plugins.fixture.ts` is this app plus three Plugins.
+// The type-check baseline: a typical app on availability() and blocks() only, the built-ins of 0.6. `plugins.fixture.ts` is this app plus three Plugins.
 import { Effect } from "effect";
 
 import { Scheduler as EffectScheduler } from "../../src/effect/index.js";
 import {
+  availability,
+  blocks,
   column,
   createScheduler,
   defineHook,
@@ -17,7 +19,10 @@ type StaffId = string & { readonly __brand: "StaffId" };
 const adapter = memoryAdapter();
 
 const schema = defineSchema({
-  block: { fields: { title: { required: true, type: column.text() } } },
+  plugins: [
+    availability(),
+    blocks({ fields: { title: { required: true, type: column.text() } } }),
+  ],
   booking: {
     fields: { customer: { required: true, type: column.text() } },
     statuses: { inProgress: { blocking: true } },

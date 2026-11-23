@@ -1,13 +1,18 @@
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
-import { createScheduler, defineSchema } from "../index.js";
+import {
+  availability,
+  blocks,
+  createScheduler,
+  defineSchema,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { unwrap } from "../test-utils/results.js";
 import type { BookParams } from "./book.js";
 
 /** `paid` blocks, `request` doesn't; `book` may create either. */
 const schema = defineSchema({
-  block: { fields: {} },
+  plugins: [availability(), blocks({ fields: {} })],
   booking: {
     initial: ["booked", "paid", "request"],
     statuses: {

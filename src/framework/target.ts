@@ -1,19 +1,8 @@
-import type {
-  AnySchema,
-  HasBlocks,
-  TransitionEdge,
-} from "../schema/define-schema.js";
+import type { AnySchema, TransitionEdge } from "../schema/define-schema.js";
 import { statusCodec } from "../schema/status-codec.js";
 
 /** The Actions that change a Booking. */
 const bookingActions = ["book", "reschedule", "cancel"] as const;
-
-/** The Actions that write a Block; only on a schema with `block`. */
-const blockActions = [
-  "blocks.create",
-  "blocks.update",
-  "blocks.delete",
-] as const;
 
 /** The Actions that change a Booking: what a Policy can name. */
 export type BookingActionName = (typeof bookingActions)[number];
@@ -37,11 +26,9 @@ export type PluginWriteName<S extends AnySchema> =
       : never
     : never;
 
-/** The write Actions named by name, what a Hook can name: `blocks.*` only when the schema has `block`, and each Plugin's as `<plugin>.<action>`. `transition` is named by its edges. */
+/** The write Actions named by name, what a Hook can name: the Booking Actions, and each Plugin's as `<plugin>.<action>`. `transition` is named by its edges. */
 export type WriteActionName<S extends AnySchema> =
   | BookingActionName
-  | "availability.set"
-  | (HasBlocks<S> extends true ? (typeof blockActions)[number] : never)
   | PluginWriteName<S>;
 
 /** The write Actions of one Plugin, as `<plugin>.<action>`; its Actions are erased on AnySchema. */
@@ -68,13 +55,11 @@ export function writeActionNames<S extends AnySchema>(
 ): readonly WriteActionName<S>[] {
   const names: readonly string[] = [
     ...bookingActions,
-    "availability.set",
-    ...(schema.block === null ? [] : blockActions),
     ...schema.plugins.flatMap(pluginWriteNames),
   ];
 
-  // SAFETY: `blocks.*` is listed exactly when HasBlocks<S> is true, and each Plugin's write Actions as PluginWriteName lists them.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't be narrowed from `schema.block`.
+  // SAFETY: each Plugin's write Actions, as PluginWriteName lists them.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the template type can't be built from runtime strings.
   return names as readonly WriteActionName<S>[];
 }
 

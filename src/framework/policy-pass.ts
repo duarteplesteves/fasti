@@ -1,10 +1,6 @@
 import { Cause, Effect, Exit } from "effect";
 
-import { availableWindows, fitsInSomeWindow } from "../core/availability.js";
-import { checkRules } from "../core/checks.js";
-import { checked } from "../core/result.js";
 import type { Issue } from "../core/result.js";
-import type { InstantRange } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectReads } from "./effect-adapter.js";
 import { AdapterError } from "./errors.js";
@@ -13,7 +9,6 @@ import type {
   AnyPolicyOf,
   Candidate,
   LoadContext,
-  Policy,
   PolicyReads,
   Violation,
   ViolationOf,
@@ -44,45 +39,12 @@ export interface RunnablePolicy<S extends AnySchema> {
   readonly check: (candidate: never, data: never) => unknown;
 }
 
-/** The built-in `availability` Policy: the candidate must fit inside one of the Resource's availability windows (ADR 014). */
-export function availabilityPolicy<S extends AnySchema>(): Policy<
-  S,
-  "availability",
-  "book" | "reschedule",
-  Readonly<Record<string, never>>,
-  readonly InstantRange[]
-> {
-  return {
-    appliesTo: ["book", "reschedule"],
-    check: (candidate, windows) =>
-      fitsInSomeWindow(windows, candidate) ? null : {},
-    load: async ({ from, reads, resourceId, to }) => {
-      const coreId = String(resourceId);
-
-      const stored = await reads.getRules(resourceId);
-      const rules = stored.map((r) => ({ ...r, resourceId: coreId }));
-
-      const windows = checked(checkRules(rules), () =>
-        availableWindows(rules, { end: to, start: from })
-      );
-
-      // Invalid stored rules are the Adapter's data (Invariant 6).
-      if (!windows.ok) {
-        throw new AdapterError(windows.error);
-      }
-
-      return windows.value;
-    },
-    name: "availability",
-  };
-}
-
 /** `target` as `relax` issues name it. */
 function label(target: CalledTarget): string {
   return isNamedTarget(target) ? target : `${target.from} → ${target.to}`;
 }
 
-/** The Policies `target` runs: fasti's own first (`availability`), then the Plugins', then the developer's, in registration order. */
+/** The Policies `target` runs: the Plugins' first, then the developer's, in registration order. */
 export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
   target: CalledTarget
@@ -109,8 +71,6 @@ function promiseReads<S extends AnySchema>(
 ): PolicyReads<S> {
   return {
     getBooking: async (id) => await run(reads.getBooking(id)),
-    getRules: async (resourceId) => await run(reads.getRules(resourceId)),
-    listBlocks: async (query) => await run(reads.listBlocks(query)),
     listBookings: async (query) => await run(reads.listBookings(query)),
   };
 }

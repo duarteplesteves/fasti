@@ -5,14 +5,13 @@ import type { PluginResourceId } from "../effect/index.js";
 import { column } from "../index.js";
 import type {
   BookCandidate,
-  ConflictingBooking,
   RecordId,
   RescheduleCandidate,
   SlotConflict,
 } from "../index.js";
 
 /** Refused by `holidays.add`: a blocking Booking is in the way. */
-export type HolidayOverBooking = SlotConflict<ConflictingBooking>;
+export type HolidayOverBooking = SlotConflict;
 
 /** What the `holidayEve` Policy reports: the holiday that starts too soon after the Booking ends. */
 export interface HolidayEve {

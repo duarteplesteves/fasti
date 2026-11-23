@@ -17,7 +17,11 @@ import type {
 } from "../../schema/define-schema.js";
 import type { Accepts } from "../../schema/references.js";
 import { statusCodec } from "../../schema/status-codec.js";
-import { tablesOf } from "../../schema/table.js";
+import {
+  physicalColumns,
+  physicalTable,
+  tablesOf,
+} from "../../schema/table.js";
 import type { Columns, TableDef, TableNamesOf } from "../../schema/table.js";
 
 /**
@@ -184,29 +188,33 @@ export function availabilityRuleTable<
   });
 }
 
-/** One Plugin table: `id` (fasti mints it; the default stays, as on 0.6's rule table, R4), `resourceId`, a timed table's range, then its columns. */
+/** One Plugin table, with your physical names: `id` (fasti mints it; the default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. */
 function pluginTable<S extends AnySchema, C extends AnySQLiteColumn>(
   schema: S,
   name: string,
-  { columns, timed }: TableDef,
+  { columns, idDefault = true, timed }: TableDef,
   options: TableOptions<S, C>
 ) {
-  return sqliteTable(name, {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => randomUUID()),
-    resourceId: resourceIdColumn(schema, "resourceId", options),
+  const names = physicalColumns(schema, name);
+  const id = text(names("id")).primaryKey();
+
+  return sqliteTable(physicalTable(schema, name), {
+    id: idDefault ? id.$defaultFn(() => randomUUID()) : id,
+    resourceId: resourceIdColumn(schema, names("resourceId"), options),
     ...(timed && {
-      start: sqliteColumn({ kind: "instant" }, "start").notNull(),
-      end: sqliteColumn({ kind: "instant" }, "end").notNull(),
+      start: sqliteColumn({ kind: "instant" }, names("start")).notNull(),
+      end: sqliteColumn({ kind: "instant" }, names("end")).notNull(),
     }),
-    ...fieldColumns(columns, {}),
+    ...fieldColumns(
+      columns,
+      Object.fromEntries(Object.keys(columns).map((c) => [c, names(c)]))
+    ),
   });
 }
 
 /**
  * The tables of every Plugin `schema` installs, by logical name, for your drizzle-kit schema file.
- * Table and column names are the logical ones. `references` gives each its Resource foreign key.
+ * Table and column names are your physical ones; columns are keyed by logical name. `references` gives each its Resource foreign key.
  */
 export function recordTables<
   S extends AnySchema,

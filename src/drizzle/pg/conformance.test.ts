@@ -42,9 +42,7 @@ import type { TestAdapterParams, TxProbe } from "../../testing/index.js";
 import { encodeBooking } from "../codec.js";
 import { createDrizzleAdapter } from "./drizzle-adapter.js";
 import {
-  availabilityRuleTable,
   backstopSql,
-  blockTable,
   bookingTable,
   drizzleAdapter,
   recordTables,
@@ -81,21 +79,24 @@ const tables = {
   integerBooking: bookingTable(integerIdSchema, {
     references: () => testStaff.id,
   }),
-  integerRule: availabilityRuleTable(integerIdSchema, {
+  integerRule: recordTables(integerIdSchema, {
     references: () => testStaff.id,
-  }),
+  }).availabilityRule,
   testProbe,
   testRooms,
   testStaff,
-  textBlock: blockTable(textIdSchema),
+  textBlock: recordTables(textIdSchema).block,
   textBooking: bookingTable(textIdSchema),
-  textRule: availabilityRuleTable(textIdSchema),
-  uuidBlock: blockTable(uuidIdSchema, { references: () => testRooms.id }),
+  textRule: recordTables(textIdSchema).availabilityRule,
+  // The uuid-id schema's Blocks reference test_rooms; its rules don't, as in 0.6.
+  uuidBlock: recordTables(uuidIdSchema, { references: () => testRooms.id })
+    .block,
   uuidBooking: bookingTable(uuidIdSchema),
-  uuidRule: availabilityRuleTable(uuidIdSchema),
+  uuidRule: recordTables(uuidIdSchema).availabilityRule,
   recordsBooking: bookingTable(recordsSchema),
-  recordsRule: availabilityRuleTable(recordsSchema),
-  ...recordTables(recordsSchema),
+  recordsRule: recordTables(recordsSchema).availabilityRule,
+  conformanceTimed: recordTables(recordsSchema).conformanceTimed,
+  conformanceUntimed: recordTables(recordsSchema).conformanceUntimed,
 };
 
 /** A statement that raises `code` from the database, as a driver error. */
@@ -281,7 +282,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
       _tag: "AdapterError",
       cause: {
         cause: { code: "23503" },
-        message: "drizzleAdapter: insertBlock failed",
+        message: "drizzleAdapter: insertRecord failed",
       },
     });
   });
@@ -531,7 +532,7 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
       assert(moving.ok && outside.ok, "expected both seed bookings");
 
       // Hides the outside Booking from the unit's first read, as a write the lock can't see would be.
-      const adapter = defineAdapter<Tx, "blocks">((s) => {
+      const adapter = defineAdapter<Tx, "records">((s) => {
         const raw = inner(s);
 
         return {

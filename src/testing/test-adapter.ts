@@ -19,13 +19,13 @@ import type {
   RetryProbe,
   TxProbe,
 } from "./conformance-case.js";
-import { conformancePlugin } from "./conformance-plugin.js";
+import { skipped as pluginSkipped } from "./plugin-stores.js";
 
 /** Params of {@link testAdapter} and {@link runCase}. */
 export interface TestAdapterParams<S extends AnySchema, Tx> {
   /** Your schema, with your names and Developer Fields. */
   readonly schema: S;
-  /** Called once per case. The Adapter must allow 20 concurrent units of work, and implement Blocks if `schema` declares `block`. */
+  /** Called once per case. The Adapter must allow 20 concurrent units of work, and implement `records` if `schema`'s Plugins declare tables. */
   readonly makeAdapter: () => Adapter<Tx, GroupsOf<S>>;
   /** Empties the fasti tables before each case; your Resource rows stay. */
   readonly reset: () => Promise<void>;
@@ -34,7 +34,7 @@ export interface TestAdapterParams<S extends AnySchema, Tx> {
   /**
    * Opt-in groups: `backstop` only if your Adapter ships a database constraint; `tx` a probe over a table of your own, or `null` if `tx` is no transaction (e.g. in memory);
    * `retry` a value your Adapter retries as transient, or `null` if it never retries.
-   * The `blocks` cases run iff `schema` declares `block`; the `records` cases iff it installs {@link conformancePlugin}.
+   * The `blocks` cases run iff `schema` installs `blocks()`, the `availability` cases iff it installs `availability()`, and the `records` cases iff it installs `conformancePlugin`.
    */
   readonly groups: {
     readonly backstop: boolean;
@@ -79,7 +79,7 @@ export async function runCase<S extends AnySchema, Tx>(
 
 /**
  * Register the Conformance Suite as Vitest tests: one `it` per case.
- * Cases of a group you didn't opt into (`backstop: false`, `tx: null`, `retry: null`), `blocks` cases for a schema without `block`, or `records` cases for one without {@link conformancePlugin}, are registered as skipped.
+ * Cases of a group you didn't opt into (`backstop: false`, `tx: null`, `retry: null`), and Plugin cases for a schema without their Plugin (`blocks()`, `availability()`, `conformancePlugin`), are registered as skipped.
  */
 export function testAdapter<S extends AnySchema, Tx>(
   params: TestAdapterParams<S, Tx>
@@ -88,9 +88,7 @@ export function testAdapter<S extends AnySchema, Tx>(
     for (const c of conformanceCases) {
       const skipped =
         (c.tags.includes("backstop") && !params.groups.backstop) ||
-        (c.tags.includes("blocks") && params.schema.block === null) ||
-        (c.tags.includes("records") &&
-          !params.schema.plugins.includes(conformancePlugin)) ||
+        pluginSkipped(c, params.schema) ||
         (c.tags.includes("tx") && params.groups.tx === null) ||
         (c.tags.includes("retry") && params.groups.retry === null);
 

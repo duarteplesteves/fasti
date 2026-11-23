@@ -3,6 +3,7 @@ import { assert, describe, expect, it } from "vitest";
 import { defineAdapter } from "../adapter/contract.js";
 import {
   AdapterError,
+  availability,
   createScheduler,
   definePolicy,
   defineSchema,
@@ -13,6 +14,7 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
+import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 
 const schema = uuidIdSchema;
@@ -38,7 +40,7 @@ async function seeded() {
   const adapter = memoryAdapter();
 
   await adapter(schema).withResourceLock(room, async (locked) => {
-    await locked.replaceRules({ resourceId: room, rules: [weekdays] });
+    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
   });
 
   return adapter;
@@ -62,11 +64,11 @@ async function refuse(): Promise<never> {
 }
 
 /** Every verb and the lock refuse: proves a call reached no Adapter. */
-const noCalls = defineAdapter<undefined, "blocks">(() => ({
-  getBlock: refuse,
+const noCalls = defineAdapter<undefined, "records">(() => ({
+  getRecord: refuse,
   getBooking: refuse,
   getRules: refuse,
-  listBlocks: refuse,
+  listRecords: refuse,
   listBookings: refuse,
   withResourceLock: refuse,
 }));
@@ -230,7 +232,7 @@ describe("Policies on book", () => {
     const inner = await seeded();
     const failure = new Error("connection lost");
 
-    const adapter = defineAdapter<undefined, "blocks">((s) => {
+    const adapter = defineAdapter<undefined, "records">((s) => {
       const raw = inner(s);
 
       return {
@@ -667,6 +669,7 @@ describe("Policies on cancel", () => {
 
   it("gives TransitionNotDeclared before any Policy", async () => {
     const started = defineSchema({
+      plugins: [availability()],
       booking: {
         initial: ["inProgress"],
         statuses: { inProgress: { blocking: true } },
@@ -743,7 +746,7 @@ describe("Policies on cancel", () => {
 });
 
 describe("Policy definition", () => {
-  it("throws on an empty appliesTo and on the name availability", () => {
+  it("throws on an empty appliesTo, and on an app Policy named like availability()'s", () => {
     expect(() =>
       definePolicy(schema, {
         // @ts-expect-error -- appliesTo is non-empty by type.
@@ -752,14 +755,22 @@ describe("Policy definition", () => {
         name: "nowhere",
       })
     ).toThrow("at least one Action");
+
+    // `availability` is availability()'s Policy now: the clash is found when the scheduler is built.
+    const clash = definePolicy(schema, {
+      appliesTo: ["book"],
+      check: () => null,
+      name: "availability",
+    });
+
     expect(() =>
-      definePolicy(schema, {
-        appliesTo: ["book"],
-        check: () => null,
-        // @ts-expect-error -- availability is fasti's own.
-        name: "availability",
+      createScheduler({
+        adapter: memoryAdapter(),
+        // @ts-expect-error -- availability() already has a Policy named availability.
+        policies: [clash],
+        schema,
       })
-    ).toThrow("availability");
+    ).toThrow("two Policies are named availability");
   });
 
   it("throws on two Policies with one name", () => {

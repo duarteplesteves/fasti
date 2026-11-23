@@ -16,6 +16,7 @@ import type {
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdSchema } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
+import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import type { TransitionCandidate } from "./policy.js";
 
@@ -86,7 +87,7 @@ async function seeded() {
   const adapter = memoryAdapter();
 
   await adapter(schema).withResourceLock("room", async (locked) => {
-    await locked.replaceRules({ resourceId: "room", rules: [weekdays] });
+    await replaceRules(locked, { resourceId: "room", rules: [weekdays] });
   });
 
   const booking = unwrap(
@@ -315,11 +316,11 @@ describe("Policies on Transition edges", () => {
 
   it("refuses a relax name that doesn't apply to the edge as InvalidParams at its index, before any Adapter call", async () => {
     const scheduler = createScheduler({
-      adapter: defineAdapter<undefined, "blocks">(() => ({
-        getBlock: refuse,
+      adapter: defineAdapter<undefined, "records">(() => ({
+        getRecord: refuse,
         getBooking: refuse,
         getRules: refuse,
-        listBlocks: refuse,
+        listRecords: refuse,
         listBookings: refuse,
         withResourceLock: refuse,
       })),

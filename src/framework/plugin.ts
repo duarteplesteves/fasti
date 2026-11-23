@@ -413,7 +413,14 @@ export type Fill<Id, X> = unknown extends X
     ? Id
     : X extends Opaque
       ? X
-      : { [K in keyof X]: Fill<Id, X[K]> };
+      : Unchanged<X, { [K in keyof X]: Fill<Id, X[K]> }>;
+
+/** `X` itself when filling changed nothing (no Resource id inside), so a Plugin's own named types reach the app as written; else `Filled`. */
+type Unchanged<X, Filled> = [X] extends [Filled]
+  ? [Filled] extends [X]
+    ? X
+    : Filled
+  : Filled;
 
 /** Plugin Action `Ac` as the app calls it, in form `F`, over Resource ids `Id` and transaction handle `Tx`. */
 type AppAction<Id, Tx, F extends Form, Ac> = Ac extends {
@@ -681,7 +688,7 @@ export function pluginHooks<S extends AnySchema, Tx>(
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion, anti-slop/no-object-parameters -- the Hook is erased here.
       const erased = run as (event: object) => Effect.Effect<void>;
 
-      // Even on "*": a Plugin never sees another Plugin's writes, nor the app's own `availability.set` or `blocks.*`.
+      // Even on "*": a Plugin never sees another Plugin's writes.
       function applies(called: CalledTarget): boolean {
         return (
           observable(own, called) &&

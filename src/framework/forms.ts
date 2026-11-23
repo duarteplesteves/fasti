@@ -22,7 +22,7 @@ export type AlsoFn<F extends Form, Ctx, A, E, R> = [Ctx] extends [never]
 /** The value with `also: A` added: on objects merged, on void wrapped; a repeat cancel never carries it. */
 export type WithAlso<V, A> = V extends { readonly alreadyCancelled: true }
   ? V
-  : // oxlint-disable-next-line typescript/no-invalid-void-type -- `blocks.delete` returns void; it gets wrapped.
+  : // oxlint-disable-next-line typescript/no-invalid-void-type -- a write Action may return void; it gets wrapped.
     [V] extends [void]
     ? { readonly also: A }
     : V & { readonly also: A };

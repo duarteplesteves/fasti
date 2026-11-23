@@ -9,6 +9,7 @@ import type { Booking, ChangeAlso, FieldsPatch } from "./booking.js";
 import type {
   AdapterError,
   BookingNotFound,
+  Conflict,
   PolicyViolation,
   SlotConflict,
   StatusMismatch,
@@ -117,7 +118,11 @@ export type TransitionError<S extends AnySchema> =
 export function transition<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: TransitionParams<S> & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
-): WriteEffect<Booking<S>, TransitionError<S> | PolicyViolation, R> {
+): WriteEffect<
+  Booking<S>,
+  TransitionError<S> | SlotConflict<Conflict> | PolicyViolation,
+  R
+> {
   const { id } = params;
 
   // SAFETY: TransitionEdge<S> has `from` and `to` Statuses; a plain-JS caller may pass anything, which canMove refuses next.
@@ -175,7 +180,7 @@ export function transition<S extends AnySchema, Tx, R = never>(
       Effect.gen(function* transitionUnit(): Effect.fn.Return<
         Outcome<Booking<S>, AlsoContext<ChangeAlso<S, Tx>>>,
         | StatusMismatch<StatusOf<S>>
-        | SlotConflict
+        | SlotConflict<Conflict>
         | PolicyViolation
         | AdapterError
         | Retry
@@ -225,7 +230,7 @@ export function transition<S extends AnySchema, Tx, R = never>(
         if (!updated.ok) {
           return yield* updated.reason === "changed"
             ? Effect.fail(retry)
-            : Effect.fail<SlotConflict>({
+            : Effect.fail<SlotConflict<Conflict>>({
                 _tag: "SlotConflict",
                 conflicts: yield* conflictsAt(ctx, locked, range),
               });

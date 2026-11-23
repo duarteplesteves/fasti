@@ -2,11 +2,12 @@ import type { Adapter, GroupsOf, SchemaAdapter } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 
-/** Tags that group cases: `concurrency` cases test the lock; `backstop` cases are optional; `blocks` cases run only for a schema with `block`; `records` cases only for one with `conformancePlugin` installed; `tx` cases run only with a {@link TxProbe}; `retry` cases run only with a {@link RetryProbe}. */
+/** Tags that group cases: `concurrency` cases test the lock; `backstop` cases are optional; `blocks` cases run only for a schema installing `blocks()`, `availability` cases only for one installing `availability()`, `records` cases only for one with `conformancePlugin` installed; `tx` cases run only with a {@link TxProbe}; `retry` cases run only with a {@link RetryProbe}. */
 export type CaseTag =
   | "concurrency"
   | "backstop"
   | "blocks"
+  | "availability"
   | "records"
   | "tx"
   | "retry";

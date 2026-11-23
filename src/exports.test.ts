@@ -36,11 +36,16 @@ interface Entry {
   readonly names: readonly string[];
 }
 
+// oxlint-disable-next-line typescript/no-generated-empty-object-type -- no Developer Fields.
+type NoFields = Record<never, never>;
+
 const surface = [
   {
     module: root,
     names: [
       "AdapterError",
+      "availability",
+      "blocks",
       "column",
       "createScheduler",
       "defineHook",
@@ -153,12 +158,14 @@ describe("package export surface", () => {
     expectTypeOf<root.CancelParams<S>>().toHaveProperty("id");
     expectTypeOf<root.BookAlso<S, "tx">["tx"]>().toEqualTypeOf<"tx">();
     expectTypeOf<root.ChangeAlso<S, "tx">>().toHaveProperty("previous");
-    expectTypeOf<
-      root.SetAvailabilityAlso<root.AnySchema, "tx">
-    >().toHaveProperty("rules");
-    expectTypeOf<root.CreateBlockAlso<S, "tx">>().toHaveProperty("block");
-    expectTypeOf<root.UpdateBlockAlso<S, "tx">>().toHaveProperty("previous");
-    expectTypeOf<root.DeleteBlockAlso<S, "tx">>().toHaveProperty("previous");
+    expectTypeOf<root.SetAvailabilityContext>().toHaveProperty("rules");
+    expectTypeOf<root.CreateBlockContext<NoFields>>().toHaveProperty("block");
+    expectTypeOf<root.UpdateBlockContext<NoFields>>().toHaveProperty(
+      "previous"
+    );
+    expectTypeOf<root.DeleteBlockContext<NoFields>>().toHaveProperty(
+      "previous"
+    );
   });
 
   it("the package's only runtime dependency is effect (ADR 012)", () => {

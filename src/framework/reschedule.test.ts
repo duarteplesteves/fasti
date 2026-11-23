@@ -12,6 +12,8 @@ import type {
   BookingNotFound,
   InvalidParams,
   RescheduleError,
+  ConflictingBlock,
+  ConflictingBooking,
   SlotConflict,
   StatusMismatch,
 } from "../index.js";
@@ -30,6 +32,7 @@ import {
 } from "../test-utils/conformance-schemas.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
+import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
 
@@ -62,7 +65,9 @@ function at(hour: number, minute = 0): Temporal.Instant {
 }
 
 /** A scheduler over `adapter` with weekday availability on `room`, and a 14:00–15:00 Booking there. */
-async function seeded(adapter: Adapter<undefined, "blocks"> = memoryAdapter()) {
+async function seeded(
+  adapter: Adapter<undefined, "records"> = memoryAdapter()
+) {
   const scheduler = createScheduler({ policies: [], adapter, schema });
 
   unwrap(
@@ -82,10 +87,10 @@ async function refuse(): Promise<never> {
 }
 
 /** Wrap `inner`, recording the Resource of every `withResourceLock`. */
-function spyingLocks(inner: Adapter<undefined, "blocks">) {
+function spyingLocks(inner: Adapter<undefined, "records">) {
   const locks: string[] = [];
 
-  const adapter = defineAdapter<undefined, "blocks">((s) => {
+  const adapter = defineAdapter<undefined, "records">((s) => {
     const raw = inner(s);
 
     return {
@@ -284,11 +289,11 @@ describe("reschedule", () => {
   });
 
   it("gives InvalidParams for end <= start before any Adapter call", async () => {
-    const refusing = defineAdapter<undefined, "blocks">(() => ({
-      getBlock: refuse,
+    const refusing = defineAdapter<undefined, "records">(() => ({
+      getRecord: refuse,
       getBooking: refuse,
       getRules: refuse,
-      listBlocks: refuse,
+      listRecords: refuse,
       listBookings: refuse,
       withResourceLock: refuse,
     }));
@@ -317,7 +322,7 @@ describe("reschedule", () => {
     );
 
     // Plays a cancel on the source Resource, which a move locking only the destination doesn't exclude.
-    const adapter = defineAdapter<undefined, "blocks">((s) => {
+    const adapter = defineAdapter<undefined, "records">((s) => {
       const raw = inner(s);
 
       return {
@@ -458,7 +463,7 @@ describe("reschedule", () => {
         const ids: BookingId[] = [];
 
         await adapter(schema).withResourceLock(room, async (locked) => {
-          await locked.replaceRules({
+          await replaceRules(locked, {
             resourceId: room,
             rules: rules.map(({ resourceId: _, ...r }) => ({
               ...r,
@@ -581,7 +586,7 @@ describe("reschedule", () => {
       | InvalidParams
       | BookingNotFound
       | StatusMismatch<"booked" | "cancelled">
-      | SlotConflict
+      | SlotConflict<ConflictingBooking | ConflictingBlock>
       | AdapterError
     >();
   });

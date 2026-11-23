@@ -2,7 +2,13 @@ import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
 import type { Adapter } from "../adapter/contract.js";
-import { column, createScheduler, defineSchema } from "../index.js";
+import {
+  availability,
+  blocks,
+  column,
+  createScheduler,
+  defineSchema,
+} from "../index.js";
 import type { Scheduler, TransitionParams } from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdSchema } from "../test-utils/conformance-schemas.js";
@@ -11,7 +17,7 @@ import { mintBookingId } from "./booking-id.js";
 
 /** `inProgress` blocks; `noShow` and `done` don't. `inProgress` can't be cancelled. */
 const schema = defineSchema({
-  block: { fields: {} },
+  plugins: [availability(), blocks({ fields: {} })],
   booking: {
     fields: {
       note: { required: false, type: column.text() },
@@ -51,7 +57,7 @@ function at(hours: number): Temporal.Instant {
 const slot = { end: at(2), resourceId: "room", start: at(1) } as const;
 
 /** A scheduler over `adapter` with `weekdays` on `room` and one Booking in `slot`. */
-async function seeded(adapter: Adapter<Tx, "blocks"> = memoryAdapter()) {
+async function seeded(adapter: Adapter<Tx, "records"> = memoryAdapter()) {
   const scheduler = createScheduler({ policies: [], adapter, schema });
 
   unwrap(
@@ -71,7 +77,7 @@ async function reject(): Promise<never> {
 }
 
 /** A memory Adapter whose unlocked read and lock both reject: any Adapter call shows up as an AdapterError. */
-const refusing = defineAdapter<Tx, "blocks">((s) => ({
+const refusing = defineAdapter<Tx, "records">((s) => ({
   ...memoryAdapter()(s),
   getBooking: reject,
   withResourceLock: reject,

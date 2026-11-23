@@ -15,6 +15,7 @@ import {
   uuidIdResources,
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
+import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 
 const schema = uuidIdSchema;
@@ -36,9 +37,9 @@ const weekdays = {
 
 /** Wrap `inner` so each locked `updateBooking` goes through `update` first. */
 function wrapUpdates(
-  inner: Adapter<undefined, "blocks">,
+  inner: Adapter<undefined, "records">,
   update: (call: number) => "pass" | "changed"
-): Adapter<undefined, "blocks"> {
+): Adapter<undefined, "records"> {
   let calls = 0;
 
   return (s) => {
@@ -65,9 +66,9 @@ function wrapUpdates(
   };
 }
 
-async function bookedScheduler(adapter: Adapter<undefined, "blocks">) {
+async function bookedScheduler(adapter: Adapter<undefined, "records">) {
   await adapter(schema).withResourceLock(room, async (locked) => {
-    await locked.replaceRules({ resourceId: room, rules: [weekdays] });
+    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
   });
 
   const scheduler = createScheduler({ policies: [], adapter, schema });

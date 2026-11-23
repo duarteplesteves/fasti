@@ -15,6 +15,7 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
+import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import type { FindSlotsError, Slot } from "./find-slots.js";
 
@@ -37,7 +38,7 @@ async function seeded() {
   const adapter = memoryAdapter();
 
   await adapter(schema).withResourceLock(room, async (locked) => {
-    await locked.replaceRules({ resourceId: room, rules: [weekdays] });
+    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
   });
 
   return adapter;
@@ -168,11 +169,11 @@ describe("findSlots", () => {
   ] as const)(
     "refuses an invalid %s with InvalidParams, before any Adapter call",
     async (path, change) => {
-      const adapter = defineAdapter<undefined, "blocks">(() => ({
-        getBlock: refuse,
+      const adapter = defineAdapter<undefined, "records">(() => ({
+        getRecord: refuse,
         getBooking: refuse,
         getRules: refuse,
-        listBlocks: refuse,
+        listRecords: refuse,
         listBookings: refuse,
         withResourceLock: refuse,
       }));
@@ -193,15 +194,15 @@ describe("findSlots", () => {
   it("reports a stored rule the Core finds invalid as AdapterError, not InvalidParams", async () => {
     const inner = await seeded();
 
-    const adapter = defineAdapter((s) => {
+    const adapter = defineAdapter<undefined, "records">((s) => {
       const raw = inner(s);
 
       return {
         ...raw,
-        getRules: async (id) => {
-          const rules = await raw.getRules(id);
+        listRecords: async (table, q) => {
+          const rows = await raw.listRecords(table, q);
 
-          return rules.map((r) => ({ ...r, timezone: "Nowhere" }));
+          return rows.map((r) => ({ ...r, timezone: "Nowhere" }));
         },
       };
     });
@@ -435,11 +436,11 @@ describe("findSlots with Policies", () => {
   });
 
   it("refuses a relax name that doesn't apply with InvalidParams, before any Adapter call", async () => {
-    const adapter = defineAdapter<undefined, "blocks">(() => ({
-      getBlock: refuse,
+    const adapter = defineAdapter<undefined, "records">(() => ({
+      getRecord: refuse,
       getBooking: refuse,
       getRules: refuse,
-      listBlocks: refuse,
+      listRecords: refuse,
       listBookings: refuse,
       withResourceLock: refuse,
     }));

@@ -17,7 +17,7 @@ import type {
 } from "../schema/define-schema.js";
 import type { Accepts } from "../schema/references.js";
 import { statusCodec } from "../schema/status-codec.js";
-import { tablesOf } from "../schema/table.js";
+import { physicalColumns, physicalTable, tablesOf } from "../schema/table.js";
 import type { Columns, TableDef, TableNamesOf } from "../schema/table.js";
 
 /** The helpers `defineContract`'s callback receives. */
@@ -123,7 +123,7 @@ type PrismaModel = ReturnType<typeof tableModel>;
 export type PrismaModels<S extends AnySchema> = Record<
   | S["names"]["tables"]["booking"]
   | S["names"]["tables"]["availabilityRule"]
-  | TableNamesOf<S["plugins"]>,
+  | S["names"]["tables"][TableNamesOf<S["plugins"]>],
   PrismaModel
 > &
   (HasBlocks<S> extends true
@@ -322,31 +322,39 @@ function availabilityRuleModel(
   );
 }
 
-/** One Plugin table, named logically as on Drizzle: `id` (fasti mints it; the database default stays, R4), `resourceId`, a timed table's range, then its columns. */
+/** One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. */
 function pluginModel(
   schema: AnySchema,
   name: string,
-  { columns, timed }: TableDef,
+  { columns, idDefault = true, timed }: TableDef,
   helpers: ContractHelpers,
   references: TargetFieldRef | undefined
 ) {
   const { field, type } = helpers;
+  const names = physicalColumns(schema, name);
+  const id = field.column(type.Uuid()).id();
 
   return tableModel(
     helpers,
-    name,
+    physicalTable(schema, name),
     {
-      id: field
-        .column(type.Uuid())
-        .id()
-        .default(sql`gen_random_uuid()`)
-        .column("id"),
-      resourceId: column(helpers, schema.resource.idType.kind, "resourceId"),
+      id: (idDefault ? id.default(sql`gen_random_uuid()`) : id).column(
+        names("id")
+      ),
+      resourceId: column(
+        helpers,
+        schema.resource.idType.kind,
+        names("resourceId")
+      ),
       ...(timed && {
-        start: column(helpers, "instant", "start"),
-        end: column(helpers, "instant", "end"),
+        start: column(helpers, "instant", names("start")),
+        end: column(helpers, "instant", names("end")),
       }),
-      ...fieldColumns(helpers, columns, {}),
+      ...fieldColumns(
+        helpers,
+        columns,
+        Object.fromEntries(Object.keys(columns).map((c) => [c, names(c)]))
+      ),
     },
     [],
     references
@@ -355,7 +363,7 @@ function pluginModel(
 
 /**
  * The fasti tables of `schema` as Prisma 8 contract models, keyed and named by your physical
- * table names, with your physical column names; each Plugin table, as on Drizzle, by its logical names.
+ * table names, with your physical column names, each Plugin table's too.
  * Spread it into your `defineContract` models:
  * `defineContract({}, (helpers) => ({ models: { ...mine, ...prismaModels(schema, helpers) } }))`.
  * Pass `{ references: { model: staff, field: "id" } }` for a foreign key to your Resource model.
@@ -393,9 +401,10 @@ export function prismaModels<
     ]);
   }
 
+  // After fasti's own: a Plugin table with one of their physical names (availability()'s, blocks()') is the same table.
   for (const [name, def] of Object.entries(tablesOf(schema.plugins))) {
     models.push([
-      name,
+      physicalTable(schema, name),
       pluginModel(schema, name, def, helpers, resourceIdTarget),
     ]);
   }

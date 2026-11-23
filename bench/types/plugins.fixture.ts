@@ -8,6 +8,8 @@ import {
 } from "../../src/effect/index.js";
 import type { PluginResourceId } from "../../src/effect/index.js";
 import {
+  availability,
+  blocks,
   column,
   createScheduler,
   defineHook,
@@ -129,13 +131,19 @@ type StaffId = string & { readonly __brand: "StaffId" };
 const adapter = memoryAdapter();
 
 const schema = defineSchema({
-  block: { fields: { title: { required: true, type: column.text() } } },
   booking: {
     fields: { customer: { required: true, type: column.text() } },
     statuses: { inProgress: { blocking: true } },
     transitions: { booked: ["inProgress"] },
   },
-  plugins: [notes({ max: 3 }), tags, waitlist, holidays({ eveHours: 1 })],
+  plugins: [
+    availability(),
+    blocks({ fields: { title: { required: true, type: column.text() } } }),
+    notes({ max: 3 }),
+    tags,
+    waitlist,
+    holidays({ eveHours: 1 }),
+  ],
   resource: { idType: column.uuid<StaffId>() },
 });
 

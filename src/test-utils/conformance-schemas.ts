@@ -1,9 +1,12 @@
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
+import { availability } from "../framework/plugins/availability.js";
+import { blocks } from "../framework/plugins/blocks.js";
 import { column } from "../schema/column.js";
 import { defineSchema } from "../schema/define-schema.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { ConformanceCase } from "../testing/conformance-case.js";
 import { conformancePlugin } from "../testing/conformance-plugin.js";
+import { skipped } from "../testing/plugin-stores.js";
 
 /** Every rule column renamed; shared by the three schemas below. */
 function ruleColumns(prefix: string) {
@@ -22,16 +25,19 @@ function ruleColumns(prefix: string) {
 
 /** Text ids, and a Developer Field of every kind, required and optional, on Bookings and Blocks. Everything renamed. */
 export const textIdSchema = defineSchema({
-  block: {
-    fields: {
-      flag: { required: true, type: column.boolean() },
-      flagOpt: { required: false, type: column.boolean() },
-      note: { required: true, type: column.text() },
-      noteOpt: { required: false, type: column.text() },
-      until: { required: true, type: column.instant() },
-      untilOpt: { required: false, type: column.instant() },
-    },
-  },
+  plugins: [
+    availability(),
+    blocks({
+      fields: {
+        flag: { required: true, type: column.boolean() },
+        flagOpt: { required: false, type: column.boolean() },
+        note: { required: true, type: column.text() },
+        noteOpt: { required: false, type: column.text() },
+        until: { required: true, type: column.instant() },
+        untilOpt: { required: false, type: column.instant() },
+      },
+    }),
+  ],
   booking: {
     fields: {
       count: { required: true, type: column.integer() },
@@ -94,7 +100,7 @@ export const textIdResources = ["staff-a", "staff-b"] as const;
 
 /** UUID ids, Blocks, no Developer Fields. Everything renamed. */
 export const uuidIdSchema = defineSchema({
-  block: { fields: {} },
+  plugins: [availability(), blocks({ fields: {} })],
   names: {
     columns: {
       availabilityRule: ruleColumns("u"),
@@ -130,6 +136,7 @@ export const uuidIdResources = [
 
 /** Integer ids (linked to a test Resource table on Postgres), no Blocks. Everything renamed. */
 export const integerIdSchema = defineSchema({
+  plugins: [availability()],
   booking: { fields: { note: { required: false, type: column.text() } } },
   names: {
     columns: {
@@ -161,7 +168,7 @@ export const recordsSchema = defineSchema({
     columns: { booking: { status: "r_state" } },
     tables: { availabilityRule: "r_hours", booking: "r_bookings" },
   },
-  plugins: [conformancePlugin],
+  plugins: [availability(), conformancePlugin],
   resource: { idType: column.text() },
 });
 
@@ -170,10 +177,7 @@ export const recordsResources = ["staff-a", "staff-b"] as const;
 
 /** Whether case `c` runs on `schema`, for a negative control: a skipped case would prove nothing. */
 export function runsOn(c: ConformanceCase, schema: AnySchema): boolean {
-  return (
-    (schema.block !== null || !c.tags.includes("blocks")) &&
-    (schema.plugins.includes(conformancePlugin) || !c.tags.includes("records"))
-  );
+  return !skipped(c, schema);
 }
 
 /** A schema with no Plugins, as every schema here but {@link recordsSchema} is. */

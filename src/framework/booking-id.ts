@@ -1,4 +1,4 @@
-import type { BlockId, BookingId } from "../core/types.js";
+import type { BookingId } from "../core/types.js";
 
 /** A new UUIDv7 (RFC 9562): 48-bit Unix ms, version 7, variant 10, the rest random from Web Crypto. */
 export function uuidV7(): string {
@@ -24,11 +24,4 @@ export function mintBookingId(): BookingId {
   // SAFETY: a freshly minted UUIDv7 is exactly what a BookingId is.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands are applied by assertion.
   return uuidV7() as BookingId;
-}
-
-/** A new Block id: a UUIDv7. */
-export function mintBlockId(): BlockId {
-  // SAFETY: a freshly minted UUIDv7 is exactly what a BlockId is.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands are applied by assertion.
-  return uuidV7() as BlockId;
 }

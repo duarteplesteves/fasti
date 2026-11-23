@@ -14,7 +14,7 @@ export interface NoticeParams<
   /** The Actions and declared Transition edges that run it; at least one. */
   readonly appliesTo: readonly [T, ...T[]];
   /** Defaults to `notice`; rename it to register more than one. */
-  readonly name?: N & (N extends "availability" ? never : unknown);
+  readonly name?: N;
 }
 
 /** What a broken {@link notice} reports: the earliest start it would accept. */
@@ -65,6 +65,6 @@ export function notice<
     },
     // SAFETY: `name` is N, or "notice" when N is left at its default.
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-    name: name as N & (N extends "availability" ? never : unknown),
+    name: name as N,
   });
 }

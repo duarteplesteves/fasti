@@ -1,9 +1,10 @@
 import { expect } from "vitest";
 
-import type { SchemaAdapter } from "../../adapter/contract.js";
 import type { ResourceIdOf, RuleRecord } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
+import { ruleStore } from "../plugin-stores.js";
+import type { RuleStore } from "../plugin-stores.js";
 
 function date(iso: string): Temporal.PlainDate {
   return Temporal.PlainDate.from(iso);
@@ -55,7 +56,7 @@ function byStart(rs: readonly RuleRecord[]): RuleRecord[] {
 }
 
 async function replace<S extends AnySchema, Tx>(
-  adapter: SchemaAdapter<S, Tx>,
+  adapter: RuleStore<S, Tx>,
   resourceId: ResourceIdOf<S>,
   next: readonly RuleRecord[]
 ): Promise<void> {
@@ -64,11 +65,14 @@ async function replace<S extends AnySchema, Tx>(
   });
 }
 
-/** Rules: storing and replacing a Resource's AvailabilityRules. */
+/** Rules: storing and replacing a Resource's AvailabilityRules, through `records` on `availability()`'s table. */
 export const ruleCases: readonly ConformanceCase[] = [
   {
     name: "rules round-trip: several per Resource, with exceptions, effective dates set and unset",
-    async run({ adapter, resources }) {
+    async run(ctx) {
+      const { resources } = ctx;
+      const adapter = ruleStore(ctx);
+
       expect(await adapter.getRules(resources[0])).toStrictEqual([]);
 
       await replace(adapter, resources[0], rules);
@@ -77,11 +81,14 @@ export const ruleCases: readonly ConformanceCase[] = [
         byStart(rules)
       );
     },
-    tags: [],
+    tags: ["availability"],
   },
   {
     name: "replaceRules replaces one Resource's whole set and touches no other Resource",
-    async run({ adapter, resources }) {
+    async run(ctx) {
+      const { resources } = ctx;
+      const adapter = ruleStore(ctx);
+
       const [first, second, third] = rules;
 
       await replace(adapter, resources[0], [first, second]);
@@ -96,6 +103,6 @@ export const ruleCases: readonly ConformanceCase[] = [
       expect(await adapter.getRules(resources[0])).toStrictEqual([]);
       expect(await adapter.getRules(resources[1])).toStrictEqual([third]);
     },
-    tags: [],
+    tags: ["availability"],
   },
 ];

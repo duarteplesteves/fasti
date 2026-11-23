@@ -15,6 +15,7 @@ import type { Booking, ChangeAlso, FieldsPatch } from "./booking.js";
 import type {
   AdapterError,
   BookingNotFound,
+  Conflict,
   PolicyViolation,
   SlotConflict,
   StatusMismatch,
@@ -56,7 +57,11 @@ export type RescheduleError<S extends AnySchema> =
 export function reschedule<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: RescheduleParams<S> & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
-): WriteEffect<Booking<S>, RescheduleError<S> | PolicyViolation, R> {
+): WriteEffect<
+  Booking<S>,
+  RescheduleError<S> | SlotConflict<Conflict> | PolicyViolation,
+  R
+> {
   const { id } = params;
   // Adapters see only ms-floored Instants (Invariant 4).
   const start = floorMs(params.start);
@@ -107,7 +112,7 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
       Effect.gen(function* rescheduleUnit(): Effect.fn.Return<
         Outcome<Booking<S>, AlsoContext<ChangeAlso<S, Tx>>>,
         | StatusMismatch<StatusOf<S>>
-        | SlotConflict
+        | SlotConflict<Conflict>
         | PolicyViolation
         | AdapterError
         | Retry
@@ -161,7 +166,7 @@ export function reschedule<S extends AnySchema, Tx, R = never>(
           // `conflict`: the backstop caught an outside write the lock can't see; report what is there now.
           return yield* updated.reason === "changed"
             ? Effect.fail(retry)
-            : Effect.fail<SlotConflict>({
+            : Effect.fail<SlotConflict<Conflict>>({
                 _tag: "SlotConflict",
                 conflicts: yield* conflictsAt(ctx, locked, {
                   ...placement,

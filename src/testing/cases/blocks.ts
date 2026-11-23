@@ -1,24 +1,11 @@
 import { expect } from "vitest";
 
-import type { SchemaAdapter, VerbGroup } from "../../adapter/contract.js";
 import type { BlockChanges, BlockRecord } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
-import type { CaseContext, ConformanceCase } from "../conformance-case.js";
+import type { ConformanceCase } from "../conformance-case.js";
 import { blockId, insertBlock, newBlock } from "../fixtures.js";
-
-/** The Adapter with its Block verbs. Blocks cases only run for a schema with `block`, where GroupsOf<S> is "blocks". */
-function withBlocks<S extends AnySchema, Tx>({
-  adapter,
-  schema,
-}: CaseContext<S, Tx>): SchemaAdapter<S, Tx, "blocks"> {
-  if (schema.block === null) {
-    throw new Error("a blocks case ran on a schema without block");
-  }
-
-  // SAFETY: `schema.block` isn't null, so GroupsOf<S> includes "blocks"; cast to every group, then narrowed by the return type.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the conditional type can't follow the runtime check.
-  return adapter as SchemaAdapter<S, Tx, VerbGroup>;
-}
+import { blockFieldsOf, blockStore as withBlocks } from "../plugin-stores.js";
+import type { BlockStore } from "../plugin-stores.js";
 
 /** Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record. */
 function asChanges<S extends AnySchema>(
@@ -31,7 +18,7 @@ function asChanges<S extends AnySchema>(
 
 /** `updateBlock` in its own unit of work. */
 async function update<S extends AnySchema, Tx>(
-  adapter: SchemaAdapter<S, Tx, "blocks">,
+  adapter: BlockStore<S, Tx>,
   expected: BlockRecord<S>,
   changes: BlockChanges<S>
 ) {
@@ -43,7 +30,7 @@ async function update<S extends AnySchema, Tx>(
 
 /** `deleteBlock` in its own unit of work, on the Block's Resource. */
 async function remove<S extends AnySchema, Tx>(
-  adapter: SchemaAdapter<S, Tx, "blocks">,
+  adapter: BlockStore<S, Tx>,
   block: BlockRecord<S>
 ) {
   return await adapter.withResourceLock(
@@ -52,7 +39,7 @@ async function remove<S extends AnySchema, Tx>(
   );
 }
 
-/** Blocks (ADR 016): save, read back, list by range, change, delete, undo on failure. */
+/** Blocks (ADR 016), through `records` on `blocks()`'s table: save, read back, list by range, change, delete, undo on failure. */
 export const blockCases: readonly ConformanceCase[] = [
   {
     name: "a Block round-trips every field: id, Instants to the millisecond, every Developer Field set or null",
@@ -226,7 +213,7 @@ export const blockCases: readonly ConformanceCase[] = [
 
       await insertBlock(adapter, block);
 
-      const hasOptional = Object.values(schema.block?.fields ?? {}).some(
+      const hasOptional = Object.values(blockFieldsOf(schema)).some(
         (f) => !f.required
       );
 

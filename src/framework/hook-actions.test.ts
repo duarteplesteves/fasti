@@ -2,6 +2,8 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/contract.js";
 import {
+  availability,
+  blocks,
   createScheduler,
   defineHook,
   definePolicy,
@@ -14,7 +16,7 @@ import type { AnyHookOf } from "./hook.js";
 
 /** Blocks, and Transitions besides cancel's, so every write Action and edge exists. */
 const schema = defineSchema({
-  block: { fields: {} },
+  plugins: [availability(), blocks({ fields: {} })],
   booking: {
     statuses: {
       done: { blocking: false },
@@ -527,7 +529,7 @@ describe("a lock-by-id retry", () => {
     );
 
     // Moves the Booking to `other` once, between the unlocked read and the lock: the lock on `room` then finds it gone.
-    const raced = defineAdapter<undefined, "blocks">((s) => {
+    const raced = defineAdapter<undefined, "records">((s) => {
       const raw = inner(s);
 
       return {

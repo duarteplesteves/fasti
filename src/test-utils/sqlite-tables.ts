@@ -1,11 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import {
-  availabilityRuleTable,
-  blockTable,
-  bookingTable,
-  recordTables,
-} from "../drizzle/sqlite/index.js";
+import { bookingTable, recordTables } from "../drizzle/sqlite/index.js";
 import {
   integerIdSchema,
   recordsSchema,
@@ -30,23 +25,27 @@ export const integerBooking = bookingTable(integerIdSchema, {
   references: () => testStaff.id,
 });
 
-export const integerRule = availabilityRuleTable(integerIdSchema, {
+export const { availabilityRule: integerRule } = recordTables(integerIdSchema, {
   references: () => testStaff.id,
 });
 
-export const textBlock = blockTable(textIdSchema);
 export const textBooking = bookingTable(textIdSchema);
-export const textRule = availabilityRuleTable(textIdSchema);
 
-export const uuidBlock = blockTable(uuidIdSchema, {
+export const { availabilityRule: textRule, block: textBlock } =
+  recordTables(textIdSchema);
+
+export const uuidBooking = bookingTable(uuidIdSchema);
+export const { availabilityRule: uuidRule } = recordTables(uuidIdSchema);
+
+// The uuid-id schema's Blocks reference test_rooms; its rules don't, as in 0.6.
+export const { block: uuidBlock } = recordTables(uuidIdSchema, {
   references: () => testRooms.id,
 });
 
-export const uuidBooking = bookingTable(uuidIdSchema);
-export const uuidRule = availabilityRuleTable(uuidIdSchema);
-
 export const recordsBooking = bookingTable(recordsSchema);
-export const recordsRule = availabilityRuleTable(recordsSchema);
 
-export const { conformanceTimed, conformanceUntimed } =
-  recordTables(recordsSchema);
+export const {
+  availabilityRule: recordsRule,
+  conformanceTimed,
+  conformanceUntimed,
+} = recordTables(recordsSchema);
