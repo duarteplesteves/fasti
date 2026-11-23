@@ -560,4 +560,48 @@ describe("a lock-by-id retry", () => {
     expect(unwrap(result).booking.resourceId).toBe("other");
     expect(after.map(({ action }) => action)).toStrictEqual(["cancel"]);
   });
+
+  it("gives up with AdapterError when an outside writer moves the row before every lock", async () => {
+    const inner = memoryAdapter();
+    const { booking } = await seeded([], inner);
+    const outside = createScheduler({ adapter: inner, schema });
+    let moves = 0;
+
+    unwrap(
+      await outside.availability.set({ resourceId: "other", rules: [weekdays] })
+    );
+
+    // Every lock first moves the Booking to the other Resource, so the locked read never matches the unlocked one.
+    const churned = defineAdapter<undefined, "records">((s) => {
+      const raw = inner(s);
+
+      return {
+        ...raw,
+        withResourceLock: async (id, work) => {
+          moves += 1;
+          unwrap(
+            await outside.reschedule({
+              ...slot,
+              id: booking.id,
+              resourceId: moves % 2 === 1 ? "other" : "room",
+            })
+          );
+
+          return await raw.withResourceLock(id, work);
+        },
+      };
+    });
+
+    const { after, hooks } = recorders();
+    const scheduler = createScheduler({ adapter: churned, hooks, schema });
+
+    const result = await scheduler.cancel({ id: booking.id });
+
+    expect(moves).toBe(3);
+    expect(result).toMatchObject({
+      error: { _tag: "AdapterError" },
+      ok: false,
+    });
+    expect(after).toStrictEqual([]);
+  });
 });
