@@ -4,6 +4,7 @@ import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { PolicyNamesOf } from "../schema/table.js";
+import type { ErasedError } from "./errors.js";
 import type { AnyHookOf } from "./hook.js";
 import type { AnyPolicyOf, UniqueNames } from "./policy.js";
 import { makeScheduler } from "./scheduler-service.js";
@@ -56,8 +57,7 @@ export function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
 type PlainAlso = (
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- see above.
   ctx: unknown
-  // oxlint-disable-next-line anti-slop/no-unknown-returns -- see above.
-) => Result<unknown, unknown> | Promise<Result<unknown, unknown>>;
+) => Result<unknown, ErasedError> | Promise<Result<unknown, ErasedError>>;
 
 /** Params with a plain `also` swapped for its Effect form; a throw or rejection inside it becomes a defect. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- params pass through untouched apart from `also`.
@@ -86,7 +86,7 @@ function effectParams(params: unknown): unknown {
 
 /** An Action in the walk below; its params pass through untouched, so they stay `unknown` here. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SchedulerActions types the params at the call site.
-type AnyAction = (params: unknown) => Effect.Effect<unknown, unknown>;
+type AnyAction = (params: unknown) => Effect.Effect<unknown, ErasedError>;
 
 /** The plain form as {@link toPlain} builds it, before it's typed as a {@link Scheduler}. */
 interface PlainTree {

@@ -1,3 +1,4 @@
+import { strict } from "@effect/tsgo/oxlint-presets";
 import { defineConfig } from "oxlint";
 import antiSlop from "ultracite/oxlint/anti-slop";
 import core from "ultracite/oxlint/core";
@@ -46,7 +47,7 @@ function restrict(patterns: object[]) {
 
 export default defineConfig({
   env: core.env,
-  extends: [antiSlop, core, vitest, jsPlugins],
+  extends: [antiSlop, core, vitest, jsPlugins, strict],
   // The examples import the built package, which the lint job doesn't install; CI typechecks them in `integration`.
   ignorePatterns: [...core.ignorePatterns, "examples/**"],
   jsPlugins: jsPlugins.jsPlugins,
@@ -103,8 +104,17 @@ export default defineConfig({
         "typescript/no-unsafe-type-assertion": "off",
       },
     },
+    {
+      // Test Plugins fail with whatever they're handed; the error channel isn't the subject.
+      files: ["**/*.test.ts", "bench/**"],
+      rules: { "effecttsgo/any-unknown-in-error-context": "off" },
+    },
   ],
   rules: {
     "func-style": ["error", "declaration"],
+    // Misreads data-first `Effect.forEach(xs, f)` as `Array#forEach(fn, thisArg)`.
+    "unicorn/no-array-method-this-argument": "off",
+    "effecttsgo/global-console-in-effect": "error",
+    "effecttsgo/global-date-in-effect": "error",
   },
 });

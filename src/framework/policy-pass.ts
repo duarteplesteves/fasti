@@ -120,13 +120,11 @@ export function loadPolicies<S extends AnySchema>(
   policies: readonly RunnablePolicy<S>[],
   ctx: LoadArgs<S>
 ): Effect.Effect<readonly Loaded<S>[], AdapterError> {
-  // Effect.all runs them in order, one at a time.
-  return Effect.all(
-    policies.map((policy) =>
-      policy.load === null
-        ? Effect.succeed({ data: undefined, policy })
-        : Effect.map(policy.load(reads, ctx), (data) => ({ data, policy }))
-    )
+  // Effect.forEach runs them in order, one at a time.
+  return Effect.forEach(policies, (policy) =>
+    policy.load === null
+      ? Effect.succeed({ data: undefined, policy })
+      : Effect.map(policy.load(reads, ctx), (data) => ({ data, policy }))
   );
 }
 

@@ -4,7 +4,7 @@ import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { ChangeAlso } from "./booking.js";
 import type { EffectLocked } from "./effect-adapter.js";
-import type { AdapterError, Vetoed } from "./errors.js";
+import type { AdapterError, ErasedError, Vetoed } from "./errors.js";
 import { hookApplies } from "./hook.js";
 import type { AnyHookOf, Committed, HookEvent } from "./hook.js";
 import type { ActionContext } from "./scheduler-service.js";
@@ -21,7 +21,7 @@ export type AlsoContext<T> = Omit<T, "tx" | "now">;
 /** The `also` an Action receives, in Effect form: the plain form's is adapted in `toPlain`. */
 export type EffectAlso<C, Tx, R> = (
   ctx: C & { readonly tx: Tx; readonly now: Temporal.Instant }
-) => Effect.Effect<unknown, unknown, R>;
+) => Effect.Effect<unknown, ErasedError, R>;
 
 /** The `also` key on an Action implementation's params; the overloads in `WriteAction` type it for callers. */
 export interface AlsoParam<C, Tx, R> {
@@ -174,14 +174,11 @@ export function writeUnit<S extends AnySchema, Tx, V, C extends object, E, R>(
         Effect.forEach((hook) =>
           hook.when === "afterCommit"
             ? hook.run(event).pipe(
-                Effect.catchCause((cause) =>
+                Effect.catchCauseIf(
                   // An interrupt isn't the Hook failing: let it stop the rest.
-                  Cause.hasInterrupts(cause)
-                    ? Effect.failCause(cause)
-                    : Effect.logError(
-                        "fasti: an after-commit Hook failed",
-                        cause
-                      )
+                  (cause) => !Cause.hasInterrupts(cause),
+                  (cause) =>
+                    Effect.logError("fasti: an after-commit Hook failed", cause)
                 )
               )
             : Effect.void
