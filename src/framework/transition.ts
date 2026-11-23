@@ -20,7 +20,8 @@ import { lockedById, retry } from "./lock-by-id.js";
 import type { Retry } from "./lock-by-id.js";
 import { checkOverlap, conflictsAt } from "./occupancy.js";
 import type { ConflictOf } from "./occupancy.js";
-import { applicable, checkRelax, enforcePolicies } from "./policy-pass.js";
+import { applicable, enforcePolicies, parseRelax } from "./policy-pass.js";
+import type { UnparsedRelax } from "./policy-pass.js";
 import type {
   Edge,
   PolicyErrorOf,
@@ -117,7 +118,9 @@ export type TransitionError<S extends AnySchema> =
  */
 export function transition<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
-  params: TransitionParams<S> & AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
+  params: TransitionParams<S> &
+    UnparsedRelax &
+    AlsoParam<AlsoContext<ChangeAlso<S, Tx>>, Tx, R>
 ): WriteEffect<
   Booking<S>,
   TransitionError<S> | SlotConflict<Conflict> | PolicyViolation,
@@ -145,22 +148,13 @@ export function transition<S extends AnySchema, Tx, R = never>(
   }
 
   const policies = applicable(ctx, { from, to });
-  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TransitionAction types `relax` for callers; the implementation takes it as data.
-  const { relax } = params as { readonly relax?: readonly string[] };
+  const relaxed = parseRelax(policies, { from, to }, params);
 
-  const [relaxIssue, ...relaxIssues] = checkRelax(
-    policies,
-    { from, to },
-    relax
-  );
-
-  if (relaxIssue !== undefined) {
-    return Effect.fail<InvalidParams>({
-      _tag: "InvalidParams",
-      issues: [relaxIssue, ...relaxIssues],
-    });
+  if (!relaxed.ok) {
+    return Effect.fail(relaxed.error);
   }
+
+  const relax = relaxed.value;
 
   // SAFETY: the patch holds declared field names only, plus a declared Status.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the schema's field names are only known at runtime.

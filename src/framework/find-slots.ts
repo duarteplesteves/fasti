@@ -12,7 +12,8 @@ import { AdapterError } from "./errors.js";
 import type { BookingNotFound } from "./errors.js";
 import type { Form, Run } from "./forms.js";
 import { occupants } from "./occupancy.js";
-import { applicable, checkRelax, judge, loadPolicies } from "./policy-pass.js";
+import { applicable, judge, loadPolicies, parseRelax } from "./policy-pass.js";
+import type { UnparsedRelax } from "./policy-pass.js";
 import type { RelaxedNames, Violation } from "./policy.js";
 import type { ActionContext } from "./scheduler-service.js";
 
@@ -82,7 +83,7 @@ export interface FindSlotsAction<
  */
 export function findSlots<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
-  params: FindSlotsParams<S>
+  params: FindSlotsParams<S> & UnparsedRelax
 ): Effect.Effect<
   readonly Slot<S, Violation<string, unknown>>[],
   FindSlotsError
@@ -95,22 +96,22 @@ export function findSlots<S extends AnySchema, Tx>(
 
   const target = excludeBookingId === undefined ? "book" : "reschedule";
   const policies = applicable(ctx, target);
-  // SAFETY: a plain-JS caller may pass anything; checkRelax checks it next.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- FindSlotsAction types `relax` for callers; the implementation takes it as data.
-  const { relax } = params as { readonly relax?: readonly string[] };
+  const relaxed = parseRelax(policies, target, params);
 
   // Checked before any Adapter call (Invariant 5), so `to.add(duration)` below can't throw.
   const valid = checked(
     [
       ...checkSearch({ duration, from, interval, timezone, to }),
-      ...checkRelax(policies, target, relax),
+      ...(relaxed.ok ? [] : relaxed.error.issues),
     ],
-    () => null
+    () => (relaxed.ok ? relaxed.value : undefined)
   );
 
   if (!valid.ok) {
     return Effect.fail(valid.error);
   }
+
+  const relax = valid.value;
 
   return Effect.gen(function* findSlotsRun() {
     const previous =
