@@ -499,7 +499,6 @@ export function defineSchema<
   return {
     booking: { fields },
     // SAFETY: one entry per Plugin table, keyed by its logical name, which is all TableNamesOf<Ps> adds.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries can't keep the key type.
     names: {
       columns: {
         booking: bookingColumns,

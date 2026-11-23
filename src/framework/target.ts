@@ -36,7 +36,6 @@ export function pluginWriteNames({
   actions,
   name,
 }: {
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a Plugin's Actions, either style.
   readonly actions: unknown;
   readonly name: string;
 }): readonly string[] {
@@ -70,7 +69,6 @@ type AnyTarget = string | { readonly from?: string; readonly to: string };
 export function isNamedTarget(
   target: string | { readonly to: string }
 ): target is string {
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- names are strings, edges objects.
   return typeof target === "string";
 }
 

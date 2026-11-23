@@ -110,7 +110,6 @@ export function appPolicy<S extends AnySchema>(
 /** A Policy with what its `load` returned. */
 interface Loaded<S extends AnySchema> {
   readonly policy: RunnablePolicy<S>;
-  // oxlint-disable-next-line anti-slop/no-unknown-returns -- the Policy's own `Data`, handed back to its `check`.
   readonly data: unknown;
 }
 

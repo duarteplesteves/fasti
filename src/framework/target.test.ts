@@ -2,7 +2,6 @@ import { describe, expectTypeOf, it } from "vitest";
 
 import { availability, blocks, column, defineSchema } from "../index.js";
 import type {
-  // oxlint-disable-next-line typescript/no-deprecated -- the alias under test.
   ActionTarget,
   BookingActionName,
   HookTarget,

@@ -36,7 +36,6 @@ export function encodeRecord<S extends AnySchema>(
 ): PrismaRow {
   return Object.fromEntries(
     // SAFETY: Booking records hold only PrismaValues; TS can't resolve a generic S's fields to them.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
     Object.entries(record as Readonly<Record<string, PrismaValue | undefined>>)
       .filter((entry): entry is [string, PrismaValue] => entry[1] !== undefined)
       .map(([key, value]) => [physical(names, key), value])

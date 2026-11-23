@@ -336,7 +336,6 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
                   : { ok: true };
               },
               // SAFETY: `tx` is what DB's own transaction callback receives, which TxOf<DB> names.
-              // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve TxOf<DB> for a generic DB.
               tx: tx as TxOf<DB>,
               updateBooking: async ({ changes, expected }) => {
                 const updated = await backstopped(

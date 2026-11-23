@@ -29,7 +29,6 @@ export function noOverlapConstraint(schema: AnySchema): string {
  */
 export function backstopSql(schema: AnySchema): readonly string[] {
   // SAFETY: defineSchema names every Booking column; AnySchema only widens the keys to string.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
   const columns = schema.names.columns.booking as Readonly<
     Record<BookingColumn, string>
   >;

@@ -23,7 +23,6 @@ interface PackageJson {
 }
 
 // SAFETY: our own package.json, shaped as above.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
 const pkg = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf-8")
 ) as PackageJson;

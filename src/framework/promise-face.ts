@@ -333,7 +333,6 @@ function fromResult<A, E>(result: Result<A, E>): Effect.Effect<A, E> {
 }
 
 /** A native verb as a Promise, run with the caller's services; a failure rejects with its AdapterError. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- any verb's arguments, passed through.
 function promisedVerb<Args extends readonly unknown[], A>(
   verb: (...args: Args) => Effect.Effect<A, AdapterError>,
   services: Context.Context<never>,

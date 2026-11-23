@@ -146,7 +146,6 @@ describe("transition", () => {
     });
 
     // SAFETY: `transition` is always bound; a plain-JS caller can reach it on a schema whose types hide it.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
     const bare = createScheduler({
       policies: [],
       adapter: refusing,

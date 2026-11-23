@@ -194,7 +194,6 @@ export function recordTables<
   Record<TableNamesOf<S["plugins"]>, ReturnType<typeof pluginTable<S, C>>>
 > {
   // SAFETY: one entry per table the Plugins declare, which is all of TableNamesOf.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fromEntries can't keep the key type.
   return Object.fromEntries(
     Object.entries(tablesOf(schema.plugins)).map(([name, def]) => [
       name,

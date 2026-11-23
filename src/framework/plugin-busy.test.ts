@@ -17,7 +17,6 @@ import { unwrap } from "../test-utils/results.js";
 type StaffId = string & { readonly __brand: "StaffId" };
 
 // SAFETY: test fixtures; any UUID string is a StaffId here.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands are applied by assertion.
 const ann = "0193b6e2-7c00-7000-8000-000000000001" as StaffId;
 
 /** Weekdays 09:00–17:00 in Lisbon (UTC+1 in June). */
@@ -343,7 +342,7 @@ describe("Policy names", () => {
       policies: [
         {
           // SAFETY: a plain-JS caller's empty list, past the non-empty tuple type.
-          // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- the point of the test.
+          // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- the point of the test.
           appliesTo: [] as unknown as readonly ["book"],
           check: () => null,
           load: null,

@@ -349,7 +349,6 @@ describe("reschedule", () => {
                 ...locked,
                 // The locked read ran before the cancel committed.
                 // SAFETY: `s` is `schema`, so `booking` is its record.
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the bound schema is generic here.
                 getBooking: async () => await Promise.resolve(booking as never),
               })
           );

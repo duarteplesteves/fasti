@@ -193,7 +193,6 @@ describe("failure handling", () => {
               await work({
                 ...locked,
                 // SAFETY: the contract violation under test.
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
                 listBookings: async () => await Promise.resolve({} as never),
               } satisfies LockedAdapter<typeof s, undefined>)
           ),
