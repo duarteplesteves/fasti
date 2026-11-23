@@ -21,7 +21,12 @@ import type {
 } from "../schema/table.js";
 import { uuidV7 } from "./booking-id.js";
 import type { EffectLocked, EffectReads } from "./effect-adapter.js";
-import type { AdapterError, ConflictingBooking, Vetoed } from "./errors.js";
+import type {
+  AdapterError,
+  ConflictingBooking,
+  ErasedError,
+  Vetoed,
+} from "./errors.js";
 import type { Form, ReadAction, WriteAction } from "./forms.js";
 import type { Committed, HookEvent, WrittenContext } from "./hook.js";
 import { conflictsAt } from "./occupancy.js";
@@ -474,7 +479,7 @@ interface ErasedAction {
     params: unknown,
     // oxlint-disable-next-line anti-slop/no-object-parameters -- the tools, typed by NativeRead/NativeWrite.
     tools: object
-  ) => Effect.Effect<unknown, unknown>;
+  ) => Effect.Effect<unknown, ErasedError>;
 }
 
 /** A {@link Unit} with its record handles erased. */
@@ -489,7 +494,7 @@ interface ErasedUnit {
 type BoundAction = (
   // oxlint-disable-next-line anti-slop/no-object-parameters -- typed by PluginActionsOf at the call site.
   params: object
-) => Effect.Effect<unknown, unknown, unknown>;
+) => Effect.Effect<unknown, ErasedError, unknown>;
 
 /** The record handles on `tables`: reads from `reads`, and writes on `locked` when given. */
 function handles<S extends AnySchema, Tx>(
@@ -557,9 +562,10 @@ function bind<S extends AnySchema, Tx>(
       resourceId: ResourceIdOf<S>,
       work: (
         unit: ErasedUnit
-      ) => Effect.Effect<Outcome<unknown, object>, unknown>
+      ) => Effect.Effect<Outcome<unknown, object>, ErasedError>
     ) {
       return Effect.map(
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- `also`'s services are erased here; the Action's type restores them.
         writeUnit(
           ctx,
           { action: name, resourceId },

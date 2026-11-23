@@ -362,7 +362,9 @@ describe("Effect form", () => {
       Effect.provide(AppScheduler.layer({ policies: [], adapter, schema }))
     );
 
+    // The missing service is the point of this test.
     // @ts-expect-error -- Audit isn't provided.
+    // @effect-diagnostics-next-line missingEffectContext:off
     expectTypeOf(Effect.runPromiseExit).toBeCallableWith(withoutAudit);
 
     const exit = await Effect.runPromiseExit(
@@ -992,9 +994,7 @@ describe("Effect form Hooks", () => {
 
     const exit = await Effect.runPromiseExit(
       Effect.provide(
-        Effect.gen(function* withHooks() {
-          return yield* AppScheduler;
-        }),
+        AppScheduler,
         AppScheduler.layer({ adapter, hooks: [hook], schema })
       )
     );

@@ -554,9 +554,7 @@ describe("a Plugin that throws", () => {
   it("is a defect of the Effect, not a throw at call time, in the Effect form", async () => {
     const service = Effect.runSync(
       Effect.provide(
-        Effect.gen(function* get() {
-          return yield* BrokenScheduler;
-        }),
+        BrokenScheduler,
         BrokenScheduler.layer({
           adapter: memoryAdapter(),
           schema: brokenSchema,

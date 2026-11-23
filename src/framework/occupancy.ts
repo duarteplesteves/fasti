@@ -62,11 +62,9 @@ export function occupants<S extends AnySchema, Tx>(
   return Effect.map(
     Effect.all([
       reads.listBookings(query),
-      Effect.all(
-        sources.map((source) =>
-          Effect.map(source.list(reads, query), (ranges) =>
-            ranges.map((range) => ({ kind: source.kind, range }))
-          )
+      Effect.forEach(sources, (source) =>
+        Effect.map(source.list(reads, query), (ranges) =>
+          ranges.map((range) => ({ kind: source.kind, range }))
         )
       ),
     ]),

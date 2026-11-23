@@ -19,7 +19,7 @@ import type {
 } from "../schema/table.js";
 import { exitToResult } from "./create-scheduler.js";
 import { AdapterError } from "./errors.js";
-import type { ConflictingBooking, Vetoed } from "./errors.js";
+import type { ConflictingBooking, ErasedError, Vetoed } from "./errors.js";
 import type { Committed } from "./hook.js";
 import { checkPluginHooks } from "./plugin.js";
 import type {
@@ -253,7 +253,7 @@ interface ErasedDef {
       readonly lock: ErasedPromiseLock;
       readonly signal: AbortSignal;
     }
-  ) => Promise<Result<unknown, unknown>>;
+  ) => Promise<Result<unknown, ErasedError>>;
 }
 
 type ErasedPromiseLock = (
@@ -263,8 +263,8 @@ type ErasedPromiseLock = (
     readonly tx: unknown;
     readonly now: Temporal.Instant;
     readonly conflicts: PromiseUnit<Tables>["conflicts"];
-  }) => Promise<PluginOutcome<unknown, object, unknown>>
-) => Promise<Result<unknown, unknown>>;
+  }) => Promise<PluginOutcome<unknown, object, ErasedError>>
+) => Promise<Result<unknown, AdapterError | ErasedError>>;
 
 /** The tools a native Action's `run` gets, its types erased. */
 interface ErasedTools {
@@ -279,8 +279,8 @@ interface ErasedTools {
         readonly start: Temporal.Instant;
         readonly end: Temporal.Instant;
       }) => Effect.Effect<readonly ConflictingBooking[], AdapterError>;
-    }) => Effect.Effect<Outcome<unknown, object>, unknown>
-  ) => Effect.Effect<Written<unknown, object>, unknown>;
+    }) => Effect.Effect<Outcome<unknown, object>, AdapterError | ErasedError>
+  ) => Effect.Effect<Written<unknown, object>, AdapterError | ErasedError>;
 }
 
 /** Run `effect` with the caller's `services`: interrupted on `signal`; a typed failure becomes `error`, a defect or interrupt rejects. */
@@ -308,9 +308,8 @@ function adapterErrorOrDie(
 function attempt<A>(
   run: (signal: AbortSignal) => Promise<A>
 ): Effect.Effect<A, AdapterError> {
-  return Effect.tryPromise({ catch: (thrown) => thrown, try: run }).pipe(
-    Effect.catch(adapterErrorOrDie)
-  );
+  // A rejection is a defect first, so the error channel never holds `unknown`.
+  return Effect.promise(run).pipe(Effect.catchDefect(adapterErrorOrDie));
 }
 
 /** A resolved {@link Result} as an Effect. */
@@ -381,7 +380,7 @@ function nativeRun(def: ErasedDef) {
     // oxlint-disable-next-line anti-slop/no-unknown-parameters -- the Plugin's own params, typed by the Plugin.
     params: unknown,
     tools: ErasedTools
-  ): Effect.Effect<unknown, unknown> =>
+  ): Effect.Effect<unknown, AdapterError | ErasedError> =>
     Effect.flatMap(Effect.context(), (services) =>
       attempt(async (signal) => {
         const records = promised(tools.records, services, signal);

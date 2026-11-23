@@ -74,3 +74,10 @@ export interface TransitionNotDeclared<St extends string = string> {
   readonly from: St;
   readonly to: St;
 }
+
+declare const erased: unique symbol;
+
+/** A developer's own error where fasti has erased an Action's or an `also`'s types; the public overloads restore it at the call site. */
+export interface ErasedError {
+  readonly [erased]: true;
+}
