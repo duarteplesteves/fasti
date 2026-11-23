@@ -30,6 +30,8 @@ jobs:
       - uses: nubjs/setup-nub@8c7bade1432a9acf9a7ad169aa7288713d046161 # v0.6.2
         with:
           provision-node: false # setup-node above already reads .nvmrc
+          nub-version: 0.11.2 # exact: the action downloads this binary unverified; bump by hand
+          cache: false # skips setup-nub's nested actions/cache@v4, a movable tag
       - run: nub install --frozen-lockfile
 
       - run: nub run check

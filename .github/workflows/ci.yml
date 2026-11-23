@@ -13,12 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version-file: .nvmrc
       - uses: nubjs/setup-nub@8c7bade1432a9acf9a7ad169aa7288713d046161 # v0.6.2
         with:
-          provision-node: false # setup-node above already reads .nvmrc
+          node-version-file: .nvmrc
+          nub-version: 0.11.2 # exact: the action downloads this binary unverified; bump by hand
+          cache: false # skips setup-nub's nested actions/cache@v4, a movable tag
       - run: nub install --frozen-lockfile
       - run: nub run check
       - run: nub run typecheck
@@ -36,12 +35,11 @@ jobs:
         runtime: [node, bun]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version-file: .nvmrc
       - uses: nubjs/setup-nub@8c7bade1432a9acf9a7ad169aa7288713d046161 # v0.6.2
         with:
-          provision-node: false # setup-node above already reads .nvmrc
+          node-version-file: .nvmrc
+          nub-version: 0.11.2 # exact: the action downloads this binary unverified; bump by hand
+          cache: false # skips setup-nub's nested actions/cache@v4, a movable tag
       - run: nub install --frozen-lockfile
       - if: matrix.runtime == 'node'
         run: nub run test:ci
@@ -67,12 +65,11 @@ jobs:
       FASTI_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version-file: .nvmrc
       - uses: nubjs/setup-nub@8c7bade1432a9acf9a7ad169aa7288713d046161 # v0.6.2
         with:
-          provision-node: false # setup-node above already reads .nvmrc
+          node-version-file: .nvmrc
+          nub-version: 0.11.2 # exact: the action downloads this binary unverified; bump by hand
+          cache: false # skips setup-nub's nested actions/cache@v4, a movable tag
       - run: nub install --frozen-lockfile
       - run: nub run test:integration
       - run: nub run build
