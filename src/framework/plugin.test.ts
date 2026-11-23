@@ -799,3 +799,28 @@ describe("a Promise-style Plugin that never fails", () => {
     >().toEqualTypeOf<AdapterError>();
   });
 });
+
+describe("a dot in a Plugin or Action name", () => {
+  // `a` + `b.c` and `a.b` + `c` would both be Hook target `a.b.c`.
+  const read = {
+    kind: "read",
+    run: async () => await Promise.resolve({ ok: true, value: 1 } as const),
+  } as const;
+
+  it.each([
+    [
+      "a Promise-style Plugin name",
+      () => definePromisePlugin({ actions: {}, name: "a.b" }),
+    ],
+    [
+      "a Promise-style Action name",
+      () => definePromisePlugin({ actions: { "b.c": read }, name: "a" }),
+    ],
+    [
+      "an Effect-style Plugin name",
+      () => definePlugin({ actions: {}, name: "a.b" }),
+    ],
+  ] as const)("throws on %s", (_case, define) => {
+    expect(define).toThrow(/names have no dots/u);
+  });
+});
