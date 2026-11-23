@@ -4,7 +4,6 @@ import type { ListBookingsQuery } from "../adapter/contract.js";
 import { toCoreBooking } from "../adapter/records.js";
 import type { ResourceIdOf } from "../adapter/records.js";
 import { detectConflicts } from "../core/detect-conflicts.js";
-import type { DetectConflictsParams } from "../core/detect-conflicts.js";
 import type { Booking, BookingId } from "../core/types.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { BusyConflictOf, BusyRange } from "../schema/table.js";
@@ -39,12 +38,14 @@ type OccupancyContext<S extends AnySchema, Tx> = Pick<
 /** What occupies a Resource over a range, as the Core sees it, plus each occupant's kind for mapping hits back. */
 interface Occupants {
   readonly bookings: readonly Booking[];
-  readonly kindById: ReadonlyMap<string, Kind>;
+  /** By the occupant itself, not its id: a busy range's id may equal a Booking's. */
+  readonly kindOf: ReadonlyMap<Booking, Kind>;
 }
 
 /**
  * Everything occupying `resourceId` over the half-open `[from, to)` for a candidate of kind `candidate`: the one place occupants enter the Core.
- * Only a Booking candidate sees the busy sources: busy time may overlap busy time (ADR 016). Internal.
+ * Only a Booking candidate sees the busy sources: busy time may overlap busy time (ADR 016).
+ * `exclude` leaves out that stored Booking only (the one being moved), never busy time with the same id. Internal.
  *
  * @returns An Effect of the overlapping Bookings and busy time; it fails with `AdapterError`.
  */
@@ -56,7 +57,8 @@ export function occupants<S extends AnySchema, Tx>(
   overlapping: {
     readonly from: Temporal.Instant;
     readonly to: Temporal.Instant;
-  }
+  },
+  exclude: BookingId | null
 ): Effect.Effect<Occupants, AdapterError> {
   const query = { overlapping, resourceId };
   const sources = candidate === "booking" ? busy : [];
@@ -71,25 +73,27 @@ export function occupants<S extends AnySchema, Tx>(
       ),
     ]),
     ([bookings, busyLists]) => {
-      const busyRanges = busyLists.flat();
+      const kindOf = new Map<Booking, Kind>([
+        ...bookings
+          .filter((b) => b.id !== exclude)
+          .map((b) => [toCoreBooking(codec, b), "booking"] as const),
+        ...busyLists.flat().map(
+          ({ kind, range: { end, id, start } }) =>
+            [
+              // The Core only compares ids; `kindOf` keeps each one's kind.
+              {
+                end,
+                id,
+                isBlocking: true,
+                resourceId: String(resourceId),
+                start,
+              },
+              kind,
+            ] as const
+        ),
+      ]);
 
-      return {
-        bookings: [
-          ...bookings.map((b) => toCoreBooking(codec, b)),
-          ...busyRanges.map(({ range: { end, id, start } }) => ({
-            end,
-            // The Core only compares ids; `kindById` keeps each one's kind.
-            id,
-            isBlocking: true,
-            resourceId: String(resourceId),
-            start,
-          })),
-        ],
-        kindById: new Map<string, Kind>([
-          ...bookings.map((b) => [b.id, "booking"] as const),
-          ...busyRanges.map(({ kind, range }) => [range.id, kind] as const),
-        ]),
-      };
+      return { bookings: [...kindOf.keys()], kindOf };
     }
   );
 }
@@ -101,11 +105,12 @@ export function occupants<S extends AnySchema, Tx>(
  */
 export function toConflicts(
   hits: readonly Booking[],
-  kindById: ReadonlyMap<string, Kind>
+  kindOf: ReadonlyMap<Booking, Kind>
 ): readonly Conflict[] {
   return hits
-    .map(({ end, id, start }) => {
-      const kind = kindById.get(id);
+    .map((hit) => {
+      const { end, id, start } = hit;
+      const kind = kindOf.get(hit);
 
       // Every hit came from `occupants`, which tagged it: a miss is a defect.
       if (kind === undefined) {
@@ -146,23 +151,25 @@ export function conflictsAt<S extends AnySchema, Tx>(
   }
 ): Effect.Effect<readonly Conflict[], AdapterError> {
   return Effect.flatMap(
-    occupants(ctx, reads, kind, resourceId, { from: start, to: end }),
-    ({ bookings, kindById }) => {
-      const params: DetectConflictsParams = {
+    occupants(
+      ctx,
+      reads,
+      kind,
+      resourceId,
+      { from: start, to: end },
+      excludeBookingId
+    ),
+    ({ bookings, kindOf }) => {
+      // `occupants` already left out `excludeBookingId`, and only the stored Booking.
+      const r = detectConflicts({
         bookings,
         candidate: { end, start },
         resourceId: String(resourceId),
-      };
-
-      if (excludeBookingId !== null) {
-        params.excludeBookingId = excludeBookingId;
-      }
-
-      const r = detectConflicts(params);
+      });
 
       // Callers check the params up front, so only invalid stored data fails here (Invariant 6).
       return r.ok
-        ? Effect.succeed(toConflicts(r.value, kindById))
+        ? Effect.succeed(toConflicts(r.value, kindOf))
         : Effect.fail(new AdapterError(r.error));
     }
   );
