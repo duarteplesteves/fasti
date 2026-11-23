@@ -1,35 +1,35 @@
 import { expect } from "vitest";
 
+import type {
+  SchemaAdapter,
+  UpdateRecordParams,
+} from "../../adapter/contract.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
-import { blockId, insertBlock, newBlock } from "../fixtures.js";
-import { blockFieldsOf, blockStore as withBlocks } from "../plugin-stores.js";
-import type {
-  BlockChanges,
-  BlockRecord,
-  BlockStore,
-} from "../plugin-stores.js";
+import { blockId, storeBlock, newBlock } from "../fixtures.js";
+import type { BlockRow } from "../fixtures.js";
+import { blockFieldsOf, pluginRecords } from "../plugin-stores.js";
 
-/** `updateBlock` in its own unit of work. */
+/** Update a Block in its own unit of work. */
 async function update<S extends AnySchema, Tx>(
-  adapter: BlockStore<S, Tx>,
-  expected: BlockRecord<S>,
-  changes: BlockChanges<S>
+  adapter: SchemaAdapter<S, Tx, "records">,
+  expected: BlockRow<S>,
+  changes: UpdateRecordParams["changes"]
 ) {
   return await adapter.withResourceLock(
     expected.resourceId,
-    async (locked) => await locked.updateBlock({ changes, expected })
+    async (locked) => await locked.updateRecord("block", { changes, expected })
   );
 }
 
-/** `deleteBlock` in its own unit of work, on the Block's Resource. */
+/** Delete a Block in its own unit of work, on its Resource. */
 async function remove<S extends AnySchema, Tx>(
-  adapter: BlockStore<S, Tx>,
-  block: BlockRecord<S>
+  adapter: SchemaAdapter<S, Tx, "records">,
+  block: BlockRow<S>
 ) {
   return await adapter.withResourceLock(
     block.resourceId,
-    async (locked) => await locked.deleteBlock(block.id)
+    async (locked) => await locked.deleteRecord("block", block.id)
   );
 }
 
@@ -39,7 +39,7 @@ export const blockCases: readonly ConformanceCase[] = [
     name: "a Block round-trips every field: id, Instants to the millisecond, every Developer Field set or null",
     async run(ctx) {
       const { resources, schema } = ctx;
-      const adapter = withBlocks(ctx);
+      const adapter = pluginRecords(ctx, "blocks");
 
       const withValues = newBlock(schema, {
         optionalFields: "set",
@@ -51,13 +51,17 @@ export const blockCases: readonly ConformanceCase[] = [
         resourceId: resources[1],
       });
 
-      await insertBlock(adapter, withValues);
-      await insertBlock(adapter, withNulls);
+      await storeBlock(adapter, withValues);
+      await storeBlock(adapter, withNulls);
 
-      expect(await adapter.getBlock(withValues.id)).toStrictEqual(withValues);
-      expect(await adapter.getBlock(withNulls.id)).toStrictEqual(withNulls);
+      expect(await adapter.getRecord("block", withValues.id)).toStrictEqual(
+        withValues
+      );
+      expect(await adapter.getRecord("block", withNulls.id)).toStrictEqual(
+        withNulls
+      );
       expect(
-        await adapter.listBlocks({
+        await adapter.listRecords("block", {
           overlapping: { from: withValues.start, to: withValues.end },
           resourceId: resources[0],
         })
@@ -66,17 +70,19 @@ export const blockCases: readonly ConformanceCase[] = [
     tags: ["blocks"],
   },
   {
-    name: "getBlock of an unknown id returns null",
+    name: "reading an unknown Block id returns null",
     async run(ctx) {
-      expect(await withBlocks(ctx).getBlock(blockId())).toBeNull();
+      expect(
+        await pluginRecords(ctx, "blocks").getRecord("block", blockId())
+      ).toBeNull();
     },
     tags: ["blocks"],
   },
   {
-    name: "listBlocks is half-open, keeps to one Resource, and sorts by start, then id",
+    name: "listing Blocks is half-open, keeps to one Resource, and sorts by start, then id",
     async run(ctx) {
       const { resources, schema } = ctx;
-      const adapter = withBlocks(ctx);
+      const adapter = pluginRecords(ctx, "blocks");
       const from = Temporal.Instant.from("2030-06-03T10:00:00Z");
       const to = from.add({ hours: 4 });
 
@@ -107,7 +113,7 @@ export const blockCases: readonly ConformanceCase[] = [
           startsAtTo,
           otherResource,
         ].map(async (b) => {
-          await insertBlock(adapter, b);
+          await storeBlock(adapter, b);
         })
       );
 
@@ -116,7 +122,7 @@ export const blockCases: readonly ConformanceCase[] = [
       );
 
       expect(
-        await adapter.listBlocks({
+        await adapter.listRecords("block", {
           overlapping: { from, to },
           resourceId: resources[0],
         })
@@ -125,10 +131,10 @@ export const blockCases: readonly ConformanceCase[] = [
     tags: ["blocks"],
   },
   {
-    name: "a throw after an insertBlock leaves nothing behind and keeps the reason",
+    name: "a throw after inserting a Block leaves nothing behind and keeps the reason",
     async run(ctx) {
       const { resources, schema } = ctx;
-      const adapter = withBlocks(ctx);
+      const adapter = pluginRecords(ctx, "blocks");
       const reason = new Error("work failed");
 
       const block = newBlock(schema, {
@@ -138,30 +144,30 @@ export const blockCases: readonly ConformanceCase[] = [
 
       await expect(
         adapter.withResourceLock(resources[0], async (locked) => {
-          await locked.insertBlock(block);
+          await locked.insertRecord("block", block);
           throw reason;
         })
       ).rejects.toBe(reason);
 
-      expect(await adapter.getBlock(block.id)).toBeNull();
+      expect(await adapter.getRecord("block", block.id)).toBeNull();
       expect(
-        await adapter.listBlocks({
+        await adapter.listRecords("block", {
           overlapping: { from: block.start, to: block.end },
           resourceId: resources[0],
         })
       ).toStrictEqual([]);
 
       // The lock was released: the next unit of work runs and commits.
-      await insertBlock(adapter, block);
-      expect(await adapter.getBlock(block.id)).toStrictEqual(block);
+      await storeBlock(adapter, block);
+      expect(await adapter.getRecord("block", block.id)).toStrictEqual(block);
     },
     tags: ["blocks"],
   },
   {
-    name: "updateBlock with a matching expected applies the changes, Developer Fields included",
+    name: "updating a Block with a matching expected applies the changes, Developer Fields included",
     async run(ctx) {
       const { resources, schema } = ctx;
-      const adapter = withBlocks(ctx);
+      const adapter = pluginRecords(ctx, "blocks");
 
       const block = newBlock(schema, {
         optionalFields: "null",
@@ -179,10 +185,10 @@ export const blockCases: readonly ConformanceCase[] = [
         start: block.start.add({ minutes: 30 }),
       });
 
-      await insertBlock(adapter, block);
+      await storeBlock(adapter, block);
 
       expect(await update(adapter, block, changes)).toStrictEqual({ ok: true });
-      expect(await adapter.getBlock(block.id)).toStrictEqual({
+      expect(await adapter.getRecord("block", block.id)).toStrictEqual({
         ...block,
         ...changes,
       });
@@ -190,10 +196,10 @@ export const blockCases: readonly ConformanceCase[] = [
     tags: ["blocks"],
   },
   {
-    name: "updateBlock with a stale or missing expected gives changed, and the row is untouched",
+    name: "updating a Block with a stale or missing expected gives changed, and the row is untouched",
     async run(ctx) {
       const { resources, schema } = ctx;
-      const adapter = withBlocks(ctx);
+      const adapter = pluginRecords(ctx, "blocks");
 
       const block = newBlock(schema, {
         optionalFields: "null",
@@ -205,7 +211,7 @@ export const blockCases: readonly ConformanceCase[] = [
         resourceId: resources[0],
       });
 
-      await insertBlock(adapter, block);
+      await storeBlock(adapter, block);
 
       const hasOptional = Object.values(blockFieldsOf(schema)).some(
         (f) => !f.required
@@ -216,7 +222,7 @@ export const blockCases: readonly ConformanceCase[] = [
         resourceId: block.resourceId,
       });
 
-      const stale: BlockRecord<typeof schema>[] = [
+      const stale: BlockRow<typeof schema>[] = [
         { ...block, start: block.start.add({ milliseconds: 1 }) },
         { ...block, end: block.end.subtract({ milliseconds: 1 }) },
         ...(hasOptional
@@ -234,16 +240,16 @@ export const blockCases: readonly ConformanceCase[] = [
       expect(results).toStrictEqual(
         stale.map(() => ({ ok: false, reason: "changed" }))
       );
-      expect(await adapter.getBlock(block.id)).toStrictEqual(block);
-      expect(await adapter.getBlock(ghost.id)).toBeNull();
+      expect(await adapter.getRecord("block", block.id)).toStrictEqual(block);
+      expect(await adapter.getRecord("block", ghost.id)).toBeNull();
     },
     tags: ["blocks"],
   },
   {
-    name: "deleteBlock removes the Block, and a second delete gives missing",
+    name: "deleting a Block removes it, and a second delete gives missing",
     async run(ctx) {
       const { resources, schema } = ctx;
-      const adapter = withBlocks(ctx);
+      const adapter = pluginRecords(ctx, "blocks");
 
       const block = newBlock(schema, {
         optionalFields: "set",
@@ -255,12 +261,12 @@ export const blockCases: readonly ConformanceCase[] = [
         resourceId: resources[0],
       });
 
-      await insertBlock(adapter, block);
-      await insertBlock(adapter, kept);
+      await storeBlock(adapter, block);
+      await storeBlock(adapter, kept);
 
       expect(await remove(adapter, block)).toStrictEqual({ ok: true });
-      expect(await adapter.getBlock(block.id)).toBeNull();
-      expect(await adapter.getBlock(kept.id)).toStrictEqual(kept);
+      expect(await adapter.getRecord("block", block.id)).toBeNull();
+      expect(await adapter.getRecord("block", kept.id)).toStrictEqual(kept);
       expect(await remove(adapter, block)).toStrictEqual({
         ok: false,
         reason: "missing",
@@ -269,10 +275,10 @@ export const blockCases: readonly ConformanceCase[] = [
     tags: ["blocks"],
   },
   {
-    name: "a throw after updateBlock and deleteBlock leaves both Blocks as they were",
+    name: "a throw after updating one Block and deleting another leaves both as they were",
     async run(ctx) {
       const { resources, schema } = ctx;
-      const adapter = withBlocks(ctx);
+      const adapter = pluginRecords(ctx, "blocks");
       const reason = new Error("work failed");
 
       const moved = newBlock(schema, {
@@ -285,22 +291,24 @@ export const blockCases: readonly ConformanceCase[] = [
         resourceId: resources[0],
       });
 
-      await insertBlock(adapter, moved);
-      await insertBlock(adapter, deleted);
+      await storeBlock(adapter, moved);
+      await storeBlock(adapter, deleted);
 
       await expect(
         adapter.withResourceLock(resources[0], async (locked) => {
-          await locked.updateBlock({
+          await locked.updateRecord("block", {
             changes: { end: moved.end.add({ hours: 1 }) },
             expected: moved,
           });
-          await locked.deleteBlock(deleted.id);
+          await locked.deleteRecord("block", deleted.id);
           throw reason;
         })
       ).rejects.toBe(reason);
 
-      expect(await adapter.getBlock(moved.id)).toStrictEqual(moved);
-      expect(await adapter.getBlock(deleted.id)).toStrictEqual(deleted);
+      expect(await adapter.getRecord("block", moved.id)).toStrictEqual(moved);
+      expect(await adapter.getRecord("block", deleted.id)).toStrictEqual(
+        deleted
+      );
     },
     tags: ["blocks"],
   },

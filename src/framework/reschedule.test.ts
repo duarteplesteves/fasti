@@ -32,7 +32,6 @@ import {
 } from "../test-utils/conformance-schemas.js";
 import { propConfig } from "../test-utils/prop-config.js";
 import { unwrap } from "../test-utils/results.js";
-import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import type { Booking } from "./booking.js";
 
@@ -461,15 +460,21 @@ describe("reschedule", () => {
         const adapter = memoryAdapter();
         const ids: BookingId[] = [];
 
-        await adapter(schema).withResourceLock(room, async (locked) => {
-          await replaceRules(locked, {
+        unwrap(
+          await createScheduler({
+            adapter,
+            policies: [],
+            schema,
+          }).availability.set({
             resourceId: room,
             rules: rules.map(({ resourceId: _, ...r }) => ({
               ...r,
               exceptions: [],
             })),
-          });
+          })
+        );
 
+        await adapter(schema).withResourceLock(room, async (locked) => {
           // Seed only states the Framework can reach: blocking Bookings never overlap, and the first one blocks.
           const kept: typeof bookings = [];
 

@@ -15,7 +15,6 @@ import {
   uuidIdSchema,
 } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
-import { replaceRules } from "../testing/plugin-stores.js";
 import { mintBookingId } from "./booking-id.js";
 import type { FindSlotsError, Slot } from "./find-slots.js";
 
@@ -37,9 +36,12 @@ const weekdays = {
 async function seeded() {
   const adapter = memoryAdapter();
 
-  await adapter(schema).withResourceLock(room, async (locked) => {
-    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
-  });
+  unwrap(
+    await createScheduler({ adapter, policies: [], schema }).availability.set({
+      resourceId: room,
+      rules: [weekdays],
+    })
+  );
 
   return adapter;
 }

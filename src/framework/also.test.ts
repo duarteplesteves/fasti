@@ -28,7 +28,6 @@ import type {
 import { memoryAdapter } from "../memory/index.js";
 import { uuidIdResources } from "../test-utils/conformance-schemas.js";
 import { unwrap } from "../test-utils/results.js";
-import { getRules, replaceRules } from "../testing/plugin-stores.js";
 
 /** UUID ids, Blocks, and one Transition besides cancel's, so every write Action exists. */
 const schema = defineSchema({
@@ -259,9 +258,13 @@ async function recordingRejections() {
   const inner = memoryAdapter();
   const reasons: unknown[] = [];
 
-  await inner(schema).withResourceLock(room, async (locked) => {
-    await replaceRules(locked, { resourceId: room, rules: [weekdays] });
-  });
+  unwrap(
+    await createScheduler({
+      adapter: inner,
+      policies: [],
+      schema,
+    }).availability.set({ resourceId: room, rules: [weekdays] })
+  );
 
   const adapter = defineAdapter<undefined, "records">((s) => {
     const bound = inner(s);
@@ -375,7 +378,7 @@ async function seeded() {
     await scheduler.blocks.create({ ...later, resourceId: room })
   );
 
-  const rules = await getRules(reads, room);
+  const rules = unwrap(await scheduler.availability.get({ resourceId: room }));
 
   return { block, booking, reads, rules, scheduler };
 }
@@ -490,8 +493,10 @@ const cases: readonly AlsoCase[] = [
         resourceId: room,
         rules: [newRule],
       }),
-    unchanged: async ({ reads, rules }) => {
-      await expect(getRules(reads, room)).resolves.toStrictEqual(rules);
+    unchanged: async ({ rules, scheduler }) => {
+      await expect(
+        scheduler.availability.get({ resourceId: room })
+      ).resolves.toStrictEqual({ ok: true, value: rules });
     },
     value: () => ({ rules: [{ ...newRule, exceptions: [] }] }),
   },

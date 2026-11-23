@@ -4,8 +4,8 @@ import type { SchemaAdapter } from "../../adapter/contract.js";
 import type { BookingChanges, BookingRecord } from "../../adapter/records.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
-import { insert, newBooking } from "../fixtures.js";
-import { installs, ruleStore } from "../plugin-stores.js";
+import { insert, newBooking, ruleRow } from "../fixtures.js";
+import { installs, pluginRecords } from "../plugin-stores.js";
 
 /** Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record. */
 function asChanges<S extends AnySchema>(
@@ -210,11 +210,23 @@ export const changeCases: readonly ConformanceCase[] = [
         return;
       }
 
-      await ruleStore(ctx).withResourceLock(resources[0], async (locked) => {
-        await bookingWrites(locked);
-        await locked.replaceRules({ resourceId: resources[0], rules: [rule] });
-        expect(await locked.getRules(resources[0])).toStrictEqual([rule]);
-      });
+      const records = [ruleRow(resources[0], rule)];
+
+      await pluginRecords(ctx, "availability").withResourceLock(
+        resources[0],
+        async (locked) => {
+          await bookingWrites(locked);
+          await locked.replaceRecords("availabilityRule", {
+            records,
+            resourceId: resources[0],
+          });
+          expect(
+            await locked.listRecords("availabilityRule", {
+              resourceId: resources[0],
+            })
+          ).toStrictEqual(records);
+        }
+      );
     },
     tags: [],
   },

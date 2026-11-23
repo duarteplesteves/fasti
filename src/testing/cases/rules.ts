@@ -1,11 +1,12 @@
 import { expect } from "vitest";
 
+import type { SchemaAdapter, StoredRecord } from "../../adapter/contract.js";
 import type { ResourceIdOf } from "../../adapter/records.js";
 import type { RuleRecord } from "../../framework/plugins/availability.js";
 import type { AnySchema } from "../../schema/define-schema.js";
 import type { ConformanceCase } from "../conformance-case.js";
-import { ruleStore } from "../plugin-stores.js";
-import type { RuleStore } from "../plugin-stores.js";
+import { ruleRow } from "../fixtures.js";
+import { pluginRecords } from "../plugin-stores.js";
 
 function date(iso: string): Temporal.PlainDate {
   return Temporal.PlainDate.from(iso);
@@ -49,21 +50,32 @@ const rules: readonly [RuleRecord, RuleRecord, RuleRecord] = [
   },
 ];
 
-/** Rules have no order: compare them sorted by window start (distinct in every fixture). */
-function byStart(rs: readonly RuleRecord[]): RuleRecord[] {
-  return rs.toSorted((a, b) =>
-    Temporal.PlainTime.compare(a.timeWindow.start, b.timeWindow.start)
-  );
+/** Rows have no order to keep: compare them sorted by id. */
+function byId(rows: readonly StoredRecord[]): StoredRecord[] {
+  return rows.toSorted((a, b) => (a.id < b.id ? -1 : Number(a.id > b.id)));
 }
 
+/** Replace `resourceId`'s rules with `next` in one unit of work; the rows as written. */
 async function replace<S extends AnySchema, Tx>(
-  adapter: RuleStore<S, Tx>,
+  adapter: SchemaAdapter<S, Tx, "records">,
   resourceId: ResourceIdOf<S>,
   next: readonly RuleRecord[]
-): Promise<void> {
+): Promise<StoredRecord[]> {
+  const records = next.map((rule) => ruleRow(resourceId, rule));
+
   await adapter.withResourceLock(resourceId, async (locked) => {
-    await locked.replaceRules({ resourceId, rules: next });
+    await locked.replaceRecords("availabilityRule", { records, resourceId });
   });
+
+  return records;
+}
+
+/** `resourceId`'s rule rows, sorted by id. */
+async function rowsOf<S extends AnySchema, Tx>(
+  adapter: SchemaAdapter<S, Tx, "records">,
+  resourceId: ResourceIdOf<S>
+): Promise<StoredRecord[]> {
+  return byId(await adapter.listRecords("availabilityRule", { resourceId }));
 }
 
 /** Rules: storing and replacing a Resource's AvailabilityRules, through `records` on `availability()`'s table. */
@@ -72,37 +84,35 @@ export const ruleCases: readonly ConformanceCase[] = [
     name: "rules round-trip: several per Resource, with exceptions, effective dates set and unset",
     async run(ctx) {
       const { resources } = ctx;
-      const adapter = ruleStore(ctx);
+      const adapter = pluginRecords(ctx, "availability");
 
-      expect(await adapter.getRules(resources[0])).toStrictEqual([]);
+      expect(await rowsOf(adapter, resources[0])).toStrictEqual([]);
 
-      await replace(adapter, resources[0], rules);
+      const written = await replace(adapter, resources[0], rules);
 
-      expect(byStart(await adapter.getRules(resources[0]))).toStrictEqual(
-        byStart(rules)
-      );
+      expect(await rowsOf(adapter, resources[0])).toStrictEqual(byId(written));
     },
     tags: ["availability"],
   },
   {
-    name: "replaceRules replaces one Resource's whole set and touches no other Resource",
+    name: "replacing a Resource's rules replaces its whole set and touches no other Resource",
     async run(ctx) {
       const { resources } = ctx;
-      const adapter = ruleStore(ctx);
+      const adapter = pluginRecords(ctx, "availability");
 
       const [first, second, third] = rules;
 
       await replace(adapter, resources[0], [first, second]);
-      await replace(adapter, resources[1], [third]);
-      await replace(adapter, resources[0], [third]);
+      const kept = await replace(adapter, resources[1], [third]);
+      const next = await replace(adapter, resources[0], [third]);
 
-      expect(await adapter.getRules(resources[0])).toStrictEqual([third]);
-      expect(await adapter.getRules(resources[1])).toStrictEqual([third]);
+      expect(await rowsOf(adapter, resources[0])).toStrictEqual(next);
+      expect(await rowsOf(adapter, resources[1])).toStrictEqual(kept);
 
       await replace(adapter, resources[0], []);
 
-      expect(await adapter.getRules(resources[0])).toStrictEqual([]);
-      expect(await adapter.getRules(resources[1])).toStrictEqual([third]);
+      expect(await rowsOf(adapter, resources[0])).toStrictEqual([]);
+      expect(await rowsOf(adapter, resources[1])).toStrictEqual(kept);
     },
     tags: ["availability"],
   },

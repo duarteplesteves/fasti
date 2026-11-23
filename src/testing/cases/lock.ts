@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { expect } from "vitest";
 
-import type { LockedAdapter } from "../../adapter/contract.js";
+import type { LockedAdapter, StoredRecord } from "../../adapter/contract.js";
 import { toCoreBooking } from "../../adapter/records.js";
 import type {
   BookingChanges,
@@ -15,14 +15,21 @@ import type { AnySchema } from "../../schema/define-schema.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import type { CaseContext, ConformanceCase } from "../conformance-case.js";
 import { insert, newBlock, newBooking } from "../fixtures.js";
-import { blockVerbs, installs } from "../plugin-stores.js";
-import type { BlockRecord } from "../plugin-stores.js";
+import type { BlockRow } from "../fixtures.js";
+import { installs, lockedRecords } from "../plugin-stores.js";
 
 /** Parallel units of work per race (spec: N = 20). */
 const n = 20;
 
 /** Races per case, each on a fresh slot. */
 const repetitions = 3;
+
+/** `block` rows as the Blocks they hold. */
+function asBlocks<S extends AnySchema>(rows: StoredRecord[]): BlockRow<S>[] {
+  // SAFETY: a `block` row holds a Block's columns, Developer Fields included.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row type can't know its table.
+  return rows as BlockRow<S>[];
+}
 
 /** A candidate time range. */
 interface Slot {
@@ -74,7 +81,7 @@ async function claim<S extends AnySchema, Tx>(
 
   // Blocks occupy time too, when the schema has them.
   const blocks = installs(schema, "blocks")
-    ? await blockVerbs(locked).listBlocks(query)
+    ? asBlocks<S>(await lockedRecords(locked).listRecords("block", query))
     : [];
 
   const conflicts = detectConflicts<BookingId | BlockId>({
@@ -112,15 +119,14 @@ async function occupiedAt<S extends AnySchema, Tx>(
   { adapter, schema }: CaseContext<S, Tx>,
   resourceId: ResourceIdOf<S>,
   slot: Slot
-): Promise<(BookingRecord<S> | BlockRecord<S>)[]> {
+): Promise<(BookingRecord<S> | BlockRow<S>)[]> {
   const codec = statusCodec(schema);
   const query = { overlapping: { from: slot.start, to: slot.end }, resourceId };
   const bookings = await adapter.listBookings(query);
 
   const blocks = installs(schema, "blocks")
-    ? await adapter.withResourceLock(
-        resourceId,
-        async (locked) => await blockVerbs(locked).listBlocks(query)
+    ? await adapter.withResourceLock(resourceId, async (locked) =>
+        asBlocks<S>(await lockedRecords(locked).listRecords("block", query))
       )
     : [];
 
@@ -270,7 +276,10 @@ export const lockCases: readonly ConformanceCase[] = [
                   { resourceId: r0, slot },
                   i === rep
                     ? async () => {
-                        await blockVerbs(locked).insertBlock(block);
+                        await lockedRecords(locked).insertRecord(
+                          "block",
+                          block
+                        );
 
                         return { ok: true };
                       }
