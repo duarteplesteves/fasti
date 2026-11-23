@@ -7,7 +7,7 @@ import { check, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { ResourceIdOf } from "../../adapter/records.js";
 import { sqlLiteral } from "../../schema/backstop-sql.js";
 import type { RecordColumn } from "../../schema/column.js";
-import type { AnySchema, BookingColumn } from "../../schema/define-schema.js";
+import type { AnySchema } from "../../schema/define-schema.js";
 import type { Accepts } from "../../schema/references.js";
 import { statusCodec } from "../../schema/status-codec.js";
 import {
@@ -105,11 +105,7 @@ export function bookingTable<
   S extends AnySchema,
   C extends AnySQLiteColumn = AnySQLiteColumn,
 >(schema: S, options: TableOptions<S, C> = {}) {
-  // SAFETY: defineSchema names every Booking column and Developer Field; a generic S only widens the keys to string.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-  const names = schema.names.columns.booking as Readonly<
-    Record<BookingColumn, string> & Partial<Record<string, string>>
-  >;
+  const names = schema.names.columns.booking;
 
   const columns = {
     id: text(names.id).primaryKey(),
