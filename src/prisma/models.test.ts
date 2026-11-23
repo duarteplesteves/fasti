@@ -191,7 +191,7 @@ function foreignKeysOf(schema: AnySchema, kind: "Int" | "Uuid") {
         Resource: resource,
         ...prismaModels(schema, helpers, {
           // SAFETY: callers pair each schema with the `kind` of its Resource id; the type test below checks the pairing.
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion, typescript/no-unnecessary-type-assertion -- see above.
+          // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- see above.
           references: { field: "id", model: resource } as never,
         }),
       },

@@ -92,7 +92,6 @@ export function cancel<S extends AnySchema, Tx, R = never>(
         }
 
         // SAFETY: every schema has `cancelled`.
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
         const cancelled = "cancelled" as StatusOf<S>;
 
         if (!ctx.codec.canMove(booking.status, cancelled)) {

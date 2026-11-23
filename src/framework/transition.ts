@@ -126,7 +126,6 @@ export function transition<S extends AnySchema, Tx, R = never>(
   const { id } = params;
 
   // SAFETY: TransitionEdge<S> has `from` and `to` Statuses; a plain-JS caller may pass anything, which canMove refuses next.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the mapped union can't be read inside a generic.
   const { from, to } = params as {
     readonly from: StatusOf<S>;
     readonly to: StatusOf<S>;

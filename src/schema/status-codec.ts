@@ -23,7 +23,6 @@ export function statusCodec<S extends AnySchema>(
   type St = keyof S["statuses"] & string;
 
   // SAFETY: the keys of schema.statuses are exactly St.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Object.entries widens keys to string.
   const entries = Object.entries(schema.statuses) as [
     St,
     { readonly blocking: boolean; readonly stored: string },

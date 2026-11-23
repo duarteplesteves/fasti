@@ -13,7 +13,6 @@ function hit(id: string, start: number) {
   return {
     end: at(start + 1),
     // SAFETY: test ids only need to be distinct strings.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands are applied by assertion.
     id: id as BookingId,
     isBlocking: true,
     resourceId: "r",

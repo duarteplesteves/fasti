@@ -51,7 +51,7 @@ export default defineConfig({
   // The examples import the built package, which the lint job doesn't install; CI typechecks them in `integration`.
   ignorePatterns: [...core.ignorePatterns, "examples/**"],
   jsPlugins: jsPlugins.jsPlugins,
-  options: { typeAware: true },
+  options: { reportUnusedDisableDirectives: "error", typeAware: true },
   overrides: [
     {
       // Types already document params/returns; one-line summaries are the house style.

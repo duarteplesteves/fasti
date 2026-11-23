@@ -11,7 +11,6 @@ type StaffId = string & { readonly __brand: "StaffId" };
 const resource = { idType: column.uuid<StaffId>() };
 
 // SAFETY: test fixtures; any UUID string is a StaffId here.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands are applied by assertion.
 const ann = "0193b6e2-7c00-7000-8000-000000000001" as StaffId;
 
 function nativeSchema(trace: string[] | null) {

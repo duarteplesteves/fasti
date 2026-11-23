@@ -106,8 +106,6 @@ export function toConflicts(
         throw new Error(`fasti: occupant ${id} has no kind`);
       }
 
-      // SAFETY: `kindById` tags each id with the kind it came from, so the id has that kind's brand.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the pairing lives in the map, not the type.
       return { end, id, kind, start };
     })
     .toSorted(

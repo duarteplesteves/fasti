@@ -9,9 +9,7 @@ import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 /** A column's default as text: the SQL for a database default, `"defaultFn"` for one Drizzle runs, `null` for none. */
 function defaultOf(column: {
   readonly hasDefault: boolean;
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Drizzle's own default, of any kind.
   readonly default: unknown;
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- only whether Drizzle has one.
   readonly defaultFn: object | undefined;
 }): string | null {
   if (!column.hasDefault) {

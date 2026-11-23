@@ -159,7 +159,6 @@ export interface BlockActions<F extends Fields> {
   readonly delete: NativeWrite<
     BlockTables<F>,
     DeleteBlockParams,
-    // oxlint-disable-next-line typescript/no-invalid-void-type -- `blocks.delete` resolves with nothing.
     void,
     DeleteBlockAlso<F>,
     DeleteBlockError | Vetoed<unknown>

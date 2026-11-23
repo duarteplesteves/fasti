@@ -11,7 +11,6 @@ import { prismaModels } from "./models.js";
 
 /** 0.6's rule and Block storage tables, generated at v0.6.0 from `prismaModels`, by schema, then physical name. */
 // SAFETY: our own fixture, written from 0.6's `defineContract` storage.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
 const v06 = JSON.parse(
   readFileSync(
     new URL("../test-utils/v0.6-tables.json", import.meta.url),
@@ -48,7 +47,6 @@ function storageTable(name: string) {
   const { table } = contract.storage.namespaces.public.entries;
 
   // SAFETY: a missing name reads as `undefined`, which fails the comparison as it should.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the table map is keyed by the contract's literal names.
   return structuredClone(table[name as keyof typeof table]);
 }
 

@@ -25,7 +25,6 @@ type Snapshots<T> = Readonly<
 
 /** 0.6's rule and Block tables, generated at v0.6.0 from `blockTable` and `availabilityRuleTable`. */
 // SAFETY: our own fixture, written by `pgSnapshot` and `sqliteSnapshot` over 0.6's builders.
-// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
 const v06 = JSON.parse(
   readFileSync(
     new URL("../test-utils/v0.6-tables.json", import.meta.url),

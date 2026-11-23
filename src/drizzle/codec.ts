@@ -24,7 +24,6 @@ export function encodeRow<S extends AnySchema>(
 ): Row {
   return Object.fromEntries(
     // SAFETY: Booking records hold only RecordValues; TS can't resolve a generic S's Developer Fields to them.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
     Object.entries(record as Readonly<Record<string, RecordValue | undefined>>)
       .filter((entry): entry is [string, RecordValue] => entry[1] !== undefined)
       .map(([key, value]) => [

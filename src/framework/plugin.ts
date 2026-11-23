@@ -408,7 +408,7 @@ type Opaque =
   // oxlint-disable-next-line typescript/no-invalid-void-type -- an Action may resolve with nothing.
   | void
   | { readonly [Symbol.toStringTag]: `Temporal.${string}` }
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- any function: kept whole.
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- any function: kept whole.
   | ((...args: never[]) => unknown);
 
 /** `X` with every {@link PluginResourceId} in it replaced by `Id`; `readonly`, optional keys, arrays and tuples kept. */
