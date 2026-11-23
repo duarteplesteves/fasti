@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 
-import { availableWindows, fitsInSomeWindow } from "../../core/availability.js";
+import { fitsInSomeWindow, windowsFor } from "../../core/availability.js";
 import { checkRules } from "../../core/checks.js";
 import { checked } from "../../core/result.js";
 import type { InvalidParams } from "../../core/result.js";
@@ -197,16 +197,24 @@ export function availability() {
     policies: [
       {
         appliesTo: ["book", "reschedule"],
+        // Expands around each candidate, not over `load`'s range: a findSlots range is long, and a long candidate expands nothing.
+        // `byDate` lives for one call, so findSlots' candidates share each date's windows.
         check: (
           candidate,
-          windows: readonly InstantRange[]
+          {
+            byDate,
+            rules,
+          }: {
+            readonly rules: readonly AvailabilityRule[];
+            readonly byDate: Map<number, readonly InstantRange[]>;
+          }
         ): AvailabilityDetail | null =>
           // `appliesTo` only passes these two; the others have no range of their own.
           (candidate.action !== "book" && candidate.action !== "reschedule") ||
-          fitsInSomeWindow(windows, candidate)
+          fitsInSomeWindow(windowsFor(rules, candidate, byDate), candidate)
             ? null
             : {},
-        load: ({ from, records, resourceId, to }) =>
+        load: ({ records, resourceId }) =>
           Effect.flatMap(
             records.availabilityRule.list({ resourceId }),
             (rows) => {
@@ -219,14 +227,15 @@ export function availability() {
                 resourceId: coreId,
               }));
 
-              const windows = checked(checkRules(rules), () =>
-                availableWindows(rules, { end: to, start: from })
-              );
+              const valid = checked(checkRules(rules), () => ({
+                byDate: new Map<number, readonly InstantRange[]>(),
+                rules,
+              }));
 
               // Invalid stored rules are the Adapter's data (Invariant 6).
-              return windows.ok
-                ? Effect.succeed(windows.value)
-                : Effect.fail(new AdapterError(windows.error));
+              return valid.ok
+                ? Effect.succeed(valid.value)
+                : Effect.fail(new AdapterError(valid.error));
             }
           ),
         name: "availability",

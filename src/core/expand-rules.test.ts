@@ -35,6 +35,40 @@ describe(expandRules, () => {
     );
   });
 
+  it("walks only a rule's effective dates, however long the range", () => {
+    const rule: AvailabilityRule = {
+      effectiveFrom: Temporal.PlainDate.from("2026-05-11"),
+      effectiveTo: Temporal.PlainDate.from("2026-05-17"),
+      exceptions: [Temporal.PlainDate.from("2026-05-13")],
+      recurrence: {
+        daysOfWeek: [1, 2, 3, 4, 5],
+        frequency: "weekly",
+        interval: 1,
+      },
+      resourceId: "doc-1",
+      timeWindow: {
+        end: Temporal.PlainTime.from("17:00"),
+        start: Temporal.PlainTime.from("09:00"),
+      },
+      timezone: "Europe/Lisbon",
+    };
+
+    const result = unwrap(
+      expandRules({
+        from: Temporal.PlainDate.from("2000-01-01"),
+        rules: [rule],
+        to: Temporal.PlainDate.from("+050000-01-01"),
+      })
+    );
+
+    expect(result.map((w) => w.start.toPlainDate().toString())).toStrictEqual([
+      "2026-05-11",
+      "2026-05-12",
+      "2026-05-14",
+      "2026-05-15",
+    ]);
+  });
+
   it("emits no windows when range is entirely before effectiveFrom", () => {
     const rule: AvailabilityRule = {
       effectiveFrom: Temporal.PlainDate.from("2026-06-01"),

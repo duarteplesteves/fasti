@@ -23,25 +23,27 @@ export function expandRulesUnchecked(
   const windows: ExpandedWindow[] = [];
 
   for (const rule of rules) {
-    let cursor = from;
+    // Only the dates the rule is in effect, so a long range costs a short-lived rule nothing.
+    const first =
+      rule.effectiveFrom &&
+      Temporal.PlainDate.compare(rule.effectiveFrom, from) > 0
+        ? rule.effectiveFrom
+        : from;
 
-    while (Temporal.PlainDate.compare(cursor, to) <= 0) {
-      const date = cursor;
+    const last =
+      rule.effectiveTo && Temporal.PlainDate.compare(rule.effectiveTo, to) < 0
+        ? rule.effectiveTo
+        : to;
 
-      const beforeEffective =
-        !!rule.effectiveFrom &&
-        Temporal.PlainDate.compare(date, rule.effectiveFrom) < 0;
+    const exceptions = new Set(rule.exceptions?.map((e) => e.toString()));
 
-      const afterEffective =
-        !!rule.effectiveTo &&
-        Temporal.PlainDate.compare(date, rule.effectiveTo) > 0;
-
-      const isException = rule.exceptions?.some((e) => e.equals(date)) ?? false;
-
+    for (
+      let date = first;
+      Temporal.PlainDate.compare(date, last) <= 0;
+      date = date.add({ days: 1 })
+    ) {
       if (
-        !beforeEffective &&
-        !afterEffective &&
-        !isException &&
+        !exceptions.has(date.toString()) &&
         occursOn(rule.recurrence, date, rule.effectiveFrom)
       ) {
         windows.push({
@@ -56,8 +58,6 @@ export function expandRulesUnchecked(
           }),
         });
       }
-
-      cursor = cursor.add({ days: 1 });
     }
   }
 
