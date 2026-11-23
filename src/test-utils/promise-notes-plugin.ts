@@ -53,8 +53,7 @@ export function promiseNotes({
           params: { readonly resourceId: PluginResourceId },
           { lock }
         ) =>
-          // Pinned: with no Failed branch, the error type has nothing to infer from.
-          await lock<null, object>(params.resourceId, async () => {
+          await lock(params.resourceId, async () => {
             await Promise.resolve();
 
             return { _tag: "NoOp", value: null } as const;

@@ -10,7 +10,7 @@ import {
   References,
   Result as EffectResult,
 } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type { Result } from "../core/result.js";
 import { Scheduler as EffectScheduler, definePlugin } from "../effect/index.js";
@@ -22,7 +22,12 @@ import {
   definePlugin as definePromisePlugin,
   defineSchema,
 } from "../index.js";
-import type { Plugin, PluginResourceId, Scheduler } from "../index.js";
+import type {
+  AdapterError,
+  Plugin,
+  PluginResourceId,
+  Scheduler,
+} from "../index.js";
 import { memoryAdapter } from "../memory/index.js";
 import { notes } from "../test-utils/notes-plugin.js";
 import { promiseNotes } from "../test-utils/promise-notes-plugin.js";
@@ -44,6 +49,10 @@ const promiseSchema = defineSchema({
 const ann = "0193b6e2-7c00-7000-8000-000000000001" as StaffId;
 
 type Tx = undefined;
+
+type Err<R> = R extends { readonly ok: false; readonly error: infer E }
+  ? E
+  : never;
 
 class NotesScheduler extends EffectScheduler<
   NotesScheduler,
@@ -74,7 +83,7 @@ interface NotesForm {
   readonly add: (params: {
     readonly resourceId: StaffId;
     readonly text: string;
-    readonly also?: (ctx: AddContext) => Result<unknown, unknown>;
+    readonly also?: (ctx: AddContext) => Result<unknown, string>;
   }) => Promise<Result<unknown, unknown>>;
   readonly list: (params: {
     readonly resourceId: StaffId;
@@ -526,7 +535,7 @@ describe("a Plugin that throws", () => {
     actions: {
       crash: {
         kind: "write",
-        run: (_params: { readonly why?: string }) => {
+        run: (_params: { readonly why?: string }): Effect.Effect<never> => {
           throw boom;
         },
       },
@@ -733,4 +742,61 @@ describe("installing Plugins", () => {
       expect(() => defineSchema({ plugins })).toThrow(message);
     }
   );
+});
+
+describe("a Promise-style Plugin that never fails", () => {
+  const quiet = definePromisePlugin({
+    actions: {
+      list: {
+        kind: "read",
+        run: async (
+          params: { readonly resourceId: PluginResourceId },
+          { records }
+        ) => ({ ok: true, value: await records.memo.list(params) }) as const,
+      },
+      touch: {
+        kind: "write",
+        run: async (
+          params: { readonly resourceId: PluginResourceId },
+          { lock }
+        ) =>
+          await lock(params.resourceId, async () => {
+            await Promise.resolve();
+
+            return { _tag: "NoOp", value: 1 } as const;
+          }),
+      },
+    },
+    name: "quiet",
+    tables: {
+      memo: {
+        columns: { text: { required: true, type: column.text() } },
+        timed: false,
+      },
+    },
+  });
+
+  const quietSchema = defineSchema({ plugins: [quiet], resource });
+
+  type Plain = Scheduler<typeof quietSchema, Tx, readonly []>["quiet"];
+
+  type Fx = SchedulerService<typeof quietSchema, Tx, readonly []>["quiet"];
+
+  it("types both Actions' error as AdapterError in the plain form", () => {
+    expectTypeOf<
+      Err<Awaited<ReturnType<Plain["list"]>>>
+    >().toEqualTypeOf<AdapterError>();
+    expectTypeOf<
+      Err<Awaited<ReturnType<Plain["touch"]>>>
+    >().toEqualTypeOf<AdapterError>();
+  });
+
+  it("types both Actions' error as AdapterError in the Effect form", () => {
+    expectTypeOf<
+      Effect.Error<ReturnType<Fx["list"]>>
+    >().toEqualTypeOf<AdapterError>();
+    expectTypeOf<
+      Effect.Error<ReturnType<Fx["touch"]>>
+    >().toEqualTypeOf<AdapterError>();
+  });
 });

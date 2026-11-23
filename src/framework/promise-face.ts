@@ -39,7 +39,12 @@ import type { Outcome } from "./write-unit.js";
 declare const contextType: unique symbol;
 
 /** What a Promise-style Action resolves with: a {@link Result}, and for a write the context `also` gets, as a type only. */
-export type Ran<V, E, C> = Result<V, E> & { readonly [contextType]?: C };
+export type Ran<V, E, C> = Result<V, E> & RanContext<C>;
+
+/** {@link Ran}'s type-only context. An interface, so a declaration naming an expanded `Ran` can name it too. */
+export interface RanContext<C> {
+  readonly [contextType]?: C;
+}
 
 /** Resolve an Action with `value`. */
 export function ok<V>(value: V): Ran<V, never, never> {
@@ -105,7 +110,7 @@ export interface PromiseUnit<T extends Tables> {
 export type PromiseLock<T extends Tables> = <V, C extends object, E = never>(
   resourceId: PluginResourceId,
   work: (unit: PromiseUnit<T>) => Promise<PluginOutcome<V, C, E>>
-) => Promise<Ran<V, E | Vetoed<unknown> | AdapterError, C>>;
+) => Promise<Ran<V, NoInfer<E> | Vetoed<unknown> | AdapterError, C>>;
 
 /** A Promise-style Plugin Action that only reads: no lock, no `also`. */
 export interface ReadDef<T extends Tables, Pm, V, E> {
@@ -213,6 +218,16 @@ export type PromiseHook<N extends string, A, T extends Tables> =
       ): void | Promise<void>;
     };
 
+/** A Result's value, or never. */
+type ValueOf<R> = R extends { readonly ok: true; readonly value: infer V }
+  ? V
+  : never;
+
+/** A Result's error, or never when it only succeeds: `infer E` alone would give `unknown`. */
+type ErrorOf<R> = R extends { readonly ok: false; readonly error: infer E }
+  ? E
+  : never;
+
 /** Promise-style Actions `A` as the native Actions `promiseFace` makes of them: the app types both alike. */
 export type NativeOf<T extends Tables, A> = {
   readonly [K in keyof A]: A[K] extends {
@@ -228,9 +243,9 @@ export type NativeOf<T extends Tables, A> = {
           readonly run: (
             params: infer Pm,
             tools: never
-          ) => Promise<Result<infer V, infer E>>;
+          ) => Promise<infer Rs extends Result<unknown, unknown>>;
         }
-      ? NativeRead<T, Pm, V, E>
+      ? NativeRead<T, Pm, ValueOf<Rs>, ErrorOf<Rs>>
       : never;
 };
 

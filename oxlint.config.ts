@@ -104,11 +104,6 @@ export default defineConfig({
         "typescript/no-unsafe-type-assertion": "off",
       },
     },
-    {
-      // Test Plugins fail with whatever they're handed; the error channel isn't the subject.
-      files: ["**/*.test.ts", "bench/**"],
-      rules: { "effecttsgo/any-unknown-in-error-context": "off" },
-    },
   ],
   rules: {
     "func-style": ["error", "declaration"],
