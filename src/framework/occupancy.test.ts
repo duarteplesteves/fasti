@@ -23,7 +23,7 @@ function hit(id: string, start: number) {
 describe(toConflicts, () => {
   it("sorts by start, then id, and drops what the Core used", () => {
     const hits = [hit("b", 9), hit("c", 8), hit("a", 9)];
-    const kinds = new Map(hits.map((h) => [h.id, "booking"] as const));
+    const kinds = new Map(hits.map((h) => [h, "booking"] as const));
 
     expect(toConflicts(hits, kinds)).toStrictEqual([
       { end: at(9), id: "c", kind: "booking", start: at(8) },

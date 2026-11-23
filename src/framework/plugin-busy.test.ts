@@ -356,3 +356,97 @@ describe("Policy names", () => {
     );
   });
 });
+
+/** A computed busy source: one range, `[start, end)`, with whatever id the test sets. */
+function echoSetup(start: Temporal.Instant, end: Temporal.Instant) {
+  const range = { end, id: "", start };
+
+  const echo = definePlugin({
+    actions: {},
+    busy: { kind: "echo", list: () => Effect.succeed([range]) },
+    name: "echo",
+  });
+
+  const schema = defineSchema({
+    plugins: [echo],
+    resource: { idType: column.uuid<StaffId>() },
+  });
+
+  return {
+    range,
+    scheduler: createScheduler({ adapter: memoryAdapter(), schema }),
+  };
+}
+
+describe("a busy range that shares an id with a Booking", () => {
+  it("still refuses `reschedule` onto it when it has the moved Booking's id", async () => {
+    const { range, scheduler } = echoSetup(at(13), at(14));
+
+    const booking = unwrap(
+      await scheduler.book({ end: at(10), resourceId: ann, start: at(9) })
+    );
+
+    range.id = booking.id;
+
+    await expect(
+      scheduler.reschedule({ end: at(14), id: booking.id, start: at(13) })
+    ).resolves.toStrictEqual({
+      error: {
+        _tag: "SlotConflict",
+        conflicts: [
+          { end: at(14), id: booking.id, kind: "echo", start: at(13) },
+        ],
+      },
+      ok: false,
+    });
+  });
+
+  it("still hides its slots from `findSlots({ excludeBookingId })`", async () => {
+    const { range, scheduler } = echoSetup(at(13), at(14));
+
+    const booking = unwrap(
+      await scheduler.book({ end: at(10), resourceId: ann, start: at(9) })
+    );
+
+    range.id = booking.id;
+
+    const slots = unwrap(
+      await scheduler.findSlots({
+        duration: 60,
+        excludeBookingId: booking.id,
+        from: at(8),
+        interval: 60,
+        resourceId: ann,
+        timezone: "UTC",
+        to: at(16),
+      })
+    );
+
+    expect(slots.map((s) => s.start.toInstant().toString())).toStrictEqual(
+      [8, 9, 10, 11, 12, 14, 15].map((h) => at(h).toString())
+    );
+  });
+
+  it("reports each overlap with its own kind", async () => {
+    const { range, scheduler } = echoSetup(at(15), at(16));
+
+    const booking = unwrap(
+      await scheduler.book({ end: at(14), resourceId: ann, start: at(13) })
+    );
+
+    range.id = booking.id;
+
+    await expect(
+      scheduler.book({ end: at(16), resourceId: ann, start: at(13) })
+    ).resolves.toStrictEqual({
+      error: {
+        _tag: "SlotConflict",
+        conflicts: [
+          { end: at(14), id: booking.id, kind: "booking", start: at(13) },
+          { end: at(16), id: booking.id, kind: "echo", start: at(15) },
+        ],
+      },
+      ok: false,
+    });
+  });
+});

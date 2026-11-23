@@ -140,13 +140,14 @@ export function findSlots<S extends AnySchema, Tx>(
       adapter,
       "booking",
       resourceId,
-      range
+      range,
+      excludeBookingId ?? null
     );
 
     // Stored data the Core finds invalid is the Adapter's (Invariant 6).
     const grid = checked(checkBookings(bookings, String(resourceId)), () =>
       freeGridSlots({
-        bookings: bookings.filter((b) => b.id !== excludeBookingId),
+        bookings,
         duration,
         from,
         interval,
