@@ -15,7 +15,11 @@ export type PrismaRow = Readonly<Record<string, PrismaValue>>;
 /** Logical column name → physical column name, as `schema.names.columns.*` holds them. */
 export type ColumnNames = Readonly<Record<string, string>>;
 
-/** The physical name of logical column `key`. */
+/**
+ * The physical name of logical column `key`.
+ *
+ * @returns The physical name, or `key` when it has none.
+ */
 export function physical(names: ColumnNames, key: string): string {
   const name = names[key];
 
@@ -29,6 +33,8 @@ export function physical(names: ColumnNames, key: string): string {
 /**
  * Record → row: logical keys become physical column names, values as they are.
  * Keys left `undefined` (an update's changes leave them out) are dropped, giving a partial row.
+ *
+ * @returns The row.
  */
 export function encodeRecord<S extends AnySchema>(
   names: ColumnNames,
@@ -42,7 +48,11 @@ export function encodeRecord<S extends AnySchema>(
   );
 }
 
-/** Row → record values: physical column names become logical keys. */
+/**
+ * Row → record values: physical column names become logical keys.
+ *
+ * @returns The record values, by logical key.
+ */
 function decodeRecord(
   names: ColumnNames,
   row: PrismaRow
@@ -52,7 +62,11 @@ function decodeRecord(
   );
 }
 
-/** Booking record → row: {@link encodeRecord}, and the Status its stored value. */
+/**
+ * Booking record → row: {@link encodeRecord}, and the Status its stored value.
+ *
+ * @returns The row.
+ */
 export function encodeBooking<S extends AnySchema>(
   codec: StatusCodec<string>,
   names: ColumnNames,
@@ -65,7 +79,11 @@ export function encodeBooking<S extends AnySchema>(
     : { ...row, [physical(names, "status")]: codec.toStored(record.status) };
 }
 
-/** Row → Booking record. A stored Status the schema doesn't know throws, so the read rejects. */
+/**
+ * Row → Booking record. A stored Status the schema doesn't know throws, so the read rejects.
+ *
+ * @returns The Booking record.
+ */
 export function decodeBooking<S extends AnySchema>(
   codec: StatusCodec<string>,
   names: ColumnNames,
@@ -87,7 +105,11 @@ export function decodeBooking<S extends AnySchema>(
   return { ...decodeRecord(names, row), status } as BookingRecord<S>;
 }
 
-/** Plugin record → row, column by column, logical keys to physical names; works on a partial record (an update's changes) too. */
+/**
+ * Plugin record → row, column by column, logical keys to physical names; works on a partial record (an update's changes) too.
+ *
+ * @returns The row.
+ */
 export function encodeStored(
   names: ColumnNames,
   record: Readonly<Record<string, StoredValue>>
@@ -100,7 +122,11 @@ export function encodeStored(
   );
 }
 
-/** Row → Plugin record of `table`, column by column, physical names to logical keys. */
+/**
+ * Row → Plugin record of `table`, column by column, physical names to logical keys.
+ *
+ * @returns The Plugin record.
+ */
 export function decodeStored(
   table: TableDef,
   names: ColumnNames,

@@ -82,7 +82,11 @@ function* gridStarts(
   }
 }
 
-/** The Grid slots in `[from, to)` that overlap no blocking Booking except `excludeBookingId`: the search before any Policy. Internal; not exported from the Core's entry. */
+/**
+ * The Grid slots in `[from, to)` that overlap no blocking Booking except `excludeBookingId`: the search before any Policy. Internal; not exported from the Core's entry.
+ *
+ * @returns The free Grid slots in start order, as zoned start and end.
+ */
 export function freeGridSlots({
   bookings,
   duration,
@@ -147,7 +151,11 @@ function findFreeSlotsUnchecked(
   });
 }
 
-/** The search params' issues: whole-minute `duration` and `interval`, an IANA `timezone`, `from < to`. Internal; the Framework checks these before any Adapter call. */
+/**
+ * The search params' issues: whole-minute `duration` and `interval`, an IANA `timezone`, `from < to`. Internal; the Framework checks these before any Adapter call.
+ *
+ * @returns The issues, empty when the search is valid.
+ */
 export function checkSearch({
   duration,
   from,
@@ -176,6 +184,8 @@ export function checkSearch({
 /**
  * The Grid starts whose slot overlaps no blocking Booking and fits availability.
  * With `relax: ["availability"]`, slots outside it are kept and marked `waived`.
+ *
+ * @returns The free Slots in start order, or `InvalidParams` when a rule, Booking or search param is malformed.
  */
 export function findFreeSlots<
   const R extends readonly CorePolicy[] = [],

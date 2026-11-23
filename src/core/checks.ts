@@ -10,7 +10,11 @@ export interface CheckIssue extends Issue {
   readonly path: Path;
 }
 
-/** IANA names only: fixed offsets like "+01:00" don't follow DST. */
+/**
+ * IANA names only: fixed offsets like "+01:00" don't follow DST.
+ *
+ * @returns One issue at `path` when `timeZone` isn't an IANA name, else none.
+ */
 export function checkTimeZone(timeZone: string, path: Path): CheckIssue[] {
   let canonical: string;
 
@@ -39,7 +43,11 @@ export function checkTimeZone(timeZone: string, path: Path): CheckIssue[] {
     : [];
 }
 
-/** Every problem with `rule`, with paths relative to the rule. Empty when valid. */
+/**
+ * Every problem with `rule`, with paths relative to the rule.
+ *
+ * @returns The issues, empty when `rule` is valid.
+ */
 export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
   const issues: CheckIssue[] = [];
   const { timeWindow, effectiveFrom, effectiveTo } = rule;
@@ -70,7 +78,11 @@ export function checkRule(rule: AvailabilityRule): readonly CheckIssue[] {
   return issues;
 }
 
-/** `end` must be strictly after `start`. */
+/**
+ * `end` must be strictly after `start`.
+ *
+ * @returns One issue at `path` when `end` isn't after `start`, else none.
+ */
 export function checkInstantRange(
   range: { readonly start: Temporal.Instant; readonly end: Temporal.Instant },
   path: Path
@@ -86,14 +98,22 @@ export function checkInstantRange(
 }
 
 // shortcut: no upper bound, so a huge value can still overflow Temporal's range and throw; cap it if #29/#31 settle a limit.
-/** A whole number of minutes, at least 1. */
+/**
+ * A whole number of minutes, at least 1.
+ *
+ * @returns One issue at `path` when `n` isn't a positive integer, else none.
+ */
 export function checkPositiveInteger(n: number, path: Path): CheckIssue[] {
   return Number.isInteger(n) && n >= 1
     ? []
     : [{ message: `Must be a positive integer (minutes), got ${n}.`, path }];
 }
 
-/** Every rule's issues, with paths under `rules[i]`. */
+/**
+ * Every rule's issues, with paths under `rules[i]`.
+ *
+ * @returns The issues, empty when every rule is valid.
+ */
 export function checkRules(rules: readonly AvailabilityRule[]): CheckIssue[] {
   return rules.flatMap((rule, i) =>
     checkRule(rule).map((issue) => ({
@@ -120,7 +140,11 @@ function checkSameResource(
   );
 }
 
-/** Each booking is on `resourceId` and ends after it starts. */
+/**
+ * Each booking is on `resourceId` and ends after it starts.
+ *
+ * @returns The issues, with paths under `bookings[i]`; empty when all are valid.
+ */
 export function checkBookings(
   bookings: readonly Booking[],
   resourceId: string
@@ -131,7 +155,11 @@ export function checkBookings(
   ];
 }
 
-/** Rules and bookings for one resource: each valid and all on `resourceId`. */
+/**
+ * Rules and bookings for one resource: each valid and all on `resourceId`.
+ *
+ * @returns The issues, empty when the inputs are valid.
+ */
 export function checkResourceInputs(inputs: {
   readonly resourceId: string;
   readonly rules: readonly AvailabilityRule[];

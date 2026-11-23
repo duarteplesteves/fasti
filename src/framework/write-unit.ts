@@ -62,7 +62,11 @@ export type RunnableHook<S extends AnySchema, Tx> =
       readonly run: (event: object) => Effect.Effect<void>;
     };
 
-/** An app Hook as `writeUnit` runs it: a throw or rejection is a defect. */
+/**
+ * An app Hook as `writeUnit` runs it: a throw or rejection is a defect.
+ *
+ * @returns The Hook in the form `writeUnit` runs.
+ */
 export function appHook<S extends AnySchema, Tx>(
   hook: AnyHookOf<S, Tx>
 ): RunnableHook<S, Tx> {
@@ -95,7 +99,11 @@ export function appHook<S extends AnySchema, Tx>(
   };
 }
 
-/** The target a call matches: its Action, or for a `transition` the edge it moved along. */
+/**
+ * The target a call matches: its Action, or for a `transition` the edge it moved along.
+ *
+ * @returns The matched target.
+ */
 function calledTarget(
   action: WriteSite<AnySchema>["action"],
   // oxlint-disable-next-line anti-slop/no-object-parameters -- an Action's own Done context.
@@ -114,7 +122,11 @@ function calledTarget(
   return { from: previous.status, to: booking.status };
 }
 
-/** Run `work` under the Resource Lock, then `also` and the in-transaction Hooks on the same unit when something changed, then the after-commit Hooks: the one place `also` and Hooks run (ADR 015, ADR 017). */
+/**
+ * Run `work` under the Resource Lock, then `also` and the in-transaction Hooks on the same unit when something changed, then the after-commit Hooks: the one place `also` and Hooks run (ADR 015, ADR 017).
+ *
+ * @returns An Effect of `work`'s value, with `also`'s value merged in when one ran; it fails with `work`'s failure, `Vetoed` or `AdapterError`.
+ */
 export function writeUnit<S extends AnySchema, Tx, V, C extends object, E, R>(
   ctx: ActionContext<S, Tx>,
   site: WriteSite<S>,

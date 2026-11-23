@@ -7,7 +7,11 @@ import type { ConformanceCase } from "../conformance-case.js";
 import { insert, newBooking, ruleRow } from "../fixtures.js";
 import { installs, pluginRecords } from "../plugin-stores.js";
 
-/** Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record. */
+/**
+ * Changes written against `AnySchema`: TypeScript can't check a literal against `Partial` of a generic record.
+ *
+ * @returns `changes`, typed for `S`.
+ */
 function asChanges<S extends AnySchema>(
   changes: BookingChanges<AnySchema>
 ): BookingChanges<S> {

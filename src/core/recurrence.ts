@@ -41,7 +41,11 @@ function checkWeeklyRecurrence(recurrence: WeeklyRecurrence): CheckIssue[] {
   return issues;
 }
 
-/** Every problem with `recurrence`, with paths relative to the rule. */
+/**
+ * Every problem with `recurrence`, with paths relative to the rule.
+ *
+ * @returns The issues, empty when `recurrence` is valid.
+ */
 export function checkRecurrence(recurrence: Recurrence): CheckIssue[] {
   switch (recurrence.frequency) {
     case "weekly": {
@@ -57,7 +61,11 @@ export function checkRecurrence(recurrence: Recurrence): CheckIssue[] {
   }
 }
 
-/** Weeks count from the Monday of `effectiveFrom`; without it every week is on. */
+/**
+ * Weeks count from the Monday of `effectiveFrom`; without it every week is on.
+ *
+ * @returns `true` when `date`'s weekday is listed and its week is one of every `interval`.
+ */
 function occursOnWeekly(
   recurrence: WeeklyRecurrence,
   date: Temporal.PlainDate,
@@ -81,7 +89,11 @@ function occursOnWeekly(
   );
 }
 
-/** Whether `recurrence` puts the rule on `date`. */
+/**
+ * Whether `recurrence` puts the rule on `date`.
+ *
+ * @returns `true` when the rule occurs on `date`.
+ */
 export function occursOn(
   recurrence: Recurrence,
   date: Temporal.PlainDate,

@@ -54,8 +54,8 @@ export default defineConfig({
   options: { reportUnusedDisableDirectives: "error", typeAware: true },
   overrides: [
     {
-      // Types already document params/returns; one-line summaries are the house style.
-      // TSDoc's `@throws` takes no `{Type}`, so the jsdoc rule demanding one conflicts with tsdoc/syntax.
+      // CODING_STANDARDS.md asks for `@returns` and documents params on their `*Params` fields; review holds it, as these
+      // rules can't tell a useful tag from filler. TSDoc's `@throws` takes no `{Type}`, so that rule conflicts with tsdoc/syntax.
       files: ["**/*.ts"],
       rules: {
         "jsdoc/require-param": "off",

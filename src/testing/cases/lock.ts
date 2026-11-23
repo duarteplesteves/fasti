@@ -24,7 +24,11 @@ const n = 20;
 /** Races per case, each on a fresh slot. */
 const repetitions = 3;
 
-/** `block` rows as the Blocks they hold. */
+/**
+ * `block` rows as the Blocks they hold.
+ *
+ * @returns The Blocks.
+ */
 function asBlocks<S extends AnySchema>(rows: StoredRecord[]): BlockRow<S>[] {
   // SAFETY: a `block` row holds a Block's columns, Developer Fields included.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row type can't know its table.
@@ -37,7 +41,11 @@ interface Slot {
   readonly end: Temporal.Instant;
 }
 
-/** Repetition `rep`'s one-hour slot; slots of different repetitions never overlap. */
+/**
+ * Repetition `rep`'s one-hour slot; slots of different repetitions never overlap.
+ *
+ * @returns The slot.
+ */
 function slotFor(rep: number): Slot {
   const start = Temporal.Instant.from("2030-06-03T09:00:00Z").add({
     hours: 2 * rep,
@@ -46,7 +54,11 @@ function slotFor(rep: number): Slot {
   return { end: start.add({ hours: 1 }), start };
 }
 
-/** A new blocking Booking at `slot`. */
+/**
+ * A new blocking Booking at `slot`.
+ *
+ * @returns The Booking record, not yet stored.
+ */
 function bookingAt<S extends AnySchema>(
   schema: S,
   resourceId: ResourceIdOf<S>,
@@ -65,6 +77,8 @@ function bookingAt<S extends AnySchema>(
 /**
  * Read–check–write, as the Framework will: list the slot's occupants, check them with the Core,
  * sleep to widen the race window, then write. `"won"` only when the write succeeds.
+ *
+ * @returns A promise of `"won"` when the write succeeded, `"lost"` otherwise.
  */
 async function claim<S extends AnySchema, Tx>(
   { schema }: CaseContext<S, Tx>,
@@ -114,7 +128,11 @@ async function claim<S extends AnySchema, Tx>(
   return ok ? "won" : "lost";
 }
 
-/** What occupies a Resource at a slot, from committed state: blocking Bookings, and Blocks when the schema has them. */
+/**
+ * What occupies a Resource at a slot, from committed state: blocking Bookings, and Blocks when the schema has them.
+ *
+ * @returns A promise of the occupying Bookings and Blocks.
+ */
 async function occupiedAt<S extends AnySchema, Tx>(
   { adapter, schema }: CaseContext<S, Tx>,
   resourceId: ResourceIdOf<S>,

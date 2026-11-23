@@ -262,6 +262,8 @@ export interface DefinePolicyParams<
  * Define a Policy over `schema`: a rule a booking must keep, reported as `PolicyViolation` when broken.
  * Throws on an empty `appliesTo`, an undeclared edge, or `{ to }` with no declared edge into it.
  *
+ * @returns The Policy, to pass in `createScheduler`'s `policies`.
+ *
  * @example
  * ```ts
  * const maxFourPerDay = definePolicy(schema, {

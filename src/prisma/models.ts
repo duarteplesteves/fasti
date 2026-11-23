@@ -21,6 +21,8 @@ export type ContractHelpers = Parameters<
 /**
  * A `sql` value of text built at runtime. The tag only takes template literals, so this hands it
  * a one-piece template; it reads `raw`, which holds `text` unchanged.
+ *
+ * @returns The `sql` value.
  */
 function sqlText(text: string) {
   return sql(Object.assign([text], { raw: [text] }));
@@ -83,7 +85,11 @@ export interface PrismaModelsOptions<
   >;
 }
 
-/** The model of one physical table; its fields are widened so every fasti table has one model type. */
+/**
+ * The model of one physical table; its fields are widened so every fasti table has one model type.
+ *
+ * @returns The model.
+ */
 function tableModel(
   { model }: ContractHelpers,
   table: string,
@@ -122,6 +128,8 @@ export type PrismaModels<S extends AnySchema> = Record<
 /**
  * The Prisma column type of a schema column kind. Instants are `timestamptz(3)` read as `Temporal.Instant` (I7);
  * dates are `date` strings, times `time`, JSON `jsonb`, as on Drizzle Postgres. A `dates` list is {@link column}'s.
+ *
+ * @returns The column type builder.
  */
 function columnType(
   { type }: ContractHelpers,
@@ -166,7 +174,11 @@ function columnType(
   }
 }
 
-/** A `NOT NULL` column of a schema column kind; `dates` is `date[]`, as on Drizzle Postgres. */
+/**
+ * A `NOT NULL` column of a schema column kind; `dates` is `date[]`, as on Drizzle Postgres.
+ *
+ * @returns The field builder.
+ */
 function column(helpers: ContractHelpers, kind: ColumnKind, name: string) {
   return kind === "dates"
     ? helpers.field
@@ -176,7 +188,11 @@ function column(helpers: ContractHelpers, kind: ColumnKind, name: string) {
     : helpers.field.column(columnType(helpers, kind)).column(name);
 }
 
-/** One field per Developer Field or Plugin table column, keyed by logical name; nullable unless required. */
+/**
+ * One field per Developer Field or Plugin table column, keyed by logical name; nullable unless required.
+ *
+ * @returns The field builders, by logical name.
+ */
 function fieldColumns(
   helpers: ContractHelpers,
   fields: Columns,
@@ -191,7 +207,11 @@ function fieldColumns(
   );
 }
 
-/** The Booking model. Status is `text` with a `CHECK` over its stored values, as on Drizzle Postgres. */
+/**
+ * The Booking model. Status is `text` with a `CHECK` over its stored values, as on Drizzle Postgres.
+ *
+ * @returns The Booking model.
+ */
 function bookingModel(
   schema: AnySchema,
   helpers: ContractHelpers,
@@ -228,7 +248,11 @@ function bookingModel(
   );
 }
 
-/** One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. */
+/**
+ * One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns.
+ *
+ * @returns The Plugin table's model.
+ */
 function pluginModel(
   schema: AnySchema,
   name: string,
@@ -275,6 +299,7 @@ function pluginModel(
  * Pass `{ references: { model: staff, field: "id" } }` for a foreign key to your Resource model.
  *
  * @experimental While Prisma 8 is a release candidate.
+ * @returns The models, keyed by physical table name.
  */
 export function prismaModels<
   S extends AnySchema,

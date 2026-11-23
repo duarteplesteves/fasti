@@ -17,7 +17,11 @@ import type { AnySchema } from "../schema/define-schema.js";
 import type { Columns } from "../schema/table.js";
 import { blockFieldsOf } from "./plugin-stores.js";
 
-/** A random Instant in 2030 at millisecond precision: what every Adapter must round-trip. */
+/**
+ * A random Instant in 2030 at millisecond precision: what every Adapter must round-trip.
+ *
+ * @returns The Instant.
+ */
 export function instant(): Temporal.Instant {
   return Temporal.Instant.fromEpochMilliseconds(
     Date.UTC(2030, 0, 1) + randomInt(365 * 24 * 3_600_000)
@@ -27,7 +31,11 @@ export function instant(): Temporal.Instant {
 /** A value of some column kind. */
 type FieldValue = string | number | boolean | Temporal.Instant;
 
-/** A random value of a column kind. Integers stay within a 4-byte SQL integer. */
+/**
+ * A random value of a column kind. Integers stay within a 4-byte SQL integer.
+ *
+ * @returns The value.
+ */
 export function valueOf(type: AnyColumn): FieldValue {
   switch (type.kind) {
     case "text": {
@@ -56,14 +64,22 @@ export function valueOf(type: AnyColumn): FieldValue {
   }
 }
 
-/** A Booking or Block Developer Field's column: Developer Field kinds only. */
+/**
+ * A Booking or Block Developer Field's column: Developer Field kinds only.
+ *
+ * @returns The column.
+ */
 function developer(type: Columns[string]["type"]): AnyColumn {
   // SAFETY: Booking and Block Developer Fields are Developer Field kinds; a Block field is typed as a Plugin column.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
   return type as AnyColumn;
 }
 
-/** A generated value for every Developer Field; optional ones `null` unless `set`. */
+/**
+ * A generated value for every Developer Field; optional ones `null` unless `set`.
+ *
+ * @returns The values, by field name.
+ */
 function fieldValues(
   fields: Columns,
   optionalFields: "set" | "null"
@@ -86,7 +102,11 @@ export interface NewBookingParams<S extends AnySchema> {
   readonly optionalFields: "set" | "null";
 }
 
-/** A new Booking one hour long, with a generated value for every Developer Field. */
+/**
+ * A new Booking one hour long, with a generated value for every Developer Field.
+ *
+ * @returns The Booking record, not yet stored.
+ */
 export function newBooking<S extends AnySchema>(
   schema: S,
   { optionalFields, resourceId, status }: NewBookingParams<S>
@@ -136,7 +156,11 @@ export interface NewBlockParams<S extends AnySchema> {
   readonly start?: Temporal.Instant;
 }
 
-/** A new Block one hour long, with a generated value for every Block Developer Field. */
+/**
+ * A new Block one hour long, with a generated value for every Block Developer Field.
+ *
+ * @returns The Block row, not yet stored.
+ */
 export function newBlock<S extends AnySchema>(
   schema: S,
   { optionalFields, resourceId, start = instant() }: NewBlockParams<S>
@@ -160,7 +184,11 @@ export async function storeBlock<S extends AnySchema, Tx>(
   });
 }
 
-/** `rule` as a new `availability()` `availabilityRule` row on `resourceId`; unset effective dates stored as `null`. */
+/**
+ * `rule` as a new `availability()` `availabilityRule` row on `resourceId`; unset effective dates stored as `null`.
+ *
+ * @returns The row.
+ */
 export function ruleRow<S extends AnySchema>(
   resourceId: ResourceIdOf<S>,
   rule: RuleRecord

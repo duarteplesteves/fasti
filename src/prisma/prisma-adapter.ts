@@ -93,7 +93,11 @@ interface AnyTable {
   readonly delete: () => { readonly where: (where: Where) => Returning };
 }
 
-/** The table builder of physical table `name` on `q`. */
+/**
+ * The table builder of physical table `name` on `q`.
+ *
+ * @returns The table builder.
+ */
 function tableOf(q: Queryable, name: string): AnyTable {
   // SAFETY: prismaModels puts every fasti table in the contract; tx.sql.public is keyed by physical table name.
   // oxlint-disable-next-line anti-slop/no-chained-type-assertions, typescript/no-unsafe-type-assertion -- the typed builder can't be indexed by a runtime string.
@@ -112,7 +116,11 @@ function tableOf(q: Queryable, name: string): AnyTable {
   return table;
 }
 
-/** The column `name` of a `where` callback's column proxy. */
+/**
+ * The column `name` of a `where` callback's column proxy.
+ *
+ * @returns The column expression.
+ */
 function ref(f: Fields, name: string): Expression {
   const column = f[name];
 
@@ -123,7 +131,11 @@ function ref(f: Fields, name: string): Expression {
   return column;
 }
 
-/** Run a verb's queries; a driver failure rejects with Prisma's error as `cause`. */
+/**
+ * Run a verb's queries; a driver failure rejects with Prisma's error as `cause`.
+ *
+ * @returns A promise of `run`'s value; it rejects with an Error naming `verb` when `run` does.
+ */
 async function query<T>(verb: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
@@ -132,7 +144,11 @@ async function query<T>(verb: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** The rows of a row-returning plan. */
+/**
+ * The rows of a row-returning plan.
+ *
+ * @returns A promise of the rows.
+ */
 async function rowsOf(q: Queryable, plan: Plan): Promise<readonly PrismaRow[]> {
   // SAFETY: the plan reads fasti's columns, decoded by the contract's codecs into PrismaValues.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the table is looked up untyped.
@@ -145,7 +161,11 @@ interface PhysicalTable {
   readonly names: ColumnNames;
 }
 
-/** The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`. */
+/**
+ * The rows of `t` on the Resource overlapping the half-open range, sorted by `start`, then `id`.
+ *
+ * @returns A promise of the overlapping rows.
+ */
 async function overlapping<S extends AnySchema>(
   q: Queryable,
   { name, names }: PhysicalTable,
@@ -167,7 +187,11 @@ async function overlapping<S extends AnySchema>(
   return await rowsOf(q, plan);
 }
 
-/** The row of `t` with this id, if any. */
+/**
+ * The row of `t` with this id, if any.
+ *
+ * @returns A promise of the row, or `undefined` when there is none.
+ */
 async function byId(
   q: Queryable,
   { name, names }: PhysicalTable,
@@ -186,6 +210,8 @@ async function byId(
 /**
  * Compare-and-set (I4): write `changes` only if every stored column still equals `expected`; `eq` with
  * `null` renders `IS NULL`. `true` when the row was updated; `false` when it changed or is gone.
+ *
+ * @returns A promise of whether the row was updated.
  */
 async function compareAndSet(
   q: Queryable,
@@ -219,7 +245,11 @@ interface PluginTable {
   readonly t: PhysicalTable;
 }
 
-/** The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares. */
+/**
+ * The Plugin tables of `schema`, by logical name; `table` looks one up, and throws on a table no Plugin declares.
+ *
+ * @returns The lookup from a logical table name to its Plugin table.
+ */
 function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
   const defs = tablesOf(schema.plugins);
 
@@ -249,7 +279,11 @@ function pluginTablesOf(schema: AnySchema): (table: string) => PluginTable {
   };
 }
 
-/** The record reads over `q`. */
+/**
+ * The record reads over `q`.
+ *
+ * @returns The record reads.
+ */
 function recordReads<S extends AnySchema>(
   q: Queryable,
   pluginTable: (table: string) => PluginTable
@@ -292,7 +326,11 @@ function recordReads<S extends AnySchema>(
   };
 }
 
-/** The record writes on `tx`. */
+/**
+ * The record writes on `tx`.
+ *
+ * @returns The record writes.
+ */
 function recordWrites<S extends AnySchema>(
   tx: Queryable,
   pluginTable: (table: string) => PluginTable
@@ -373,7 +411,11 @@ export interface CreatePrismaAdapterParams {
   readonly lock: boolean;
 }
 
-/** The Prisma Adapter, with the lock switchable for the negative control. Internal: use {@link prismaAdapter}. */
+/**
+ * The Prisma Adapter, with the lock switchable for the negative control. Internal: use {@link prismaAdapter}.
+ *
+ * @returns The Adapter.
+ */
 export function createPrismaAdapter<DB extends AnyPostgresClient>(
   db: DB,
   { lock }: CreatePrismaAdapterParams
@@ -434,7 +476,11 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
               });
             }
 
-            /** Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable. */
+            /**
+             * Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable.
+             *
+             * @returns A promise of the write's value, or `"conflict"` when the backstop refused it.
+             */
             async function backstopped<T>(
               verb: string,
               write: () => Promise<T>
@@ -542,6 +588,7 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
  * own transaction, for your writes in the same unit of work.
  *
  * @experimental While Prisma 8 is a release candidate.
+ * @returns The Adapter, to pass in `createScheduler`'s `adapter`.
  */
 export function prismaAdapter<DB extends AnyPostgresClient>(
   db: DB

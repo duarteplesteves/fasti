@@ -187,21 +187,33 @@ type AnyBlockTables = BlockTables<Fields>;
 /** A stored Block, its fields erased. */
 type StoredBlock = Block<Fields>;
 
-/** A new Block id: a UUIDv7, as `insert` mints them. For tests and fixtures: a Block's own id comes from `blocks.create`. */
+/**
+ * A new Block id: a UUIDv7, as `insert` mints them. For tests and fixtures: a Block's own id comes from `blocks.create`.
+ *
+ * @returns The new id.
+ */
 export function mintBlockId(): BlockId {
   // SAFETY: a freshly minted UUIDv7 is exactly what a BlockId is.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands are applied by assertion.
   return uuidV7() as BlockId;
 }
 
-/** Equal as stored values: Instants by `equals`, the rest by identity. */
+/**
+ * Equal as stored values: Instants by `equals`, the rest by identity.
+ *
+ * @returns `true` when `a` and `b` are the same stored value.
+ */
 function sameStoredValue(a: FieldValue | undefined, b: FieldValue): boolean {
   return a instanceof Temporal.Instant && b instanceof Temporal.Instant
     ? a.equals(b)
     : a === b;
 }
 
-/** Refuse `[start, end)` if a blocking Booking overlaps it; Blocks may overlap each other (ADR 016). */
+/**
+ * Refuse `[start, end)` if a blocking Booking overlaps it; Blocks may overlap each other (ADR 016).
+ *
+ * @returns An Effect that succeeds when no blocking Booking overlaps the range; it fails with `BlockOverBooking` or `AdapterError`.
+ */
 function refuseBookings(
   unit: Unit<AnyBlockTables>,
   range: { readonly start: Temporal.Instant; readonly end: Temporal.Instant }
@@ -216,6 +228,8 @@ function refuseBookings(
 /**
  * Run `work` on the Block `id` under its Resource's lock: read unlocked to learn the Resource, then again on the unit.
  * `work` fails with `retry` when compare-and-set reports `changed`, and it all starts over.
+ *
+ * @returns An Effect of `work`'s value, written; it fails with `BlockNotFound`, `work`'s failure, `Vetoed` or `AdapterError`.
  */
 function lockBlock<V, C extends object, E>(
   {
@@ -262,7 +276,11 @@ function lockBlock<V, C extends object, E>(
   );
 }
 
-/** The Plugin over Developer Fields known only at runtime. */
+/**
+ * The Plugin over Developer Fields known only at runtime.
+ *
+ * @returns The Blocks Plugin, typed over `Fields`.
+ */
 function blocksPlugin(fields: Fields) {
   const table: BlockTable<Fields> = {
     columns: fields,
@@ -442,6 +460,7 @@ type ReservedBlockField = "id" | "resourceId" | "start" | "end" | "also";
  * Blocks are busy time: no blocking Booking may overlap one, and `findSlots` skips them; Blocks may overlap each other.
  * Its table is `0.6`'s `block`, so installing it needs no migration.
  *
+ * @returns The Plugin, to install in `defineSchema`'s `plugins`.
  * @throws When a field is named `also`, or after a column fasti owns.
  */
 export function blocks<const F extends Fields>({

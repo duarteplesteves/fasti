@@ -113,6 +113,8 @@ export type SchedulerService<
 /**
  * The Actions bound to a schema, an Adapter and Policies, Effect form, before either form types them: the built-ins in `base`, each installed Plugin's in `plugins` by name.
  * Throws on duplicate Policy names, across the Plugins' and the app's.
+ *
+ * @returns The bound Actions: `base` for the built-ins, `plugins` by Plugin name.
  */
 export function bindActions<
   S extends AnySchema,
@@ -161,7 +163,11 @@ export function bindActions<
   return { base, plugins: pluginActions(ctx) };
 }
 
-/** Bind the Actions to a schema, an Adapter and Policies, Effect form. Throws on duplicate Policy names, across the Plugins' and the app's. */
+/**
+ * Bind the Actions to a schema, an Adapter and Policies, Effect form. Throws on duplicate Policy names, across the Plugins' and the app's.
+ *
+ * @returns The scheduler in Effect form.
+ */
 export function makeScheduler<
   S extends AnySchema,
   Tx,

@@ -46,12 +46,20 @@ export interface RanContext<C> {
   readonly [contextType]?: C;
 }
 
-/** Resolve an Action with `value`. */
+/**
+ * Resolve an Action with `value`.
+ *
+ * @returns The success, to return from a Promise-style Action's `run`.
+ */
 export function ok<V>(value: V): Ran<V, never, never> {
   return { ok: true, value };
 }
 
-/** Resolve an Action with the expected failure `error`. */
+/**
+ * Resolve an Action with the expected failure `error`.
+ *
+ * @returns The failure, to return from a Promise-style Action's `run`.
+ */
 export function fail<E>(error: E): Ran<never, E, never> {
   return { error, ok: false };
 }
@@ -298,7 +306,11 @@ interface ErasedTools {
   ) => Effect.Effect<Written<unknown, object>, AdapterError | ErasedError>;
 }
 
-/** Run `effect` with the caller's `services`: interrupted on `signal`; a typed failure becomes `error`, a defect or interrupt rejects. */
+/**
+ * Run `effect` with the caller's `services`: interrupted on `signal`; a typed failure becomes `error`, a defect or interrupt rejects.
+ *
+ * @returns A promise of `effect`'s success as `{ ok: true, value }`, or its typed failure as `{ ok: false, error }`.
+ */
 async function settle<A, E>(
   services: Context.Context<never>,
   signal: AbortSignal,
@@ -309,7 +321,11 @@ async function settle<A, E>(
   );
 }
 
-/** An {@link AdapterError} stays the failure; anything else thrown is a defect. */
+/**
+ * An {@link AdapterError} stays the failure; anything else thrown is a defect.
+ *
+ * @returns An Effect that fails with `thrown` when it is an `AdapterError`, and dies with it otherwise.
+ */
 function adapterErrorOrDie(
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- whatever a Plugin's Promise rejected with.
   thrown: unknown
@@ -319,7 +335,11 @@ function adapterErrorOrDie(
     : Effect.die(thrown);
 }
 
-/** Await `run`: a rejection with an {@link AdapterError} is that failure; any other rejection is a defect. */
+/**
+ * Await `run`: a rejection with an {@link AdapterError} is that failure; any other rejection is a defect.
+ *
+ * @returns An Effect of `run`'s value; it fails with `AdapterError`.
+ */
 function attempt<A>(
   run: (signal: AbortSignal) => Promise<A>
 ): Effect.Effect<A, AdapterError> {
@@ -327,12 +347,20 @@ function attempt<A>(
   return Effect.promise(run).pipe(Effect.catchDefect(adapterErrorOrDie));
 }
 
-/** A resolved {@link Result} as an Effect. */
+/**
+ * A resolved {@link Result} as an Effect.
+ *
+ * @returns An Effect of the success; it fails with the error.
+ */
 function fromResult<A, E>(result: Result<A, E>): Effect.Effect<A, E> {
   return result.ok ? Effect.succeed(result.value) : Effect.fail(result.error);
 }
 
-/** A native verb as a Promise, run with the caller's services; a failure rejects with its AdapterError. */
+/**
+ * A native verb as a Promise, run with the caller's services; a failure rejects with its AdapterError.
+ *
+ * @returns The verb, returning a Promise.
+ */
 function promisedVerb<Args extends readonly unknown[], A>(
   verb: (...args: Args) => Effect.Effect<A, AdapterError>,
   services: Context.Context<never>,
@@ -349,7 +377,11 @@ function promisedVerb<Args extends readonly unknown[], A>(
   };
 }
 
-/** Native record handles as Promises, run with the caller's services; a failure rejects with its AdapterError. */
+/**
+ * Native record handles as Promises, run with the caller's services; a failure rejects with its AdapterError.
+ *
+ * @returns The handles, returning Promises.
+ */
 function promised(
   handles: Handles<Effect.Effect<unknown, AdapterError>>,
   services: Context.Context<never>,
@@ -368,7 +400,11 @@ function promised(
   );
 }
 
-/** A Promise-style `load` or busy `list` as a native one: its `records` become Promises, run with the caller's services. */
+/**
+ * A Promise-style `load` or busy `list` as a native one: its `records` become Promises, run with the caller's services.
+ *
+ * @returns The read in native form: an Effect that fails with `AdapterError`.
+ */
 function nativeRead<A>(read: (ctx: never) => A | Promise<A>) {
   return (ctx: {
     readonly records: Handles<Effect.Effect<unknown, AdapterError>>;
@@ -388,7 +424,11 @@ function nativeRead<A>(read: (ctx: never) => A | Promise<A>) {
     );
 }
 
-/** One Promise-style Action as a native one: the caller's services and the call's AbortSignal cross with it. */
+/**
+ * One Promise-style Action as a native one: the caller's services and the call's AbortSignal cross with it.
+ *
+ * @returns The Action's `run` in native form: an Effect that fails with the Action's typed error or `AdapterError`.
+ */
 function nativeRun(def: ErasedDef) {
   return (
     // oxlint-disable-next-line anti-slop/no-unknown-parameters -- the Plugin's own params, typed by the Plugin.
@@ -441,7 +481,11 @@ function nativeRun(def: ErasedDef) {
     );
 }
 
-/** Promise-style Actions as native ones: the one Promise/Effect crossing (Risk R2). */
+/**
+ * Promise-style Actions as native ones: the one Promise/Effect crossing (Risk R2).
+ *
+ * @returns The Actions in native form, by name.
+ */
 function promiseFace(actions: Readonly<Record<string, ErasedDef>>): Readonly<
   Record<
     string,
@@ -464,6 +508,8 @@ function promiseFace(actions: Readonly<Record<string, ErasedDef>>): Readonly<
  * `scheduler.<name>`, Policies run before the app's, and busy time no Booking may overlap. It builds the same Plugin as the native `definePlugin` from `@fastijs/scheduler/effect`, and the app
  * types its Actions alike. Write each Action's params type on `run`'s first parameter, with {@link PluginResourceId}
  * for the Resource id.
+ *
+ * @returns The Plugin, to install in `defineSchema`'s `plugins`.
  *
  * @example
  * ```ts

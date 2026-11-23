@@ -54,7 +54,11 @@ export type RescheduleError<S extends AnySchema> =
   | SlotConflict<ConflictOf<S>>
   | AdapterError;
 
-/** Move a blocking Booking in time or to another Resource, keeping its id and Status (ADR 009): the Invariants first (overlap ignoring itself), then every Policy that applies to `reschedule` (ADR 014). */
+/**
+ * Move a blocking Booking in time or to another Resource, keeping its id and Status (ADR 009): the Invariants first (overlap ignoring itself), then every Policy that applies to `reschedule` (ADR 014).
+ *
+ * @returns An Effect of the moved Booking, with `also`'s value merged in when one ran; it fails with `InvalidParams`, `BookingNotFound`, `StatusMismatch`, `SlotConflict`, `PolicyViolation`, `Vetoed` or `AdapterError`.
+ */
 export function reschedule<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: RescheduleParams<S> &

@@ -40,7 +40,11 @@ interface Known {
   readonly start: Temporal.Instant;
 }
 
-/** The Adapter with its record verbs. Records cases only run for a schema with the conformance Plugin, where GroupsOf<S> is "records". */
+/**
+ * The Adapter with its record verbs. Records cases only run for a schema with the conformance Plugin, where GroupsOf<S> is "records".
+ *
+ * @returns The Adapter, typed with its record verbs.
+ */
 export function withRecords<S extends AnySchema, Tx>({
   adapter,
   schema,
@@ -54,12 +58,20 @@ export function withRecords<S extends AnySchema, Tx>({
   return adapter as SchemaAdapter<S, Tx, VerbGroup>;
 }
 
-/** A random day in 2030. */
+/**
+ * A random day in 2030.
+ *
+ * @returns The date.
+ */
 function date(): Temporal.PlainDate {
   return Temporal.PlainDate.from("2030-01-01").add({ days: randomInt(365) });
 }
 
-/** Fresh random {@link Known} values. */
+/**
+ * Fresh random {@link Known} values.
+ *
+ * @returns The values.
+ */
 function known(start = instant()): Known {
   return {
     dates: [date(), date(), date()],
@@ -71,7 +83,11 @@ function known(start = instant()): Known {
   };
 }
 
-/** A random value of a column kind; times to the millisecond, as every Adapter must keep them. */
+/**
+ * A random value of a column kind; times to the millisecond, as every Adapter must keep them.
+ *
+ * @returns The value.
+ */
 function recordValue(type: RecordColumn): StoredValue {
   switch (type.kind) {
     case "date": {
@@ -110,7 +126,11 @@ function recordValue(type: RecordColumn): StoredValue {
   }
 }
 
-/** A new record of `table` on `resourceId`; optional columns `null` unless `set`; `dates`, `json` and a timed record's range from `values`. */
+/**
+ * A new record of `table` on `resourceId`; optional columns `null` unless `set`; `dates`, `json` and a timed record's range from `values`.
+ *
+ * @returns The record, not yet stored.
+ */
 export function newRecord<S extends AnySchema>(
   table: Table,
   resourceId: ResourceIdOf<S>,
@@ -135,7 +155,11 @@ export function newRecord<S extends AnySchema>(
   };
 }
 
-/** The columns a record can change: everything but `id` and `resourceId`. */
+/**
+ * The columns a record can change: everything but `id` and `resourceId`.
+ *
+ * @returns The changeable columns, by name.
+ */
 function changesOf({
   id: _id,
   resourceId: _resourceId,
@@ -144,7 +168,11 @@ function changesOf({
   return changes;
 }
 
-/** `json` with every object's keys in reverse order: the same value, written differently. */
+/**
+ * `json` with every object's keys in reverse order: the same value, written differently.
+ *
+ * @returns The reordered value.
+ */
 function reordered(json: Json): Json {
   if (Array.isArray(json)) {
     return json.map(reordered);
@@ -161,7 +189,11 @@ function reordered(json: Json): Json {
   return json;
 }
 
-/** `record`, made with `values`, as another read could return it: JSON keys in another order, fresh PlainDates. */
+/**
+ * `record`, made with `values`, as another read could return it: JSON keys in another order, fresh PlainDates.
+ *
+ * @returns The rewritten record.
+ */
 function rewritten<S extends AnySchema>(record: On<S>, values: Known): On<S> {
   return {
     ...record,
@@ -189,7 +221,11 @@ async function insertAll<S extends AnySchema, Tx>(
   );
 }
 
-/** `updateRecord` in its own unit of work. */
+/**
+ * `updateRecord` in its own unit of work.
+ *
+ * @returns A promise of the update's result: `changed` when the stored record no longer equals `expected`.
+ */
 async function update<S extends AnySchema, Tx>(
   adapter: SchemaAdapter<S, Tx, "records">,
   table: Table,
@@ -202,7 +238,11 @@ async function update<S extends AnySchema, Tx>(
   );
 }
 
-/** `deleteRecord` in its own unit of work. */
+/**
+ * `deleteRecord` in its own unit of work.
+ *
+ * @returns A promise of the delete's result: `missing` when there was no such record.
+ */
 async function remove<S extends AnySchema, Tx>(
   adapter: SchemaAdapter<S, Tx, "records">,
   table: Table,
@@ -249,7 +289,11 @@ export const recordCases: readonly ConformanceCase[] = [
       const from = Temporal.Instant.from("2030-06-03T10:00:00Z");
       const to = from.add({ hours: 4 });
 
-      /** A one-hour record starting `hours` after `from`. */
+      /**
+       * A one-hour record starting `hours` after `from`.
+       *
+       * @returns The record, not yet stored.
+       */
       function at(hours: number, resourceId = resources[0]) {
         return newRecord(
           table,

@@ -266,7 +266,11 @@ export type NativeHook<N extends string, A, T extends Tables> =
       ): Effect.Effect<void>;
     };
 
-/** Whether a Plugin with write Actions `own` may observe `called`: a Booking Action, a Transition edge, or one of its own. */
+/**
+ * Whether a Plugin with write Actions `own` may observe `called`: a Booking Action, a Transition edge, or one of its own.
+ *
+ * @returns `true` when the Plugin may observe `called`.
+ */
 function observable(own: readonly string[], called: CalledTarget): boolean {
   return (
     !isNamedTarget(called) ||
@@ -337,6 +341,8 @@ type RangeOf<Listed> =
  * Policies run before the app's, and busy time no Booking may overlap.
  * Write each Action's params type on `run`'s first parameter; anything else in the Plugin's types that holds a Resource
  * id uses {@link PluginResourceId}, and the app sees the schema's own id type there.
+ *
+ * @returns The Plugin, to install in `defineSchema`'s `plugins`.
  *
  * @example
  * ```ts
@@ -494,7 +500,11 @@ type BoundAction = <R = never>(params: {
   readonly also?: EffectAlso<object, unknown, R>;
 }) => Effect.Effect<unknown, ErasedError, R>;
 
-/** The record handles on `tables`: reads from `reads`, and writes on `locked` when given. */
+/**
+ * The record handles on `tables`: reads from `reads`, and writes on `locked` when given.
+ *
+ * @returns The handles, keyed by table name.
+ */
 function handles<S extends AnySchema, Tx>(
   tables: readonly string[],
   reads: EffectReads<S>,
@@ -536,7 +546,11 @@ function handles<S extends AnySchema, Tx>(
   );
 }
 
-/** Bind `action` of a Plugin with `tables` to `ctx`; `name` is `<plugin>.<action>`, as Hooks and logs see it. */
+/**
+ * Bind `action` of a Plugin with `tables` to `ctx`; `name` is `<plugin>.<action>`, as Hooks and logs see it.
+ *
+ * @returns The bound Action, taking the caller's params.
+ */
 function bind<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
   name: string,
@@ -602,7 +616,11 @@ function bind<S extends AnySchema, Tx>(
   };
 }
 
-/** Every installed Plugin's Actions bound to `ctx`, by Plugin name, then Action name. */
+/**
+ * Every installed Plugin's Actions bound to `ctx`, by Plugin name, then Action name.
+ *
+ * @returns The bound Actions.
+ */
 export function pluginActions<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>
 ): Readonly<Record<string, Readonly<Record<string, BoundAction>>>> {
@@ -626,7 +644,11 @@ export function pluginActions<S extends AnySchema, Tx>(
   );
 }
 
-/** Every installed Plugin's busy time, as busy sources: each reads its Plugin's tables on the unit. */
+/**
+ * Every installed Plugin's busy time, as busy sources: each reads its Plugin's tables on the unit.
+ *
+ * @returns The busy sources, in install order.
+ */
 export function pluginBusy(
   plugins: AnySchema["plugins"]
 ): readonly BusySource[] {
@@ -650,7 +672,11 @@ export function pluginBusy(
   );
 }
 
-/** Every installed Plugin's Policies, in install order, as the Policy pass runs them: each `load` reads its Plugin's tables on the unit. */
+/**
+ * Every installed Plugin's Policies, in install order, as the Policy pass runs them: each `load` reads its Plugin's tables on the unit.
+ *
+ * @returns The Policies, ready for the Policy pass.
+ */
 export function pluginPolicies<S extends AnySchema>(
   plugins: S["plugins"]
 ): readonly RunnablePolicy<S>[] {
@@ -677,6 +703,8 @@ export function pluginPolicies<S extends AnySchema>(
  * Every installed Plugin's Hooks, in install order, as `writeUnit` runs them: each sees its Plugin's tables (written on
  * the unit in a transaction, read through `reads` after the commit), and only Booking Actions, Transitions and its own
  * write Actions, even on `"*"`.
+ *
+ * @returns The Hooks, ready for `writeUnit`.
  */
 export function pluginHooks<S extends AnySchema, Tx>(
   plugins: S["plugins"],

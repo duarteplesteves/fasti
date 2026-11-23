@@ -1,7 +1,11 @@
 import { expandRulesUnchecked } from "./expand-rules.js";
 import type { AvailabilityRule, InstantRange } from "./types.js";
 
-/** The windows `rules` open around `range`, as instants. */
+/**
+ * The windows `rules` open around `range`, as instants.
+ *
+ * @returns The open windows, possibly overlapping.
+ */
 export function availableWindows(
   rules: readonly AvailabilityRule[],
   range: InstantRange
@@ -17,7 +21,11 @@ export function availableWindows(
   }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
 }
 
-/** Whether `range` fits fully inside one of `windows`. */
+/**
+ * Whether `range` fits fully inside one of `windows`.
+ *
+ * @returns `true` when one window contains all of `range`.
+ */
 export function fitsInSomeWindow(
   windows: readonly InstantRange[],
   range: InstantRange

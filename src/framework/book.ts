@@ -69,7 +69,11 @@ export type BookError<S extends AnySchema = AnySchema> =
   | SlotConflict<ConflictOf<S>>
   | AdapterError;
 
-/** Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and keeps every Policy that applies to `book` (ADR 014: Invariants first). */
+/**
+ * Store a new Booking in its initial Status, if the slot is free (when that Status blocks) and keeps every Policy that applies to `book` (ADR 014: Invariants first).
+ *
+ * @returns An Effect of the stored Booking, with `also`'s value merged in when one ran; it fails with `InvalidParams`, `SlotConflict`, `PolicyViolation`, `Vetoed` or `AdapterError`.
+ */
 export function book<S extends AnySchema, Tx, R = never>(
   ctx: ActionContext<S, Tx>,
   params: BookParams<S> &

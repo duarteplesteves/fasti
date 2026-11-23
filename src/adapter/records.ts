@@ -31,7 +31,11 @@ export type BookingChanges<S extends AnySchema> = Partial<
   Omit<BookingRecord<S>, "id">
 >;
 
-/** The Core's view of a stored Booking: `String` Resource id, blocking derived from its Status. Internal. */
+/**
+ * The Core's view of a stored Booking: `String` Resource id, blocking derived from its Status. Internal.
+ *
+ * @returns The Booking as the Core reads it.
+ */
 export function toCoreBooking<S extends AnySchema>(
   codec: StatusCodec<StatusOf<S>>,
   record: BookingRecord<S>

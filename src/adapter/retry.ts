@@ -1,7 +1,11 @@
 /** Attempts at a unit of work that fails with a transient error, the first included. */
 const MAX_ATTEMPTS = 3;
 
-/** Whether `matches` holds for `error` or any link of its `cause` chain. */
+/**
+ * Whether `matches` holds for `error` or any link of its `cause` chain.
+ *
+ * @returns `true` when some link matches.
+ */
 export function someCause(
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is whatever was thrown.
   error: unknown,
@@ -22,7 +26,11 @@ export function someCause(
   return false;
 }
 
-/** Run `unit`, rerunning the whole of it on a transient error (ADR 008), up to {@link MAX_ATTEMPTS} times. */
+/**
+ * Run `unit`, rerunning the whole of it on a transient error (ADR 008), up to {@link MAX_ATTEMPTS} times.
+ *
+ * @returns A promise of `unit`'s value; it rejects with the last error once the attempts run out, or at once on an error that isn't transient.
+ */
 export async function retryTransient<T>(
   unit: () => Promise<T>,
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is whatever was thrown.

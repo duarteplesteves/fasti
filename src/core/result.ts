@@ -17,7 +17,11 @@ export interface InvalidParams {
   readonly issues: readonly [Issue, ...Issue[]];
 }
 
-/** Runs `compute` only when there are no issues. Internal; not exported from the Core. */
+/**
+ * Runs `compute` only when there are no issues. Internal; not exported from the Core.
+ *
+ * @returns `compute`'s value, or `InvalidParams` carrying `issues` when there are any.
+ */
 export function checked<T>(
   issues: readonly Issue[],
   compute: () => T

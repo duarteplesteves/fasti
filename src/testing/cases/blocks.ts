@@ -11,7 +11,11 @@ import { storeBlock, newBlock } from "../fixtures.js";
 import type { BlockRow } from "../fixtures.js";
 import { blockFieldsOf, pluginRecords } from "../plugin-stores.js";
 
-/** Update a Block in its own unit of work. */
+/**
+ * Update a Block in its own unit of work.
+ *
+ * @returns A promise of the update's result: `changed` when the stored Block no longer equals `expected`.
+ */
 async function update<S extends AnySchema, Tx>(
   adapter: SchemaAdapter<S, Tx, "records">,
   expected: BlockRow<S>,
@@ -23,7 +27,11 @@ async function update<S extends AnySchema, Tx>(
   );
 }
 
-/** Delete a Block in its own unit of work, on its Resource. */
+/**
+ * Delete a Block in its own unit of work, on its Resource.
+ *
+ * @returns A promise of the delete's result: `missing` when there was no such Block.
+ */
 async function remove<S extends AnySchema, Tx>(
   adapter: SchemaAdapter<S, Tx, "records">,
   block: BlockRow<S>
@@ -87,7 +95,11 @@ export const blockCases: readonly ConformanceCase[] = [
       const from = Temporal.Instant.from("2030-06-03T10:00:00Z");
       const to = from.add({ hours: 4 });
 
-      /** A one-hour Block starting `hours` after `from`. */
+      /**
+       * A one-hour Block starting `hours` after `from`.
+       *
+       * @returns The Block row, not yet stored.
+       */
       function at(hours: number, resourceId = resources[0]) {
         return newBlock(schema, {
           optionalFields: "null",

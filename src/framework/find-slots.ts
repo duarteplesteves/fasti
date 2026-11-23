@@ -80,6 +80,8 @@ export interface FindSlotsAction<
 /**
  * Free slots on a Resource: the Grid slots no blocking Booking or Block overlaps, judged by the same Policies as `book`, or `reschedule` with `excludeBookingId` (Invariant 5 of ADR 014's spec).
  * A slot breaking an unrelaxed Policy is hidden. Unlocked reads; each `load` runs once, over `[from, to + duration)`.
+ *
+ * @returns An Effect of the visible Slots in start order, each with its waived Violations; it fails with `InvalidParams`, `BookingNotFound` (for an unknown `excludeBookingId`) or `AdapterError`.
  */
 export function findSlots<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,

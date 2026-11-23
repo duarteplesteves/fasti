@@ -40,12 +40,20 @@ export interface RunnablePolicy<S extends AnySchema> {
   readonly check: (candidate: never, data: never) => unknown;
 }
 
-/** `target` as `relax` issues name it. */
+/**
+ * `target` as `relax` issues name it.
+ *
+ * @returns The target's name, or `<from> → <to>` for a Transition edge.
+ */
 function label(target: CalledTarget): string {
   return isNamedTarget(target) ? target : `${target.from} → ${target.to}`;
 }
 
-/** The Policies `target` runs: the Plugins' first, then the developer's, in registration order. */
+/**
+ * The Policies `target` runs: the Plugins' first, then the developer's, in registration order.
+ *
+ * @returns The Policies, in run order.
+ */
 export function applicable<S extends AnySchema, Tx>(
   ctx: ActionContext<S, Tx>,
   target: CalledTarget
@@ -55,7 +63,11 @@ export function applicable<S extends AnySchema, Tx>(
   );
 }
 
-/** Run a read, rejecting with its `AdapterError` on failure. */
+/**
+ * Run a read, rejecting with its `AdapterError` on failure.
+ *
+ * @returns A promise of the read's value.
+ */
 async function run<A>(read: Effect.Effect<A, AdapterError>): Promise<A> {
   const exit = await Effect.runPromiseExit(read);
 
@@ -66,7 +78,11 @@ async function run<A>(read: Effect.Effect<A, AdapterError>): Promise<A> {
   throw Cause.squash(exit.cause);
 }
 
-/** fasti's Effect reads as the Promises `load` gets. */
+/**
+ * fasti's Effect reads as the Promises `load` gets.
+ *
+ * @returns The reads in Promise form.
+ */
 function promiseReads<S extends AnySchema>(
   reads: EffectReads<S>
 ): PolicyReads<S> {
@@ -76,7 +92,11 @@ function promiseReads<S extends AnySchema>(
   };
 }
 
-/** An app Policy, with its Promise `load` run on fasti's reads: a rejection with `AdapterError` is that failure; any other is a defect. */
+/**
+ * An app Policy, with its Promise `load` run on fasti's reads: a rejection with `AdapterError` is that failure; any other is a defect.
+ *
+ * @returns The Policy in the form the Policy pass runs.
+ */
 export function appPolicy<S extends AnySchema>(
   policy: AnyPolicyOf<S>
 ): RunnablePolicy<S> {
@@ -114,7 +134,11 @@ interface Loaded<S extends AnySchema> {
   readonly data: unknown;
 }
 
-/** Run each Policy's `load` once, in order. A failing read is `AdapterError`; any other throw is a defect. */
+/**
+ * Run each Policy's `load` once, in order. A failing read is `AdapterError`; any other throw is a defect.
+ *
+ * @returns An Effect of each Policy with its loaded data, in order; it fails with `AdapterError`.
+ */
 export function loadPolicies<S extends AnySchema>(
   reads: EffectReads<S>,
   policies: readonly RunnablePolicy<S>[],
@@ -133,7 +157,11 @@ export interface UnparsedRelax {
   readonly relax?: unknown;
 }
 
-/** `params.relax`, parsed: `undefined` when absent, else names of Policies in `policies`; issues at `relax` or each bad index otherwise. Runs before any Adapter call. */
+/**
+ * `params.relax`, parsed: `undefined` when absent, else names of Policies in `policies`; issues at `relax` or each bad index otherwise. Runs before any Adapter call.
+ *
+ * @returns The Policy names, `undefined` when `relax` is absent, or `InvalidParams` when it isn't an array of names that apply to `target`.
+ */
 export function parseRelax<S extends AnySchema>(
   policies: readonly RunnablePolicy<S>[],
   target: CalledTarget,
@@ -185,7 +213,11 @@ interface Judged {
   readonly waived: Violation<string, unknown>[];
 }
 
-/** Every loaded Policy's Violation for `candidate`, in order, split by `relax`. A throw in `check` is a defect. */
+/**
+ * Every loaded Policy's Violation for `candidate`, in order, split by `relax`. A throw in `check` is a defect.
+ *
+ * @returns The broken Policies' Violations, split into unrelaxed and relaxed.
+ */
 export function judge<S extends AnySchema>(
   loaded: readonly Loaded<S>[],
   candidate: Candidate<S>,
@@ -205,7 +237,11 @@ export function judge<S extends AnySchema>(
   };
 }
 
-/** Load and check every Policy in `policies` for `candidate`, under the lock, after the Invariants (ADR 014). Every one runs, relaxed ones too: fails `PolicyViolation` with the unrelaxed broken ones, else succeeds with the relaxed broken ones (`waived`). */
+/**
+ * Load and check every Policy in `policies` for `candidate`, under the lock, after the Invariants (ADR 014). Every one runs, relaxed ones too: fails `PolicyViolation` with the unrelaxed broken ones, else succeeds with the relaxed broken ones (`waived`).
+ *
+ * @returns An Effect of the relaxed Violations; it fails with `PolicyViolation` or `AdapterError`.
+ */
 export function enforcePolicies<
   S extends AnySchema,
   P extends RunnablePolicy<S>,

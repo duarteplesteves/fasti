@@ -241,7 +241,11 @@ function physicalNames<K extends PropertyKey>(
   ) as Record<K, string>;
 }
 
-/** The physical names of every Plugin table and its columns (fasti's own and its declared ones), by logical name. */
+/**
+ * The physical names of every Plugin table and its columns (fasti's own and its declared ones), by logical name.
+ *
+ * @returns The physical names: `tables` by table, `columns` by table then column.
+ */
 function resolvePluginNames(
   plugins: readonly Plugin[],
   // Plain data, read by logical table name: TableNamesOf<Ps> keys the Plugin tables' entries.
@@ -335,7 +339,11 @@ interface Lifecycle {
   readonly initial: readonly string[];
 }
 
-/** Resolve and check Statuses, Transitions and initial Statuses (ADR 009). */
+/**
+ * Resolve and check Statuses, Transitions and initial Statuses (ADR 009).
+ *
+ * @returns The resolved Statuses, Transitions and initial Statuses.
+ */
 function resolveLifecycle(
   booking:
     | {
@@ -431,6 +439,7 @@ function resolveLifecycle(
  * @typeParam I - The initial Statuses; `["booked"]` when `initial` is absent.
  * @typeParam N - The stored Status values.
  * @typeParam Ps - The installed Plugins.
+ * @returns The resolved schema, to pass to `createScheduler` and the Adapters.
  * @throws When a base Status is redeclared, `transitions` or `initial` names an unknown Status, `initial` is empty,
  * a Developer Field is named `also` (or a Booking one `waived`), Plugins or their tables clash by name, two Statuses share a stored value (I6), or two columns of one table, or two tables, share a physical name.
  */

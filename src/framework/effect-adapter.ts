@@ -84,7 +84,11 @@ export interface EffectAdapter<S extends AnySchema, Tx> extends EffectReads<S> {
   ) => Effect.Effect<A, E | AdapterError, R>;
 }
 
-/** Run an Adapter verb; any rejection is the Adapter failing. */
+/**
+ * Run an Adapter verb; any rejection is the Adapter failing.
+ *
+ * @returns An Effect of the verb's value; it fails with `AdapterError` wrapping the rejection.
+ */
 function attempt<A>(run: () => Promise<A>): Effect.Effect<A, AdapterError> {
   return Effect.tryPromise({
     catch: (cause) => new AdapterError(cause),
@@ -130,7 +134,11 @@ function liftLocked<S extends AnySchema, Tx>(
   };
 }
 
-/** The rollback reason for a failed unit, so the Adapter can classify it (e.g. as transient): an AdapterError's original rejection, a defect as thrown, otherwise `rollback`. */
+/**
+ * The rollback reason for a failed unit, so the Adapter can classify it (e.g. as transient): an AdapterError's original rejection, a defect as thrown, otherwise `rollback`.
+ *
+ * @returns The value to reject the Adapter's transaction with.
+ */
 // oxlint-disable-next-line anti-slop/no-unknown-returns -- a rejection reason is whatever was thrown; the Adapter classifies it.
 function rejectionFor(cause: Cause.Cause<unknown>, rollback: Error): unknown {
   const found = Cause.findError(cause);
@@ -142,7 +150,11 @@ function rejectionFor(cause: Cause.Cause<unknown>, rollback: Error): unknown {
   return found.success instanceof AdapterError ? found.success.cause : rollback;
 }
 
-/** Wrap a Promise Adapter bound to a schema as an {@link EffectAdapter}: the Booking verbs, and `records` for the Plugin tables. */
+/**
+ * Wrap a Promise Adapter bound to a schema as an {@link EffectAdapter}: the Booking verbs, and `records` for the Plugin tables.
+ *
+ * @returns The Effect form of `bound`.
+ */
 export function liftAdapter<S extends AnySchema, Tx>(
   bound: SchemaAdapter<S, Tx, GroupsOf<S>>
 ): EffectAdapter<S, Tx> {

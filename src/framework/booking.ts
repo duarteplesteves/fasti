@@ -37,7 +37,11 @@ export interface ChangeAlso<S extends AnySchema, Tx> {
   readonly now: Temporal.Instant;
 }
 
-/** Truncate to the millisecond, toward the past: the precision every Adapter stores. */
+/**
+ * Truncate to the millisecond, toward the past: the precision every Adapter stores.
+ *
+ * @returns `instant` with its sub-millisecond part dropped.
+ */
 export function floorMs(instant: Temporal.Instant): Temporal.Instant {
   return Temporal.Instant.fromEpochMilliseconds(instant.epochMilliseconds);
 }
@@ -45,7 +49,11 @@ export function floorMs(instant: Temporal.Instant): Temporal.Instant {
 /** A Developer Field's value, `null` when an optional one is unset. */
 export type FieldValue = TypeOf<AnyColumn> | null;
 
-/** One value per declared field, `null` for an optional one left out, Instants ms-floored; keys outside `fields` are dropped. */
+/**
+ * One value per declared field, `null` for an optional one left out, Instants ms-floored; keys outside `fields` are dropped.
+ *
+ * @returns The stored values, keyed by field name.
+ */
 export function fieldValues<F extends Fields>(
   fields: F,
   params: FieldsParam<F>
@@ -73,7 +81,11 @@ export type FieldsPatch<F extends Fields> = [keyof F] extends [never]
       readonly fields?: Partial<FieldsInput<F>>;
     };
 
-/** The fields a patch changes: declared names only, `undefined` dropped, Instants ms-floored. */
+/**
+ * The fields a patch changes: declared names only, `undefined` dropped, Instants ms-floored.
+ *
+ * @returns The changed values, keyed by field name; empty when the patch changes nothing.
+ */
 export function fieldPatch<F extends Fields>(
   fields: F,
   params: FieldsPatch<F>

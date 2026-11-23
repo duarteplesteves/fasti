@@ -64,28 +64,64 @@ export type TypeOf<C> = C extends Column<ColumnKind, infer T> ? T : never;
  * Pass a type argument to adopt a brand: `column.integer<StaffId>()`.
  */
 export const column = {
-  /** A boolean column. */
+  /**
+   * A boolean column.
+   *
+   * @returns A column definition of kind `"boolean"`.
+   */
   boolean: (): Column<"boolean", boolean> => ({ kind: "boolean" }),
-  /** A Temporal.PlainDate column; Plugin tables only. */
+  /**
+   * A Temporal.PlainDate column; Plugin tables only.
+   *
+   * @returns A column definition of kind `"date"`.
+   */
   date: (): Column<"date", Temporal.PlainDate> => ({ kind: "date" }),
-  /** A list of Temporal.PlainDate, in order; Plugin tables only. */
+  /**
+   * A list of Temporal.PlainDate, in order; Plugin tables only.
+   *
+   * @returns A column definition of kind `"dates"`.
+   */
   dates: (): Column<"dates", readonly Temporal.PlainDate[]> => ({
     kind: "dates",
   }),
-  /** A Temporal.Instant column. */
+  /**
+   * A Temporal.Instant column.
+   *
+   * @returns A column definition of kind `"instant"`.
+   */
   instant: (): Column<"instant", Temporal.Instant> => ({ kind: "instant" }),
-  /** An integer column; `T` may be a branded number. */
+  /**
+   * An integer column; `T` may be a branded number.
+   *
+   * @returns A column definition of kind `"integer"`.
+   */
   integer: <T extends number = number>(): Column<"integer", T> => ({
     kind: "integer",
   }),
-  /** A JSON column holding a `T`; Plugin tables only. Object key order isn't kept. */
+  /**
+   * A JSON column holding a `T`; Plugin tables only. Object key order isn't kept.
+   *
+   * @returns A column definition of kind `"json"`.
+   */
   json: <T extends Exclude<Json, null>>(): Column<"json", T> => ({
     kind: "json",
   }),
-  /** A text column; `T` may be a branded string. */
+  /**
+   * A text column; `T` may be a branded string.
+   *
+   * @returns A column definition of kind `"text"`.
+   */
   text: <T extends string = string>(): Column<"text", T> => ({ kind: "text" }),
-  /** A Temporal.PlainTime column; Plugin tables only. */
+  /**
+   * A Temporal.PlainTime column; Plugin tables only.
+   *
+   * @returns A column definition of kind `"time"`.
+   */
   time: (): Column<"time", Temporal.PlainTime> => ({ kind: "time" }),
-  /** A UUID column; `T` may be a branded string. */
+  /**
+   * A UUID column; `T` may be a branded string.
+   *
+   * @returns A column definition of kind `"uuid"`.
+   */
   uuid: <T extends string = string>(): Column<"uuid", T> => ({ kind: "uuid" }),
 };

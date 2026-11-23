@@ -16,7 +16,11 @@ export interface StatusCodec<St extends string> {
   readonly canMove: (from: St, to: St) => boolean;
 }
 
-/** The Status lookup table of a schema. Stored values are distinct, as `defineSchema` checks (I6). */
+/**
+ * The Status lookup table of a schema. Stored values are distinct, as `defineSchema` checks (I6).
+ *
+ * @returns The codec between Statuses and their stored values.
+ */
 export function statusCodec<S extends AnySchema>(
   schema: S
 ): StatusCodec<keyof S["statuses"] & string> {
