@@ -15,7 +15,7 @@ import { uuidV7 } from "../booking-id.js";
 import { fieldPatch, fieldValues, floorMs } from "../booking.js";
 import type { FieldValue, FieldsParam, FieldsPatch } from "../booking.js";
 import type { AdapterError, SlotConflict, Vetoed } from "../errors.js";
-import { retry } from "../lock-by-id.js";
+import { retry, retryChanged } from "../lock-by-id.js";
 import type { Retry } from "../lock-by-id.js";
 import { definePlugin } from "../plugin.js";
 import type {
@@ -227,7 +227,7 @@ function refuseBookings(
 
 /**
  * Run `work` on the Block `id` under its Resource's lock: read unlocked to learn the Resource, then again on the unit.
- * `work` fails with `retry` when compare-and-set reports `changed`, and it all starts over.
+ * `work` fails with `retry` when compare-and-set reports `changed`, and it all starts over, a bounded number of times.
  *
  * @returns An Effect of `work`'s value, written; it fails with `BlockNotFound`, `work`'s failure, `Vetoed` or `AdapterError`.
  */
@@ -268,12 +268,7 @@ function lockBlock<V, C extends object, E>(
         )
   );
 
-  // shortcut: Retry is unbounded, as in lockedById; cap it if outside writers ever churn a row.
-  return Effect.catchIf(
-    once,
-    (error): error is Retry => error === retry,
-    () => lockBlock({ lock, records }, id, work)
-  );
+  return retryChanged(once);
 }
 
 /**

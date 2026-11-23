@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectLocked, EffectReads } from "./effect-adapter.js";
-import type { AdapterError } from "./errors.js";
+import { AdapterError } from "./errors.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { writeUnit } from "./write-unit.js";
 import type {
@@ -20,6 +20,41 @@ export interface Retry {
 
 /** The one `Retry` value: fail with it from `lockedById`'s `work`. */
 export const retry: Retry = { _tag: "Retry" };
+
+/**
+ * Whether a failure is `retry`.
+ *
+ * @returns `true` for `retry`.
+ */
+function isRetry(failure: unknown): failure is Retry {
+  return failure === retry;
+}
+
+/** Attempts at a row that an outside writer keeps moving or changing, the first included. */
+const MAX_ATTEMPTS = 3;
+
+/**
+ * Rerun `once` while it fails with `retry`, up to {@link MAX_ATTEMPTS} times, so a churned row can't keep an Action looping.
+ *
+ * @returns An Effect of `once`'s value; once the attempts run out it fails with `AdapterError`, as an exhausted transient retry does (ADR 008).
+ */
+export function retryChanged<A, E, R>(
+  once: Effect.Effect<A, E | Retry, R>
+): Effect.Effect<A, Exclude<E, Retry> | AdapterError, R> {
+  // Explicit, as `E` is generic here: inference can't pick the refinement overload.
+  return Effect.catchIf<A, E | Retry, R, Retry, never, AdapterError, never>(
+    Effect.retry(once, { times: MAX_ATTEMPTS - 1, while: isRetry }),
+    isRetry,
+    () =>
+      Effect.fail(
+        new AdapterError(
+          new Error(
+            `The row changed under its Resource Lock on each of ${MAX_ATTEMPTS} attempts.`
+          )
+        )
+      )
+  );
+}
 
 /** Params of `lockedById`. */
 export interface LockedByIdParams<
@@ -104,10 +139,5 @@ export function lockedById<
     }
   );
 
-  // shortcut: Retry is unbounded; cap it if outside writers ever churn a row.
-  return Effect.catchIf(
-    once,
-    (error): error is Retry => error === retry,
-    () => lockedById(ctx, params)
-  );
+  return retryChanged(once);
 }
