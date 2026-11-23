@@ -1,4 +1,4 @@
-import type { AnySchema, BookingColumn } from "./define-schema.js";
+import type { AnySchema } from "./define-schema.js";
 import { statusCodec } from "./status-codec.js";
 
 /** A SQL string literal, for DDL, where values can't be parameters. */
@@ -28,10 +28,7 @@ export function noOverlapConstraint(schema: AnySchema): string {
  * It lists the blocking Statuses, so when you add, remove or flip a blocking Status, drop the constraint and re-run these statements in a new migration.
  */
 export function backstopSql(schema: AnySchema): readonly string[] {
-  // SAFETY: defineSchema names every Booking column; AnySchema only widens the keys to string.
-  const columns = schema.names.columns.booking as Readonly<
-    Record<BookingColumn, string>
-  >;
+  const columns = schema.names.columns.booking;
 
   const blocking = statusCodec(schema)
     .blockingStored.map(sqlLiteral)

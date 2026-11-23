@@ -7,7 +7,7 @@ import type {
 
 import { sqlLiteral } from "../schema/backstop-sql.js";
 import type { ColumnKind } from "../schema/column.js";
-import type { AnySchema, BookingColumn } from "../schema/define-schema.js";
+import type { AnySchema } from "../schema/define-schema.js";
 import type { Accepts } from "../schema/references.js";
 import { statusCodec } from "../schema/status-codec.js";
 import { physicalColumns, physicalTable, tablesOf } from "../schema/table.js";
@@ -197,11 +197,7 @@ function bookingModel(
   helpers: ContractHelpers,
   references: TargetFieldRef | undefined
 ) {
-  // SAFETY: defineSchema names every Booking column and Developer Field; a generic S only widens the keys to string.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- see above.
-  const names = schema.names.columns.booking as Readonly<
-    Record<BookingColumn, string> & Partial<Record<string, string>>
-  >;
+  const names = schema.names.columns.booking;
 
   const table = schema.names.tables.booking;
   const stored = statusCodec(schema).allStored.map(sqlLiteral).join(", ");

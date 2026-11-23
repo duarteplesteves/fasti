@@ -192,7 +192,8 @@ export interface Schema<
       // oxlint-disable-next-line typescript/no-generated-empty-object-type -- `{}` without Plugin tables.
     } & Readonly<Record<TableNamesOf<Ps>, string>>;
     readonly columns: {
-      readonly booking: Readonly<Record<BookingColumn | keyof F, string>>;
+      readonly booking: Readonly<Record<BookingColumn, string>> &
+        Readonly<Record<keyof F, string>>;
     } & Readonly<Record<TableNamesOf<Ps>, Readonly<Record<string, string>>>>;
   };
 }
