@@ -10,6 +10,7 @@ import * as effect from "./effect/index.js";
 import * as root from "./index.js";
 import * as memory from "./memory/index.js";
 import * as prisma from "./prisma/index.js";
+import type { NoKeys } from "./schema/define-schema.js";
 import * as testing from "./testing/index.js";
 
 interface PackageJson {
@@ -34,9 +35,6 @@ interface Entry {
   /** Runtime names only, sorted; types are covered by `tsc` and attw. */
   readonly names: readonly string[];
 }
-
-// oxlint-disable-next-line typescript/no-generated-empty-object-type -- no Developer Fields.
-type NoFields = Record<never, never>;
 
 const surface = [
   {
@@ -158,9 +156,9 @@ describe("package export surface", () => {
     expectTypeOf<root.BookAlso<S, "tx">["tx"]>().toEqualTypeOf<"tx">();
     expectTypeOf<root.ChangeAlso<S, "tx">>().toHaveProperty("previous");
     expectTypeOf<root.SetAvailabilityAlso>().toHaveProperty("rules");
-    expectTypeOf<root.CreateBlockAlso<NoFields>>().toHaveProperty("block");
-    expectTypeOf<root.UpdateBlockAlso<NoFields>>().toHaveProperty("previous");
-    expectTypeOf<root.DeleteBlockAlso<NoFields>>().toHaveProperty("previous");
+    expectTypeOf<root.CreateBlockAlso<NoKeys>>().toHaveProperty("block");
+    expectTypeOf<root.UpdateBlockAlso<NoKeys>>().toHaveProperty("previous");
+    expectTypeOf<root.DeleteBlockAlso<NoKeys>>().toHaveProperty("previous");
   });
 
   it("the package's only runtime dependency is effect (ADR 012)", () => {

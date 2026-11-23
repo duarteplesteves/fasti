@@ -16,6 +16,10 @@ export interface FieldDef {
   readonly required: boolean;
 }
 
+/** An object with no keys: the default for "none declared" (no Fields, Statuses, Transitions, renames or tables). */
+// oxlint-disable-next-line typescript/no-generated-empty-object-type -- "none declared" is exactly `{}`.
+export type NoKeys = Record<never, never>;
+
 /** Developer Fields by logical name. */
 export type Fields = Readonly<Record<string, FieldDef>>;
 
@@ -85,13 +89,10 @@ type DistinctStored<N, St extends string> = {
 export interface DefineSchemaParams<
   R extends ResourceIdColumn,
   F extends Fields,
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Statuses" is exactly `{}`.
-  D extends StatusDecls = Record<never, never>,
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Transitions" is exactly `{}`.
-  T = Record<never, never>,
+  D extends StatusDecls = NoKeys,
+  T = NoKeys,
   I extends readonly string[] = readonly ["booked"],
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no renamed Statuses" is exactly `{}`.
-  N = Record<never, never>,
+  N = NoKeys,
   Ps extends readonly Plugin[] = readonly [],
 > {
   /** The Resource id type; defaults to `column.text()`. */
@@ -435,15 +436,11 @@ function resolveLifecycle(
  */
 export function defineSchema<
   R extends ResourceIdColumn = Column<"text", string>,
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no Developer Fields" is exactly `{}`.
-  F extends Fields = Record<never, never>,
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Statuses" is exactly `{}`.
-  const D extends StatusDecls = Record<never, never>,
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no declared Transitions" is exactly `{}`.
-  const T = Record<never, never>,
+  F extends Fields = NoKeys,
+  const D extends StatusDecls = NoKeys,
+  const T = NoKeys,
   const I extends readonly string[] = readonly ["booked"],
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no renamed Statuses" is exactly `{}`.
-  const N = Record<never, never>,
+  const N = NoKeys,
   const Ps extends readonly Plugin[] = readonly [],
 >(
   params: DefineSchemaParams<R, F, D, T, I, N, Ps>

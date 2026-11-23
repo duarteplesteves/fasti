@@ -1,7 +1,7 @@
-import { canonical, isList } from "../adapter/contract.js";
+import { decodeValue, encodeValue } from "../adapter/column-value.js";
 import type { StoredRecord, StoredValue } from "../adapter/contract.js";
 import type { BookingChanges, BookingRecord } from "../adapter/records.js";
-import type { ColumnKind, Json } from "../schema/column.js";
+import type { Json } from "../schema/column.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { StatusCodec } from "../schema/status-codec.js";
 import type { TableDef } from "../schema/table.js";
@@ -87,28 +87,6 @@ export function decodeBooking<S extends AnySchema>(
   return { ...decodeRecord(names, row), status } as BookingRecord<S>;
 }
 
-/** One Plugin record value → its row value: PlainDates and PlainTimes (in lists too) to ISO strings, JSON canonical, Instants as they are. */
-function encodeValue(value: StoredValue): PrismaValue {
-  if (value instanceof Temporal.Instant) {
-    return value;
-  }
-
-  if (
-    value instanceof Temporal.PlainDate ||
-    value instanceof Temporal.PlainTime
-  ) {
-    return value.toString();
-  }
-
-  if (isList(value)) {
-    return value.map((v) =>
-      v instanceof Temporal.PlainDate ? v.toString() : canonical(v)
-    );
-  }
-
-  return canonical(value);
-}
-
 /** Plugin record → row, column by column, logical keys to physical names; works on a partial record (an update's changes) too. */
 export function encodeStored(
   names: ColumnNames,
@@ -120,52 +98,6 @@ export function encodeStored(
       encodeValue(value),
     ])
   );
-}
-
-/** One row value of a column of `kind` → its value; `kind` is `undefined` for fasti's own columns. */
-function decodeValue(
-  kind: ColumnKind | undefined,
-  value: PrismaValue
-): StoredValue {
-  if (value === null || value instanceof Temporal.Instant) {
-    return value;
-  }
-
-  switch (kind) {
-    case "date": {
-      // SAFETY: prismaModels makes a `date` column `date`, read as an ISO string.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
-      return Temporal.PlainDate.from(value as string);
-    }
-
-    case "time": {
-      // SAFETY: prismaModels makes a `time` column `time`, read as an ISO string.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
-      return Temporal.PlainTime.from(value as string);
-    }
-
-    case "dates": {
-      // SAFETY: prismaModels makes a `dates` column `date[]`, read as ISO strings.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- decoding a database row.
-      return (value as readonly string[]).map((d) =>
-        Temporal.PlainDate.from(d)
-      );
-    }
-
-    case "text":
-    case "uuid":
-    case "integer":
-    case "boolean":
-    case "instant":
-    case "json":
-    case undefined: {
-      return value;
-    }
-
-    default: {
-      throw new Error(`Unknown column kind: ${String(kind)}`);
-    }
-  }
 }
 
 /** Row → Plugin record of `table`, column by column, physical names to logical keys. */

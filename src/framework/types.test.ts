@@ -40,7 +40,7 @@ import {
 import { memoryAdapter } from "../memory/index.js";
 import { column } from "../schema/column.js";
 import { defineSchema } from "../schema/define-schema.js";
-import type { AnySchema } from "../schema/define-schema.js";
+import type { AnySchema, NoKeys } from "../schema/define-schema.js";
 import type {
   integerIdSchema,
   textIdSchema,
@@ -206,9 +206,6 @@ type Reason = typeof reasonFields;
 
 type Note = typeof noteFields;
 
-// oxlint-disable-next-line typescript/no-generated-empty-object-type -- no Developer Fields.
-type Bare = Record<never, never>;
-
 const blockSchema = defineSchema({
   plugins: [availability(), blocks({ fields: reasonFields })],
 });
@@ -304,7 +301,7 @@ describe("Blocks types", () => {
   it("makes Block `fields` required, optional or absent as the Developer Fields demand", () => {
     const at = { end: instant, resourceId: "staff-a", start: instant } as const;
 
-    expectTypeOf<App<CreateBlockParams<Bare>>>().not.toHaveProperty("fields");
+    expectTypeOf<App<CreateBlockParams<NoKeys>>>().not.toHaveProperty("fields");
     expectTypeOf(at).toExtend<App<CreateBlockParams<Note>>>();
     expectTypeOf({ ...at, fields: { note: null } }).toExtend<
       App<CreateBlockParams<Note>>
@@ -337,7 +334,7 @@ describe("Blocks types", () => {
     expectTypeOf({ fields: { reason: null }, id }).not.toExtend<
       UpdateBlockParams<Reason>
     >();
-    expectTypeOf<UpdateBlockParams<Bare>>().not.toHaveProperty("fields");
+    expectTypeOf<UpdateBlockParams<NoKeys>>().not.toHaveProperty("fields");
     expectTypeOf<UpdateBlockParams<Reason>>().not.toHaveProperty("resourceId");
   });
 
@@ -345,7 +342,7 @@ describe("Blocks types", () => {
     expectTypeOf(bareBlockSchema).not.toHaveProperty("block");
     expectTypeOf(
       blocks({ fields: {} }).tables.block.columns
-    ).toEqualTypeOf<Bare>();
+    ).toEqualTypeOf<NoKeys>();
     expectTypeOf(
       blocks({ fields: reasonFields }).tables.block.columns
     ).toEqualTypeOf<Reason>();
@@ -855,7 +852,7 @@ describe("Policy types", () => {
 
   it("defaults the Effect-form Scheduler's fourth type parameter to readonly []", () => {
     expectTypeOf(
-      EffectScheduler<unknown, typeof defaultSchema, undefined>()("test/Bare")
+      EffectScheduler<unknown, typeof defaultSchema, undefined>()("test/NoKeys")
         .layer
     )
       .parameter(0)

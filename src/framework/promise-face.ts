@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import type { Context } from "effect";
 
 import type { Result } from "../core/result.js";
-import type { AnySchema } from "../schema/define-schema.js";
+import type { AnySchema, NoKeys } from "../schema/define-schema.js";
 import type {
   BusyRange,
   InstalledBusy,
@@ -490,8 +490,7 @@ export function definePlugin<
   // P and B have no default either: left out, they're their constraints, which PluginPolicies and BusyConflict read as none.
   const P extends readonly PromisePolicy<T>[],
   const B extends PromiseBusy<T> | null,
-  // oxlint-disable-next-line typescript/no-generated-empty-object-type -- "no tables" is exactly `{}`.
-  const T extends Tables = Record<never, never>,
+  const T extends Tables = NoKeys,
 >(def: {
   /** Its Actions appear on `scheduler[name]`; unique per schema, and not a scheduler key (`book`, …). */
   readonly name: N;
