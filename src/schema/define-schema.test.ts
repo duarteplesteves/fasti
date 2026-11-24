@@ -251,8 +251,21 @@ describe("schema types", () => {
           fields: { start: { required: true, type: column.instant() } },
         },
       })
-    ).not.toThrow();
+    ).toThrow(/Booking Developer Field can't be named "start"/u);
   });
+
+  it.each(["id", "resourceId", "start", "end", "status"])(
+    "throws on a type-erased Developer Field named `%s`",
+    (name) => {
+      expect(() =>
+        defineSchema({
+          booking: {
+            fields: { [name]: { required: false, type: column.text() } },
+          },
+        })
+      ).toThrow(`Booking Developer Field can't be named "${name}"`);
+    }
+  );
 
   it("keeps logical names when physical names change", () => {
     const schema = defineSchema({

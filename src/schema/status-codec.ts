@@ -35,7 +35,9 @@ export function statusCodec<S extends AnySchema>(
   const byStored = new Map(entries.map(([status, s]) => [s.stored, status]));
 
   function lookup(status: St) {
-    const s = schema.statuses[status];
+    const s = Object.hasOwn(schema.statuses, status)
+      ? schema.statuses[status]
+      : undefined;
 
     if (s === undefined) {
       throw new Error(`Unknown Status "${status}"`);

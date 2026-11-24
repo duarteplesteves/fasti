@@ -178,7 +178,22 @@ type NamesOf<P> = P extends { readonly name: infer Nm extends string }
 /** The names of Plugin `Pl`'s Policies (a union of Plugins: all of theirs). */
 export type PolicyNamesOf<Pl> = NamesOf<PoliciesOf<Pl>>;
 
-/** `unknown` when `Ps` can be installed together; `never` when a Plugin name repeats or is a scheduler key, a table name repeats or is `booking`, or a Policy name repeats across Plugins. */
+/** The names of the write Actions in `A` whose params (or one member of their union) have an `also`, which is the caller's and never reaches `run`. */
+type AlsoTakers<A> = {
+  [K in keyof A]: A[K] extends {
+    readonly kind: "write";
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- either style's result, not read here.
+    readonly run: (params: infer Pm, tools: never) => unknown;
+  }
+    ? Pm extends { readonly also?: unknown }
+      ? "also" extends keyof Pm
+        ? K
+        : never
+      : never
+    : never;
+}[keyof A];
+
+/** `unknown` when `Ps` can be installed together; `never` when a write Action's params have an `also`, a Plugin name repeats or is a scheduler key, a table name repeats or is `booking`, or a Policy name repeats across Plugins. */
 export type InstallablePlugins<
   Ps extends readonly Plugin[],
   Names extends string = never,
@@ -190,9 +205,11 @@ export type InstallablePlugins<
 ]
   ? [H["name"]] extends [Names | SchedulerKey]
     ? never
-    : [(keyof H["tables"] & Taken) | (PolicyNamesOf<H> & Policies)] extends [
-          never,
-        ]
+    : [
+          | (keyof H["tables"] & Taken)
+          | (PolicyNamesOf<H> & Policies)
+          | AlsoTakers<H["actions"]>,
+        ] extends [never]
       ? InstallablePlugins<
           Rest,
           Names | H["name"],

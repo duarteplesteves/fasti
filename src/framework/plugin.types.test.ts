@@ -1,8 +1,9 @@
-import type { Effect } from "effect";
+import { Effect } from "effect";
 import { describe, expectTypeOf, it } from "vitest";
 
 import type { Adapter } from "../adapter/index.js";
 import type { Result } from "../core/result.js";
+import { definePlugin as defineNativePlugin } from "../effect/index.js";
 import type {
   PluginResourceId,
   RecordReadsOf,
@@ -11,7 +12,13 @@ import type {
   TableDef,
 } from "../effect/index.js";
 import type { HookEvent } from "../framework/hook.js";
-import { column, createScheduler, defineHook, defineSchema } from "../index.js";
+import {
+  column,
+  createScheduler,
+  defineHook,
+  definePlugin,
+  defineSchema,
+} from "../index.js";
 import type {
   AdapterError,
   RecordId,
@@ -48,6 +55,61 @@ interface AppNote {
   readonly id: RecordId<"note">;
   readonly resourceId: StaffId;
   readonly text: string;
+}
+
+/** Params with a name a write Action can't take. */
+interface TakesAlso {
+  readonly resourceId: PluginResourceId;
+  readonly also?: string;
+}
+
+async function run(_params: TakesAlso) {
+  return await Promise.resolve({ ok: true, value: 1 } as const);
+}
+
+async function runUnion(_params: TakesAlso | { readonly a: 1 }) {
+  return await Promise.resolve({ ok: true, value: 1 } as const);
+}
+
+/** Never called: only the types are checked. */
+function alsoParams() {
+  const value = { _tag: "Done", context: {}, value: 1 } as const;
+
+  const native = defineNativePlugin({
+    actions: {
+      go: {
+        kind: "write",
+        run: (_params: TakesAlso) => Effect.succeed({ value }),
+      },
+    },
+    name: "native",
+  });
+
+  const promise = definePlugin({
+    actions: { go: { kind: "write", run } },
+    name: "promise",
+  });
+
+  const union = definePlugin({
+    actions: { go: { kind: "write", run: runUnion } },
+    name: "union",
+  });
+
+  const read = definePlugin({
+    actions: { go: { kind: "read", run } },
+    name: "read",
+  });
+
+  return [
+    // @ts-expect-error -- `also` is the caller's own.
+    defineSchema({ plugins: [native] }),
+    // @ts-expect-error -- as above.
+    defineSchema({ plugins: [promise] }),
+    // @ts-expect-error -- as above, in one member of a union.
+    defineSchema({ plugins: [union] }),
+    // A read has no `also` of its own.
+    defineSchema({ plugins: [read] }),
+  ];
 }
 
 /** Never called: only the types are checked. Each would throw at runtime. */
@@ -258,6 +320,12 @@ describe("record handles", () => {
 
   it("refuses an Adapter without `records` for a schema with Plugin tables", () => {
     expectTypeOf(bind).toBeFunction();
+  });
+});
+
+describe("a Plugin Action's `also` param", () => {
+  it("is refused on a write Action, at defineSchema", () => {
+    expectTypeOf(alsoParams).toBeFunction();
   });
 });
 
