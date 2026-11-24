@@ -1,4 +1,4 @@
-import { Cause, Clock, Effect, pipe } from "effect";
+import { Cause, Clock, Effect, Fiber, pipe } from "effect";
 
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";
@@ -203,6 +203,9 @@ export function writeUnit<S extends AnySchema, Tx, V, C extends object, E, R>(
   );
 
   return unit.pipe(
-    Effect.flatMap(({ afterCommit, value }) => Effect.as(afterCommit, value))
+    Effect.flatMap(({ afterCommit, value }) => Effect.as(afterCommit, value)),
+    // Detached: interrupting the caller stops the wait, not the unit or its after-commit Hooks (ADR 017).
+    Effect.forkDetach,
+    Effect.flatMap(Fiber.join)
   );
 }

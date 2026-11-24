@@ -115,6 +115,26 @@ async function seeded() {
   return { adapter, booking: booked.value, plain };
 }
 
+/** Wrap `inner` so each unit waits for `hold` once it has the lock. */
+function holding(
+  inner: Adapter<undefined, "records">,
+  hold: () => Promise<void>
+): Adapter<undefined, "records"> {
+  return (s) => {
+    const bound = inner(s);
+
+    return {
+      ...bound,
+      withResourceLock: async (resourceId, work) =>
+        await bound.withResourceLock(resourceId, async (locked) => {
+          await hold();
+
+          return await work(locked);
+        }),
+    };
+  };
+}
+
 /** Wrap `inner` so a locked `listBookings` breaks the contract by resolving to a non-array. */
 function listingNonArray(
   inner: Adapter<undefined, "records">
@@ -945,6 +965,79 @@ describe("Effect form Hooks", () => {
     expect(Exit.hasInterrupts(exit)).toBeTruthy();
     expect(second).not.toHaveBeenCalled();
     expect(logs).toStrictEqual([]);
+  });
+
+  it("still run when the caller is interrupted during the unit, which commits", async () => {
+    const { adapter } = await seeded();
+    const locked = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    const ran = Promise.withResolvers<undefined>();
+    const logs: LogEntry[] = [];
+    const second = vi.fn<() => void>();
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: () => {
+          throw new Error("mail server down");
+        },
+        when: "afterCommit",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: () => {
+          second();
+          ran.resolve(undefined);
+        },
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromise(
+      Effect.gen(function* bookInterrupted() {
+        const s = yield* AppScheduler;
+        const fiber = yield* Effect.forkChild(s.book(slot));
+
+        yield* Effect.promise(async () => {
+          await locked.promise;
+        });
+        // Returns while the unit is still held open.
+        yield* Fiber.interrupt(fiber);
+
+        return yield* Fiber.await(fiber);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            AppScheduler.layer({
+              adapter: holding(adapter, async () => {
+                locked.resolve(undefined);
+                await release.promise;
+              }),
+              hooks,
+              schema,
+            }),
+            capturing(logs)
+          )
+        )
+      )
+    );
+
+    expect(Exit.hasInterrupts(exit)).toBeTruthy();
+    expect(second).not.toHaveBeenCalled();
+
+    release.resolve(undefined);
+    await ran.promise;
+
+    expect(second).toHaveBeenCalledOnce();
+    // The first Hook's failure still reaches the caller's Logger.
+    expect(logs).toMatchObject([{ action: "book", logLevel: "Error" }]);
+
+    await expect(
+      adapter(schema).listBookings({
+        overlapping: { from: slot.start, to: slot.end },
+        resourceId: room,
+      })
+    ).resolves.toHaveLength(1);
   });
 
   it("take after-commit Hooks over any Adapter, and in-transaction ones over this Adapter's `tx` only", () => {
