@@ -136,73 +136,79 @@ export function writeUnit<S extends AnySchema, Tx, V, C extends object, E, R>(
   ) => Effect.Effect<Outcome<V, C>, E>,
   also: EffectAlso<C, Tx, R> | undefined
 ): WriteEffect<V, E, R> {
-  const unit = ctx.adapter.withResourceLock(site.resourceId, (locked) =>
-    Effect.gen(function* writeUnitRun() {
-      // Read once, first: the work, `also` and the Hooks see the same `now`.
-      const now = Temporal.Instant.fromEpochMilliseconds(
-        yield* Clock.currentTimeMillis
-      );
+  const unit = ctx.adapter.withResourceLock(
+    site.resourceId,
+    (locked) =>
+      Effect.gen(function* writeUnitRun() {
+        // Read once, first: the work, `also` and the Hooks see the same `now`.
+        const now = Temporal.Instant.fromEpochMilliseconds(
+          yield* Clock.currentTimeMillis
+        );
 
-      const outcome = yield* work(locked, now);
+        const outcome = yield* work(locked, now);
 
-      if (outcome._tag === "NoOp") {
-        return { afterCommit: Effect.void, value: outcome.value };
-      }
+        if (outcome._tag === "NoOp") {
+          return { afterCommit: Effect.void, value: outcome.value };
+        }
 
-      const value =
-        also === undefined
-          ? outcome.value
-          : yield* also({ ...outcome.context, now, tx: locked.tx }).pipe(
-              // A failure fails the unit, so the Adapter rolls fasti's write back.
-              Effect.mapError((reason): Vetoed<unknown> => ({
-                _tag: "Vetoed",
-                reason,
-              })),
-              Effect.map((alsoValue) =>
-                outcome.value === undefined
-                  ? { also: alsoValue }
-                  : { ...outcome.value, also: alsoValue }
-              )
-            );
-
-      const called = calledTarget(site.action, outcome.context);
-      // The Plugins' Hooks come first in ctx.hooks.
-      const applying = ctx.hooks.filter((hook) => hook.applies(called));
-
-      // Each Action's Done context is its `also` context without `tx`/`now`: with these, its HookEvent minus `tx`.
-      const event = { ...outcome.context, action: site.action, now };
-
-      // A throw is a defect: it rolls the unit back, and the Action rejects with it.
-      yield* pipe(
-        applying,
-        Effect.forEach((hook) =>
-          hook.when === "inTransaction" ? hook.run(event, locked) : Effect.void
-        )
-      );
-
-      // Built here, run once the unit has committed: a failure is logged, and the next Hook still runs.
-      const afterCommit = pipe(
-        applying,
-        Effect.forEach((hook) =>
-          hook.when === "afterCommit"
-            ? hook.run(event).pipe(
-                Effect.catchCauseIf(
-                  // An interrupt isn't the Hook failing: let it stop the rest.
-                  (cause) => !Cause.hasInterrupts(cause),
-                  (cause) =>
-                    Effect.logError("fasti: an after-commit Hook failed", cause)
+        const value =
+          also === undefined
+            ? outcome.value
+            : yield* also({ ...outcome.context, now, tx: locked.tx }).pipe(
+                // A failure fails the unit, so the Adapter rolls fasti's write back.
+                Effect.mapError((reason): Vetoed<unknown> => ({
+                  _tag: "Vetoed",
+                  reason,
+                })),
+                Effect.map((alsoValue) =>
+                  outcome.value === undefined
+                    ? { also: alsoValue }
+                    : { ...outcome.value, also: alsoValue }
                 )
-              )
-            : Effect.void
-        ),
-        Effect.annotateLogs({ action: site.action })
-      );
+              );
 
-      return { afterCommit, value };
-    })
+        const called = calledTarget(site.action, outcome.context);
+        // The Plugins' Hooks come first in ctx.hooks.
+        const applying = ctx.hooks.filter((hook) => hook.applies(called));
+
+        // Each Action's Done context is its `also` context without `tx`/`now`: with these, its HookEvent minus `tx`.
+        const event = { ...outcome.context, action: site.action, now };
+
+        // A throw is a defect: it rolls the unit back, and the Action rejects with it.
+        yield* pipe(
+          applying,
+          Effect.forEach((hook) =>
+            hook.when === "inTransaction"
+              ? hook.run(event, locked)
+              : Effect.void
+          )
+        );
+
+        // Built here, run once the unit has committed: a failure is logged, and the next Hook still runs.
+        const afterCommit = pipe(
+          applying,
+          Effect.forEach((hook) =>
+            hook.when === "afterCommit"
+              ? hook.run(event).pipe(
+                  Effect.catchCauseIf(
+                    // An interrupt isn't the Hook failing: let it stop the rest.
+                    (cause) => !Cause.hasInterrupts(cause),
+                    (cause) =>
+                      Effect.logError(
+                        "fasti: an after-commit Hook failed",
+                        cause
+                      )
+                  )
+                )
+              : Effect.void
+          ),
+          Effect.annotateLogs({ action: site.action })
+        );
+
+        return { afterCommit, value };
+      }),
+    ({ afterCommit }) => afterCommit
   );
 
-  return unit.pipe(
-    Effect.flatMap(({ afterCommit, value }) => Effect.as(afterCommit, value))
-  );
+  return Effect.map(unit, ({ value }) => value);
 }

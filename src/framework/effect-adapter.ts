@@ -77,19 +77,26 @@ export interface EffectLocked<S extends AnySchema, Tx> extends EffectReads<S> {
 
 /** An Adapter as Effects: the only place a Promise Adapter becomes Effect. */
 export interface EffectAdapter<S extends AnySchema, Tx> extends EffectReads<S> {
-  /** Run `work` under the Resource Lock, with the caller's services (so its `Clock` too); the unit commits iff `work` succeeds (Invariant 3). */
+  /**
+   * Run `work` under the Resource Lock, with the caller's services (so its `Clock` too), then `afterCommit`; the unit
+   * commits iff `work` succeeds uninterrupted (Invariant 3). An interrupt before the commit rolls back without waiting;
+   * during the commit it waits, then `afterCommit` still runs, uninterrupted.
+   */
   readonly withResourceLock: <A, E, R>(
     resourceId: ResourceIdOf<S>,
-    work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E, R>
+    work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E, R>,
+    afterCommit: (value: A) => Effect.Effect<unknown>
   ) => Effect.Effect<A, E | AdapterError, R>;
 }
 
 /**
- * Run an Adapter verb; any rejection is the Adapter failing.
+ * Run an Adapter verb; `run`'s signal aborts on interrupt, and any rejection is the Adapter failing.
  *
  * @returns An Effect of the verb's value; it fails with `AdapterError` wrapping the rejection.
  */
-function attempt<A>(run: () => Promise<A>): Effect.Effect<A, AdapterError> {
+function attempt<A>(
+  run: (signal: AbortSignal) => Promise<A>
+): Effect.Effect<A, AdapterError> {
   return Effect.tryPromise({
     catch: (cause) => new AdapterError(cause),
     try: run,
@@ -166,20 +173,34 @@ export function liftAdapter<S extends AnySchema, Tx>(
     ...liftReads(raw),
     withResourceLock: <A, E, R>(
       resourceId: ResourceIdOf<S>,
-      work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E, R>
+      work: (locked: EffectLocked<S, Tx>) => Effect.Effect<A, E, R>,
+      afterCommit: (value: A) => Effect.Effect<unknown>
     ) =>
       Effect.flatMap(Effect.context<R>(), (services) =>
-        Effect.flatten(
-          attempt(async (): Promise<Exit.Exit<A, E>> => {
+        Effect.uninterruptibleMask((restore) => {
+          let unit: Promise<Exit.Exit<A, E>> | undefined;
+          // The work has succeeded, so the Adapter may be committing: too late to roll back.
+          let committing = false;
+
+          async function runUnit(
+            signal: AbortSignal
+          ): Promise<Exit.Exit<A, E>> {
             let failure: Exit.Exit<A, E> | undefined;
             let thrown: unknown;
             const rollback = new Error("fasti: the unit of work failed");
 
             try {
               return await raw.withResourceLock(resourceId, async (locked) => {
-                const exit = await Effect.runPromiseExitWith(services)(
-                  work(liftLocked(locked))
-                );
+                committing = false;
+
+                const run = Effect.suspend(() => work(liftLocked(locked)));
+
+                // Never interrupted midway: a cut-short write could go on past the ROLLBACK, outside the transaction.
+                const ran = signal.aborted
+                  ? Exit.interrupt()
+                  : await Effect.runPromiseExitWith(services)(run);
+
+                const exit = signal.aborted ? Exit.interrupt() : ran;
 
                 if (Exit.isFailure(exit)) {
                   failure = exit;
@@ -187,6 +208,8 @@ export function liftAdapter<S extends AnySchema, Tx>(
                   // Rejecting rolls the unit back; the contract rejects with this same reason.
                   throw thrown;
                 }
+
+                committing = true;
 
                 return exit;
               });
@@ -198,8 +221,44 @@ export function liftAdapter<S extends AnySchema, Tx>(
 
               throw error;
             }
-          })
-        )
+          }
+
+          return restore(
+            attempt(async (signal) => {
+              unit = runUnit(signal);
+
+              return await unit;
+            })
+          ).pipe(
+            Effect.catchCauseIf(
+              (cause) => committing && Cause.hasInterrupts(cause),
+              (cause) => {
+                const settling = unit;
+
+                return settling === undefined
+                  ? Effect.failCause(cause)
+                  : attempt(async () => await settling);
+              }
+            ),
+            Effect.flatten,
+            Effect.tap((value) => {
+              let started = false;
+
+              return restore(
+                Effect.suspend(() => {
+                  started = true;
+
+                  return afterCommit(value);
+                })
+              ).pipe(
+                // Interrupted during the commit: the change is saved, so it's still delivered.
+                Effect.onInterrupt(() =>
+                  started ? Effect.void : afterCommit(value)
+                )
+              );
+            })
+          );
+        })
       ),
   };
 }

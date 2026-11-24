@@ -69,8 +69,9 @@ export type SchedulerClass<
  * `layer` binds the Actions to a schema, an Adapter whose transaction handle is `Tx`
  * (the `tx` an `also` gets; name it with {@link TxOf}), and the Policies tuple `P`.
  *
- * Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it
- * finishes, then commits or rolls back on its own outcome.
+ * Interrupting the fiber before its unit of work commits rolls the unit back. The interrupt doesn't
+ * wait for it: work already running isn't cut short, and the unit rolls back, releasing the Resource
+ * Lock, once it ends. During the commit the interrupt waits; if it commits, the after-commit Hooks still run.
  *
  * @returns A function taking the service id, which returns the class to extend.
  *

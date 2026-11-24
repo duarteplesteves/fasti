@@ -168,7 +168,7 @@ await Effect.runPromise(
 
 The third type parameter is your Adapter's transaction handle, the `tx` an `also` gets. The optional fourth is your [Policies](#policies) tuple, `typeof policies` for a `const policies = [...] as const` you pass to `layer`. Leave both out for none. In this form `also` returns an Effect: it may require your own services (they join the Action's requirements), and its `now` comes from Effect's `Clock`, so `TestClock` controls it.
 
-Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it finishes, then commits or rolls back.
+Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber before its unit of work commits rolls the unit back. The interrupt doesn't wait for it: work already running, your `also` included, isn't cut short, and the unit rolls back, releasing the Resource Lock, once it ends. During the commit the interrupt waits; if it commits, the after-commit Hooks still run.
 
 ## Blocks
 

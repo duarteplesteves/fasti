@@ -139,6 +139,44 @@ function listingNonArray(
   };
 }
 
+/** Wrap `inner` so `around` runs each call of `withResourceLock`. */
+function aroundLock(
+  inner: Adapter<undefined, "records">,
+  around: <T>(run: () => Promise<T>) => Promise<T>
+): Adapter<undefined, "records"> {
+  return (s) => {
+    const bound = inner(s);
+
+    return {
+      ...bound,
+      withResourceLock: async (id, work) =>
+        await around(async () => await bound.withResourceLock(id, work)),
+    };
+  };
+}
+
+/** Wrap `inner` so `hold` runs once a unit's work has succeeded, before it commits. */
+function beforeCommit(
+  inner: Adapter<undefined, "records">,
+  hold: () => Promise<void>
+): Adapter<undefined, "records"> {
+  return (s) => {
+    const bound = inner(s);
+
+    return {
+      ...bound,
+      withResourceLock: async (id, work) =>
+        await bound.withResourceLock(id, async (locked) => {
+          const value = await work(locked);
+
+          await hold();
+
+          return value;
+        }),
+    };
+  };
+}
+
 describe("Effect form", () => {
   it("yield* AppScheduler gives a typed SchedulerService from AppScheduler.layer", async () => {
     const exit = await viaEffect(memoryAdapter(), Effect.succeed);
@@ -946,6 +984,163 @@ describe("Effect form Hooks", () => {
     expect(second).not.toHaveBeenCalled();
     expect(logs).toStrictEqual([]);
   });
+
+  it("roll a unit back when the fiber is interrupted inside it, without cutting its work short", async () => {
+    const { adapter } = await seeded();
+    const started = Promise.withResolvers<undefined>();
+    const gate = Promise.withResolvers<undefined>();
+    const finished = vi.fn<() => void>();
+    const committed = vi.fn<() => void>();
+
+    const hooks = [
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: async () => {
+          started.resolve(undefined);
+          await gate.promise;
+          finished();
+        },
+        when: "inTransaction",
+      }),
+      defineHook(schema, adapter, {
+        appliesTo: ["book"],
+        run: committed,
+        when: "afterCommit",
+      }),
+    ];
+
+    const exit = await Effect.runPromise(
+      Effect.gen(function* bookInterrupted() {
+        const s = yield* AppScheduler;
+        const fiber = yield* Effect.forkChild(s.book(slot));
+
+        yield* Effect.promise(async () => {
+          await started.promise;
+        });
+        // Returns with the Hook still running: the caller doesn't wait for a unit that can't commit.
+        yield* Fiber.interrupt(fiber);
+        gate.resolve(undefined);
+
+        return yield* Fiber.await(fiber);
+      }).pipe(Effect.provide(AppScheduler.layer({ adapter, hooks, schema })))
+    );
+
+    expect(Exit.hasInterrupts(exit)).toBeTruthy();
+
+    // The same slot is free: this one queues behind the interrupted unit.
+    const again = await createScheduler({ adapter, schema }).book(slot);
+
+    expect(again.ok).toBeTruthy();
+    expect(finished).toHaveBeenCalledOnce();
+    expect(committed).not.toHaveBeenCalled();
+  });
+
+  it("never run the work of a unit interrupted while it waits for the lock", async () => {
+    const { adapter: inner } = await seeded();
+    const waiting = Promise.withResolvers<undefined>();
+    const gate = Promise.withResolvers<undefined>();
+    const also = vi.fn<() => Effect.Effect<void>>(() => Effect.void);
+    const unit = Promise.withResolvers<undefined>();
+
+    const adapter = aroundLock(inner, async (run) => {
+      waiting.resolve(undefined);
+      await gate.promise;
+
+      try {
+        return await run();
+      } finally {
+        unit.resolve(undefined);
+      }
+    });
+
+    const exit = await viaEffect(adapter, (s) =>
+      Effect.gen(function* interruptWaiting() {
+        const fiber = yield* Effect.forkChild(s.book({ ...slot, also }));
+
+        yield* Effect.promise(async () => {
+          await waiting.promise;
+        });
+        yield* Fiber.interrupt(fiber);
+        gate.resolve(undefined);
+        yield* Effect.promise(async () => {
+          await unit.promise;
+        });
+
+        return yield* Fiber.await(fiber);
+      })
+    );
+
+    assert(Exit.isSuccess(exit));
+    expect(Exit.hasInterrupts(exit.value)).toBeTruthy();
+    expect(also).not.toHaveBeenCalled();
+  });
+
+  it.each(["commits", "fails"] as const)(
+    "wait for a commit the interrupt can't stop: it %s",
+    async (outcome) => {
+      const { adapter: inner } = await seeded();
+      const committing = Promise.withResolvers<undefined>();
+      const gate = Promise.withResolvers<undefined>();
+      const order: string[] = [];
+
+      // COMMIT held open: the unit's work has succeeded and the Adapter hasn't answered yet.
+      const adapter = beforeCommit(inner, async () => {
+        committing.resolve(undefined);
+        await gate.promise;
+
+        if (outcome === "fails") {
+          throw new Error("commit failed");
+        }
+
+        order.push("committed");
+      });
+
+      const hooks = [
+        defineHook(schema, adapter, {
+          appliesTo: ["book"],
+          run: async () => {
+            await Promise.resolve();
+            order.push("first");
+          },
+          when: "afterCommit",
+        }),
+        defineHook(schema, adapter, {
+          appliesTo: ["book"],
+          run: () => {
+            order.push("second");
+          },
+          when: "afterCommit",
+        }),
+      ];
+
+      const exit = await Effect.runPromise(
+        Effect.gen(function* bookInterrupted() {
+          const s = yield* AppScheduler;
+          const fiber = yield* Effect.forkChild(s.book(slot));
+
+          yield* Effect.promise(async () => {
+            await committing.promise;
+          });
+
+          const interrupting = yield* Effect.forkChild(Fiber.interrupt(fiber));
+
+          yield* Effect.yieldNow;
+          gate.resolve(undefined);
+          yield* Fiber.join(interrupting);
+          order.push("interrupted");
+
+          return yield* Fiber.await(fiber);
+        }).pipe(Effect.provide(AppScheduler.layer({ adapter, hooks, schema })))
+      );
+
+      expect(Exit.hasInterrupts(exit)).toBeTruthy();
+      expect(order).toStrictEqual(
+        outcome === "commits"
+          ? ["committed", "first", "second", "interrupted"]
+          : ["interrupted"]
+      );
+    }
+  );
 
   it("take after-commit Hooks over any Adapter, and in-transaction ones over this Adapter's `tx` only", () => {
     interface DbTx {
