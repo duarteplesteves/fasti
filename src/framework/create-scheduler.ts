@@ -70,7 +70,7 @@ type PlainAlso = (
  */
 function effectParams<P>(params: P): P {
   // Plain-JS callers may pass anything as params.
-  if (!Predicate.hasProperty(params, "also")) {
+  if (!Predicate.hasProperty(params, "also") || params.also === undefined) {
     return params;
   }
 
