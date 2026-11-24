@@ -265,11 +265,14 @@ export function checkSearch({
     });
   }
 
-  // A DST day counts as 24 hours: an estimate, off by at most an hour's Grid times a day.
+  // The Grid restarts each midnight, so it has whole Grid times a day, at least one. A DST day counts as 24 hours:
+  // an estimate, off by at most an hour's Grid times a day.
   const gridTimes =
     intervalIssues.length === 0 && rangeIssues.length === 0
       ? Math.ceil(
-          (to.epochMilliseconds - from.epochMilliseconds) / 60_000 / interval
+          ((to.epochMilliseconds - from.epochMilliseconds) *
+            Math.ceil(1440 / interval)) /
+            86_400_000
         )
       : 0;
 
