@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkRule } from "./checks.js";
+import { checkBookings, checkRule } from "./checks.js";
 import type { AvailabilityRule } from "./types.js";
 
 function rulePaths(rule: AvailabilityRule) {
@@ -138,6 +138,75 @@ describe(checkRule, () => {
     expect(rulePaths(withRecurrence({ daysOfWeek: [0, 0] }))).toStrictEqual([
       ["recurrence", "daysOfWeek", 0],
       ["recurrence", "daysOfWeek", 1],
+    ]);
+  });
+});
+
+function booking(start: string, end: string, resourceId = "doc-1") {
+  return {
+    end: Temporal.Instant.from(end),
+    id: "b1",
+    isBlocking: true,
+    resourceId,
+    start: Temporal.Instant.from(start),
+  };
+}
+
+describe(checkBookings, () => {
+  const ten = "2026-05-12T10:00:00Z";
+  const eleven = "2026-05-12T11:00:00Z";
+  const good = booking(ten, eleven);
+
+  it.each([
+    ["a whole-ms range", ten, eleven],
+    ["a range within one ms", ten, "2026-05-12T10:00:00.0000005Z"],
+    ["the whole era", "0001-01-01T00:00:00Z", "9999-12-31T23:59:59.999999999Z"],
+  ])("accepts %s", (_name, start, end) => {
+    expect(checkBookings([good, booking(start, end)], "doc-1")).toStrictEqual(
+      []
+    );
+  });
+
+  it.each([
+    ["reversed", eleven, ten, "end"],
+    ["reversed within one ms", "2026-05-12T10:00:00.0000005Z", ten, "end"],
+    ["zero-length", ten, ten, "end"],
+    ["starting before the era", "0000-12-31T23:59:59.9999995Z", ten, "start"],
+    ["ending at the era's end", ten, "+010000-01-01T00:00:00Z", "end"],
+  ])("reports a Booking %s", (_name, start, end, key) => {
+    expect(
+      checkBookings([good, booking(start, end)], "doc-1").map((i) => i.path)
+    ).toStrictEqual([["bookings", 1, key]]);
+  });
+
+  it("reports every resourceId issue before any range issue", () => {
+    expect(
+      checkBookings(
+        [
+          booking(eleven, ten),
+          good,
+          booking(ten, ten, "doc-2"),
+          booking(ten, eleven, "doc-2"),
+        ],
+        "doc-1"
+      )
+    ).toStrictEqual([
+      {
+        message: `resourceId "doc-2" doesn't match the query's resourceId "doc-1".`,
+        path: ["bookings", 2, "resourceId"],
+      },
+      {
+        message: `resourceId "doc-2" doesn't match the query's resourceId "doc-1".`,
+        path: ["bookings", 3, "resourceId"],
+      },
+      {
+        message: `end (${ten}) must be after start (${eleven}).`,
+        path: ["bookings", 0, "end"],
+      },
+      {
+        message: `end (${ten}) must be after start (${ten}).`,
+        path: ["bookings", 2, "end"],
+      },
     ]);
   });
 });
