@@ -70,7 +70,8 @@ export type SchedulerClass<
  * (the `tx` an `also` gets; name it with {@link TxOf}), and the Policies tuple `P`.
  *
  * Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it
- * finishes, then commits or rolls back on its own outcome.
+ * finishes, then commits or rolls back on its own outcome, and after a commit its
+ * after-commit Hooks run.
  *
  * @returns A function taking the service id, which returns the class to extend.
  *

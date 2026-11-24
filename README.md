@@ -168,7 +168,7 @@ await Effect.runPromise(
 
 The third type parameter is your Adapter's transaction handle, the `tx` an `also` gets. The optional fourth is your [Policies](#policies) tuple, `typeof policies` for a `const policies = [...] as const` you pass to `layer`. Leave both out for none. In this form `also` returns an Effect: it may require your own services (they join the Action's requirements), and its `now` comes from Effect's `Clock`, so `TestClock` controls it.
 
-Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it finishes, then commits or rolls back.
+Expected failures go to the error channel, tagged for `Effect.catchTag`; a bug in fasti dies. Interrupting the fiber doesn't cancel a unit of work already running in the Adapter: it finishes, then commits or rolls back, and after a commit its after-commit [Hooks](#hooks) run.
 
 ## Blocks
 
@@ -360,7 +360,7 @@ const scheduler = createScheduler({ adapter, hooks: [audit, confirm], schema });
 - A failure never changes the result: the write is already saved. It's logged at error level through Effect's logger (the console, or your own `Logger` in the Effect form), annotated with `action`, and the next Hook still runs.
 - Since the Action waits for it, its time adds to the write's latency: a slow email provider slows `book`. In return, on a serverless platform it has finished before you respond, and a test knows when it's done.
 
-> **An after-commit Hook can be lost.** It isn't retried, and if the process dies between the commit and the Hook, the email is never sent, though the Booking is saved. If it must never be lost, insert an outbox row from an in-transaction Hook and send it from a background job.
+> **An after-commit Hook can be lost.** It isn't retried, and if the process dies between the commit and the Hook, the email is never sent, though the Booking is saved. If it must never be lost, insert an outbox row from an in-transaction Hook and send it from a background job. After an interrupt (Effect form), Hooks run in the background, so a serverless platform that freezes the function once it responds can still lose them.
 
 **`appliesTo`.** At least one target, or `"*"`:
 
