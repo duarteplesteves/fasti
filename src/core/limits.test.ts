@@ -153,6 +153,30 @@ describe("the limits on work (ADR 019)", () => {
     });
   });
 
+  it.each([
+    ["1,440 minutes, one a day", 1440, 10_000, 10_001],
+    ["longer than a day, still one a day", 1_000_000_000, 10_000, 10_001],
+    ["721 minutes, two a day", 721, 5000, 5001],
+    ["1,000 minutes, two a day", 1000, 5000, 5001],
+  ])("counts Grid times by the day: %s", (_name, interval, days, over) => {
+    function searchDays(n: number) {
+      return findFreeSlots({
+        bookings: [],
+        duration: 30,
+        from,
+        interval,
+        relax: ["availability"],
+        resourceId: "doc-1",
+        rules: [],
+        timezone: "UTC",
+        to: from.add({ hours: 24 * n }),
+      });
+    }
+
+    expect(unwrap(searchDays(days))).toHaveLength(MAX_GRID_TIMES);
+    expect(issuePaths(searchDays(over))).toStrictEqual([["to"]]);
+  });
+
   it(`takes a duration of ${MAX_DURATION_MINUTES} minutes, and refuses longer or unsafe ones`, () => {
     expect(search(60, MAX_DURATION_MINUTES).ok).toBeTruthy();
     expect(issuePaths(search(60, MAX_DURATION_MINUTES + 1))).toStrictEqual([

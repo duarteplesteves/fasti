@@ -38,3 +38,9 @@ We choose option 3.
 - **Positive:** The limits are public constants, so an app can page with them and check them in its own validation.
 - **Negative:** A caller that searched a year at a time on a fine Grid must now page. That's a behaviour change in a patch release, which we accept because the old behaviour could take tens of seconds.
 - **Negative:** A deployment that really needs more than 100 rules per Resource, or more than 1,000 exceptions per rule, has no setting to raise. If one shows up, we revisit this ADR.
+
+## Amendment (2026-11-24): Grid times are counted by the day
+
+A search's Grid-time count is its span in days times the Grid times in a day (1,440 ÷ `interval`, rounded up), because the Grid restarts at each local midnight. A DST day still counts as 24 hours. Dividing the span by `interval` let a large `interval` past the limit: every day has at least one Grid time, however large the `interval`.
+
+For an `interval` that divides a day, the count is unchanged. One that doesn't reaches the limit slightly sooner.
