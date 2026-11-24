@@ -66,3 +66,7 @@ Checkpoint 9b (`0.7`) ships Plugins as decided above. It settles the five open q
 ## Note (2026-11-23): busy-time writes stay unchecked by fasti
 
 A security review (deepsec finding `d77c31ce75`) flagged that a Plugin can write busy time over a blocking Booking, because fasti doesn't check busy-time writes. We reviewed it and accept the risk, keeping the decision above: the reverse check is the Plugin's job, done with `conflicts()` inside `lock`, and Plugins are trusted code, like an Adapter. Checking every busy write in fasti would need fasti to see Plugin writes as busy time, which a computed busy source can't offer.
+
+## Amendment (2026-11-24): fasti's tables are indexed by Resource and start
+
+Every Adapter's tables now declare an index on the Resource id and `start` (`<table>_resource_start_idx`), or on the Resource id alone for an untimed Plugin table (`<table>_resource_idx`), named from the physical table so switching ORM needs no migration. Without it, reads of one Resource's rows scan the whole table, some while holding the Resource Lock. This ships in a minor after `0.7`, so the promise that `0.6` to `0.7` needs no migration holds. The parity tests now allow this one difference from `0.6`. fasti works without the indexes, only slower.

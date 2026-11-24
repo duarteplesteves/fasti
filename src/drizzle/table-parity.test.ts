@@ -41,7 +41,12 @@ const sqliteStaff = sqliteTable("test_staff", {
   id: sqliteInteger().primaryKey(),
 });
 
-describe("availability() and blocks() need no migration from 0.6 (I8)", () => {
+/** A snapshot without its indexes, the one difference from 0.6. */
+function exceptIndexes<T extends { readonly indexes: number }>(snapshot: T) {
+  return { ...snapshot, indexes: 0 };
+}
+
+describe("availability() and blocks() match 0.6 apart from indexes (I8)", () => {
   it("Postgres: recordTables matches 0.6's tables, names, types, nullability, keys, defaults and foreign keys", () => {
     const renamed = pgRecordTables(renamedParitySchema, {
       references: () => pgStaff.id,
@@ -51,12 +56,12 @@ describe("availability() and blocks() need no migration from 0.6 (I8)", () => {
 
     expect({
       defaults: {
-        availabilityRule: pgSnapshot(defaults.availabilityRule),
-        block: pgSnapshot(defaults.block),
+        availabilityRule: exceptIndexes(pgSnapshot(defaults.availabilityRule)),
+        block: exceptIndexes(pgSnapshot(defaults.block)),
       },
       renamed: {
-        availabilityRule: pgSnapshot(renamed.availabilityRule),
-        block: pgSnapshot(renamed.block),
+        availabilityRule: exceptIndexes(pgSnapshot(renamed.availabilityRule)),
+        block: exceptIndexes(pgSnapshot(renamed.block)),
       },
     }).toStrictEqual(v06.pg);
   });
@@ -70,12 +75,16 @@ describe("availability() and blocks() need no migration from 0.6 (I8)", () => {
 
     expect({
       defaults: {
-        availabilityRule: sqliteSnapshot(defaults.availabilityRule),
-        block: sqliteSnapshot(defaults.block),
+        availabilityRule: exceptIndexes(
+          sqliteSnapshot(defaults.availabilityRule)
+        ),
+        block: exceptIndexes(sqliteSnapshot(defaults.block)),
       },
       renamed: {
-        availabilityRule: sqliteSnapshot(renamed.availabilityRule),
-        block: sqliteSnapshot(renamed.block),
+        availabilityRule: exceptIndexes(
+          sqliteSnapshot(renamed.availabilityRule)
+        ),
+        block: exceptIndexes(sqliteSnapshot(renamed.block)),
       },
     }).toStrictEqual(v06.sqlite);
   });
