@@ -76,7 +76,14 @@ export function occupants<S extends AnySchema, Tx>(
       const kindOf = new Map<Booking, Kind>([
         ...bookings
           .filter((b) => b.id !== exclude)
-          .map((b) => [toCoreBooking(codec, b), "booking"] as const),
+          .map(
+            (b) =>
+              [
+                // The Resource asked for: a uuid comes back in the database's own spelling.
+                { ...toCoreBooking(codec, b), resourceId: String(resourceId) },
+                "booking",
+              ] as const
+          ),
         ...busyLists.flat().map(
           ({ kind, range: { end, id, start } }) =>
             [

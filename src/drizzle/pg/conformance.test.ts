@@ -325,6 +325,53 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
     });
   });
 
+  it("a uuid Resource id in another spelling names the same Resource", async () => {
+    await database.db.execute(
+      sql`truncate ${tables.uuidBooking}, ${tables.uuidRule}, ${tables.uuidBlock}`
+    );
+
+    const scheduler = createScheduler({
+      adapter: drizzleAdapter(database.db),
+      schema: uuidIdSchema,
+    });
+
+    const [room] = uuidIdResources;
+    const shouted = room.toUpperCase();
+    const slot = { end: at(10), start: at(9) };
+    const relax = ["availability"] as const;
+
+    unwrap(await scheduler.book({ ...slot, relax, resourceId: room }));
+
+    const again = await scheduler.book({ ...slot, relax, resourceId: shouted });
+
+    assert(!again.ok, "expected a conflict");
+    expect(again.error).toMatchObject({ _tag: "SlotConflict" });
+
+    const block = await scheduler.blocks.create({
+      ...slot,
+      resourceId: shouted,
+    });
+
+    assert(!block.ok, "expected a conflict");
+    expect(block.error).toMatchObject({ _tag: "SlotConflict" });
+
+    const slots = unwrap(
+      await scheduler.findSlots({
+        duration: 60,
+        from: at(9),
+        interval: 60,
+        relax,
+        resourceId: shouted,
+        timezone: "UTC",
+        to: at(11),
+      })
+    );
+
+    expect(slots.map((s) => s.start.toInstant().toString())).toStrictEqual([
+      at(10).toString(),
+    ]);
+  });
+
   describe("transient errors (ADR 008)", () => {
     const [roomA, roomB] = uuidIdResources;
     const start = Temporal.Instant.from("2030-06-03T09:00:00Z");
