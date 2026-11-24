@@ -167,6 +167,16 @@ describe("also on book", () => {
     );
   });
 
+  it("treats `also: undefined` as no `also`, as the Effect form does", async () => {
+    const { scheduler } = await setup();
+
+    // A variable gets past the excess-property check, so this type-checks.
+    const params = { also: undefined, end, resourceId: room, start };
+    const booked = await scheduler.book(params);
+
+    expect(unwrap(booked)).not.toHaveProperty("also");
+  });
+
   it("rolls the Booking back on a veto and returns Vetoed with the reason", async () => {
     const { reads, scheduler } = await setup();
     const ids: BookingId[] = [];
