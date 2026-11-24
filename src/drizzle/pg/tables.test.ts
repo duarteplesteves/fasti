@@ -48,6 +48,42 @@ describe("bookingTable references (type tests: the @ts-expect-error lines are th
   });
 });
 
+describe("indexes by Resource and start", () => {
+  it("names each index after its physical table, and adds start only when timed", () => {
+    const schema = defineSchema({
+      names: {
+        columns: { booking: { resourceId: "room_id", start: "starts_at" } },
+        tables: { booking: "appointments" },
+      },
+      plugins: [
+        definePlugin({
+          actions: {},
+          name: "shifts",
+          tables: {
+            shift: { columns: {}, timed: true },
+            tag: { columns: {}, timed: false },
+          },
+        }),
+      ],
+    });
+
+    const { shift, tag } = recordTables(schema);
+
+    expect(
+      [bookingTable(schema), shift, tag].map((table) =>
+        getTableConfig(table).indexes.map(({ config }) => [
+          config.name,
+          config.columns.map((c) => ("name" in c ? c.name : undefined)),
+        ])
+      )
+    ).toStrictEqual([
+      [["appointments_resource_start_idx", ["room_id", "starts_at"]]],
+      [["shift_resource_start_idx", ["resourceId", "start"]]],
+      [["tag_resource_idx", ["resourceId"]]],
+    ]);
+  });
+});
+
 describe(recordTables, () => {
   const plugin = definePlugin({
     actions: {},

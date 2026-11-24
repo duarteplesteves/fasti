@@ -649,7 +649,7 @@ lock(params.resourceId, ({ conflicts, records }) =>
 
 ### Migrating from `0.6`
 
-The tables don't change, so there is no database migration: `availability()` and `blocks()` build the same tables, columns and foreign keys as `0.6`. The code changes:
+`availability()` and `blocks()` build the same tables, columns and foreign keys as `0.6`, so no database migration is required. Versions after `0.7` add [indexes](#drizzle-on-postgres), which your migration tool generates; fasti works without them, only slower. The code changes:
 
 - **Opening hours are a Plugin.** Add `plugins: [availability()]` to keep `scheduler.availability`, the `availability` Policy and `relax: ["availability"]`. Without it, everything outside Bookings and busy time is bookable.
 - **`block: { fields }` becomes `blocks({ fields })`** in `plugins`. `scheduler.blocks`, `kind: "block"` and the `blocks.*` Hook targets stay.
@@ -841,6 +841,8 @@ const adapter = drizzleAdapter(db);
 
 **Isolation.** Units of work, `also` and in-transaction Hooks included, run at `READ COMMITTED` whatever your database's default isolation level, because the Resource Lock needs it.
 
+**The index.** The builders declare an index on the Resource id and `start` (`<table>_resource_start_idx`), or on the Resource id alone for an untimed Plugin table (`<table>_resource_idx`), so fasti's reads don't scan the whole table. After upgrading, generate a migration. On a large live table, change the generated statement to `create index concurrently` and run it outside a transaction: a plain one blocks writes until it finishes.
+
 **The backstop.** `backstopSql(schema)` returns the statements for an `EXCLUDE` constraint so no two blocking Bookings overlap on one Resource, even when a write skips fasti's lock. Drizzle can't express `EXCLUDE`, so add it as a custom migration after the one that creates the tables:
 
 ```bash
@@ -871,6 +873,7 @@ const db = drizzle({ client: createClient({ url: "file:app.db" }) });
 const adapter = drizzleAdapter(db);
 ```
 
+- **The index.** The builders declare the same [indexes as on Postgres](#drizzle-on-postgres): generate a migration after upgrading.
 - **The lock is the whole database.** Units on one `db` run one after another, each inside `BEGIN IMMEDIATE`, so writes to different Resources take turns. Waiting never blocks the event loop.
 - **One writer process per file.** Another process writing to the same file makes units fail with `SQLITE_BUSY` instead of waiting. Cross-process writes wait on a libsql fix ([#142](https://github.com/duarteplesteves/fasti/issues/142)).
 - **File databases only.** `:memory:` and embedded replicas get a single connection, so a read during a unit of work fails. Turso isn't tested.
@@ -910,6 +913,8 @@ const adapter = prismaAdapter(db);
 
 It takes the same advisory lock as the Drizzle Postgres Adapter, so units through either Adapter on one Resource exclude each other. Its units run at `READ COMMITTED` too, for the [same reason](#drizzle-on-postgres). A unit that fails with a serialization failure or deadlock reruns whole, `also` included, up to 3 attempts. `tx` is Prisma's own transaction.
 
+**The index.** The models declare the same indexes, under the same names, as on [Drizzle](#drizzle-on-postgres): plan a migration after upgrading.
+
 **The backstop.** Prisma can't express `EXCLUDE` either: create a raw SQL migration with `prisma migration new` and paste the statements from `backstopSql(schema)`. The same rules as on [Drizzle](#drizzle-on-postgres) apply when you rename or change blocking Statuses.
 
 ### Writing a custom Adapter
@@ -943,6 +948,8 @@ export const myAdapter = defineAdapter<MyTx, "records">((schema) => ({
 ```
 
 The `"records"` group stores every Plugin's tables, present and future, so you write it once. A schema whose Plugins declare tables (`availability()`, `blocks()`, …) needs it, and the types enforce it; a schema with none doesn't. `schema.tables` lists each table's physical name, whether it's `timed` (fasti-owned `start` and `end`), and its columns with their kinds: `text`, `uuid`, `integer`, `boolean`, `instant`, `date` (`Temporal.PlainDate`), `time` (`Temporal.PlainTime`), `json` and `dates` (a list of `PlainDate`). Compare `json` values by content, not by key order.
+
+Index each table on its Resource id and `start` (the Resource id alone when untimed), as fasti's own tables are: most reads ask for one Resource's rows in a range, some while holding the Resource Lock.
 
 Expected outcomes (`conflict`, `changed`, `missing`) are returned as values; anything else rejects with an `Error`, carrying your driver's error as `cause` when the driver failed. Records use logical names (`start`, `"booked"`); map them to your columns and stored values inside the Adapter.
 

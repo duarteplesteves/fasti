@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -159,13 +160,14 @@ export function bookingTable<
   const table = schema.names.tables.booking;
 
   return pgTable(table, columns, (self) => [
+    index(`${table}_resource_start_idx`).on(self.resourceId, self.start),
     // DDL takes no bind parameters, so the stored values go in as escaped literals.
     check(`${table}_status_check`, sql`${self.status} in (${sql.raw(stored)})`),
   ]);
 }
 
 /**
- * One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns.
+ * One Plugin table, with your physical names: `id` (fasti mints it; the database default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. Indexed by Resource, and `start` when timed.
  *
  * @returns The Drizzle table.
  */
@@ -178,18 +180,28 @@ function pluginTable<S extends AnySchema, C extends AnyPgColumn>(
   const names = physicalColumns(schema, name);
   const id = uuid(names("id")).primaryKey();
 
-  return pgTable(physicalTable(schema, name), {
-    id: idDefault ? id.defaultRandom() : id,
-    resourceId: resourceIdColumn(schema, names("resourceId"), options),
-    ...(timed && {
-      start: pgColumn({ kind: "instant" }, names("start")).notNull(),
-      end: pgColumn({ kind: "instant" }, names("end")).notNull(),
-    }),
-    ...fieldColumns(
-      columns,
-      Object.fromEntries(Object.keys(columns).map((c) => [c, names(c)]))
-    ),
-  });
+  const table = physicalTable(schema, name);
+
+  return pgTable(
+    table,
+    {
+      id: idDefault ? id.defaultRandom() : id,
+      resourceId: resourceIdColumn(schema, names("resourceId"), options),
+      ...(timed && {
+        start: pgColumn({ kind: "instant" }, names("start")).notNull(),
+        end: pgColumn({ kind: "instant" }, names("end")).notNull(),
+      }),
+      ...fieldColumns(
+        columns,
+        Object.fromEntries(Object.keys(columns).map((c) => [c, names(c)]))
+      ),
+    },
+    (self) => [
+      self.start === undefined
+        ? index(`${table}_resource_idx`).on(self.resourceId)
+        : index(`${table}_resource_start_idx`).on(self.resourceId, self.start),
+    ]
+  );
 }
 
 /**

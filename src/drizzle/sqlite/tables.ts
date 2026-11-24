@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "drizzle-orm";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
-import { check, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+} from "drizzle-orm/sqlite-core";
 
 import type { ResourceIdOf } from "../../adapter/records.js";
 import { sqlLiteral } from "../../schema/backstop-sql.js";
@@ -132,13 +138,14 @@ export function bookingTable<
   const table = schema.names.tables.booking;
 
   return sqliteTable(table, columns, (self) => [
+    index(`${table}_resource_start_idx`).on(self.resourceId, self.start),
     // DDL takes no bind parameters, so the stored values go in as escaped literals.
     check(`${table}_status_check`, sql`${self.status} in (${sql.raw(stored)})`),
   ]);
 }
 
 /**
- * One Plugin table, with your physical names: `id` (fasti mints it; the default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns.
+ * One Plugin table, with your physical names: `id` (fasti mints it; the default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. Indexed by Resource, and `start` when timed.
  *
  * @returns The Drizzle table.
  */
@@ -151,18 +158,34 @@ function pluginTable<S extends AnySchema, C extends AnySQLiteColumn>(
   const names = physicalColumns(schema, name);
   const id = text(names("id")).primaryKey();
 
-  return sqliteTable(physicalTable(schema, name), {
-    id: idDefault ? id.$defaultFn(() => randomUUID()) : id,
-    resourceId: resourceIdColumn(schema, names("resourceId"), options),
-    ...(timed && {
-      start: sqliteColumn({ kind: "instant" }, names("start")).notNull(),
-      end: sqliteColumn({ kind: "instant" }, names("end")).notNull(),
-    }),
-    ...fieldColumns(
-      columns,
-      Object.fromEntries(Object.keys(columns).map((c) => [c, names(c)]))
-    ),
-  });
+  const table = physicalTable(schema, name);
+
+  return sqliteTable(
+    table,
+    {
+      id: idDefault ? id.$defaultFn(() => randomUUID()) : id,
+      resourceId: resourceIdColumn(schema, names("resourceId"), options),
+      ...(timed && {
+        start: sqliteColumn({ kind: "instant" }, names("start")).notNull(),
+        end: sqliteColumn({ kind: "instant" }, names("end")).notNull(),
+      }),
+      ...fieldColumns(
+        columns,
+        Object.fromEntries(Object.keys(columns).map((c) => [c, names(c)]))
+      ),
+    },
+    (self) => {
+      // SAFETY: a timed table's `start` is the SQLite column built above; an untimed table has none.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the spread above widens the column's own types.
+      const start = self.start as AnySQLiteColumn | undefined;
+
+      return [
+        start === undefined
+          ? index(`${table}_resource_idx`).on(self.resourceId)
+          : index(`${table}_resource_start_idx`).on(self.resourceId, start),
+      ];
+    }
+  );
 }
 
 /**

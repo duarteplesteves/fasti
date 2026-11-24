@@ -94,14 +94,17 @@ function tableModel(
   { model }: ContractHelpers,
   table: string,
   fields: Readonly<
-    Record<string, ScalarFieldBuilder> & { resourceId: ScalarFieldBuilder }
+    Record<string, ScalarFieldBuilder> & {
+      resourceId: ScalarFieldBuilder;
+      start?: ScalarFieldBuilder;
+    }
   >,
   checks: readonly ReturnType<typeof check>[],
   references: TargetFieldRef | undefined
 ) {
   return model(table, { fields }).sql(({ cols, constraints }) => ({
     checks: [...checks],
-    // No backing index, as on Drizzle Postgres: the tables stay the same when you switch ORM.
+    // The foreign key adds no index: the table's own one starts with the Resource id.
     foreignKeys:
       references === undefined
         ? []
@@ -111,6 +114,13 @@ function tableModel(
               onDelete: "restrict",
             }),
           ],
+    indexes: [
+      cols.start === undefined
+        ? constraints.index([cols.resourceId], { map: `${table}_resource_idx` })
+        : constraints.index([cols.resourceId, cols.start], {
+            map: `${table}_resource_start_idx`,
+          }),
+    ],
     table,
   }));
 }

@@ -208,8 +208,8 @@ function foreignKeysOf(schema: AnySchema, kind: "Int" | "Uuid") {
   );
 }
 
-/** The foreign key from `column` to `dev_resource.id`, and no backing index. */
-function fk(column: string) {
+/** The foreign key from `column` to `dev_resource.id`, and the table's own index on `column` then `rest`. */
+function fk(column: string, index: string, ...rest: readonly string[]) {
   return {
     foreignKeys: [
       {
@@ -218,20 +218,28 @@ function fk(column: string) {
         target: { columns: ["id"], tableName: "dev_resource" },
       },
     ],
-    indexes: [],
+    indexes: [{ columns: [column, ...rest], name: index }],
   };
 }
 
 describe("prismaModels references", () => {
-  it("adds a foreign key on the Resource id column of every table, ON DELETE RESTRICT, with no backing index", () => {
+  it("adds a foreign key on the Resource id column of every table, ON DELETE RESTRICT, with no index of its own", () => {
     expect(foreignKeysOf(uuidIdSchema, "Uuid")).toMatchObject({
-      u_closures: fk("u_off_room_id"),
-      u_hours: fk("u_staff_id"),
-      u_reservations: fk("u_room_id"),
+      u_closures: fk(
+        "u_off_room_id",
+        "u_closures_resource_start_idx",
+        "u_off_starts_at"
+      ),
+      u_hours: fk("u_staff_id", "u_hours_resource_idx"),
+      u_reservations: fk(
+        "u_room_id",
+        "u_reservations_resource_start_idx",
+        "u_starts_at"
+      ),
     });
     expect(foreignKeysOf(integerIdSchema, "Int")).toMatchObject({
-      i_hours: fk("i_staff_id"),
-      i_visits: fk("i_staff_id"),
+      i_hours: fk("i_staff_id", "i_hours_resource_idx"),
+      i_visits: fk("i_staff_id", "i_visits_resource_start_idx", "i_starts_at"),
     });
   });
 
