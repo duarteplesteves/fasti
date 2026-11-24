@@ -838,6 +838,8 @@ export const { availabilityRule } = recordTables(schema, { references: () => sta
 const adapter = drizzleAdapter(db);
 ```
 
+**Isolation.** Units of work, `also` and in-transaction Hooks included, run at `READ COMMITTED` whatever your database's default isolation level, because the Resource Lock needs it.
+
 **The backstop.** `backstopSql(schema)` returns the statements for an `EXCLUDE` constraint so no two blocking Bookings overlap on one Resource, even when a write skips fasti's lock. Drizzle can't express `EXCLUDE`, so add it as a custom migration after the one that creates the tables:
 
 ```bash
@@ -905,13 +907,13 @@ const db = postgres({ contract, url: process.env.DATABASE_URL });
 const adapter = prismaAdapter(db);
 ```
 
-It takes the same advisory lock as the Drizzle Postgres Adapter, so units through either Adapter on one Resource exclude each other. A unit that fails with a serialization failure or deadlock reruns whole, `also` included, up to 3 attempts. `tx` is Prisma's own transaction.
+It takes the same advisory lock as the Drizzle Postgres Adapter, so units through either Adapter on one Resource exclude each other. Its units run at `READ COMMITTED` too, for the [same reason](#drizzle-on-postgres). A unit that fails with a serialization failure or deadlock reruns whole, `also` included, up to 3 attempts. `tx` is Prisma's own transaction.
 
 **The backstop.** Prisma can't express `EXCLUDE` either: create a raw SQL migration with `prisma migration new` and paste the statements from `backstopSql(schema)`. The same rules as on [Drizzle](#drizzle-on-postgres) apply when you rename or change blocking Statuses.
 
 ### Writing a custom Adapter
 
-If your tables differ from fasti's by more than names, write your own Adapter against the contract in `@fastijs/scheduler/adapter` ([ADR 008](./docs/adr/008-adapter-contract.md)). It is a few `async` verbs over whole records, plus `withResourceLock`, which runs a unit of work in one transaction that excludes every other locked unit on the same Resource. Writes exist only on the handle passed into that unit of work. A sketch, with the bodies left out:
+If your tables differ from fasti's by more than names, write your own Adapter against the contract in `@fastijs/scheduler/adapter` ([ADR 008](./docs/adr/008-adapter-contract.md)). It is a few `async` verbs over whole records, plus `withResourceLock`, which runs a unit of work in one transaction that excludes every other locked unit on the same Resource. Reads inside it must see everything committed before the lock was granted, so on Postgres run it at `READ COMMITTED`. Writes exist only on the handle passed into that unit of work. A sketch, with the bodies left out:
 
 ```typescript
 import { defineAdapter } from "@fastijs/scheduler/adapter";

@@ -304,97 +304,101 @@ export function createDrizzleAdapter<DB extends AnyPgDatabase>(
       const singleAttempt: SchemaAdapter<S, TxOf<DB>, "records"> = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
-          await db.transaction(async (tx) => {
-            if (lock) {
-              // The Resource Lock (I2): held until COMMIT or ROLLBACK, so the transaction ending releases it.
-              await query("withResourceLock", async () => {
-                // A uuid hashes in Postgres's spelling: `A0EE…` and `a0ee…` are one Resource, so one lock.
-                const key = uuidIds
-                  ? sql`(${String(lockedId)}::uuid)::text`
-                  : sql`${String(lockedId)}::text`;
+          await db.transaction(
+            async (tx) => {
+              if (lock) {
+                // The Resource Lock (I2): held until COMMIT or ROLLBACK, so the transaction ending releases it.
+                await query("withResourceLock", async () => {
+                  // A uuid hashes in Postgres's spelling: `A0EE…` and `a0ee…` are one Resource, so one lock.
+                  const key = uuidIds
+                    ? sql`(${String(lockedId)}::uuid)::text`
+                    : sql`${String(lockedId)}::text`;
 
-                await tx.execute(
-                  sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${key}))`
-                );
-              });
-            }
+                  await tx.execute(
+                    sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${key}))`
+                  );
+                });
+              }
 
-            /**
-             * Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable.
-             *
-             * @returns A promise of the write's value, or `"conflict"` when the backstop refused it.
-             */
-            async function backstopped<T>(
-              verb: string,
-              write: (sp: typeof tx) => Promise<T>
-            ): Promise<T | "conflict"> {
-              return await query(verb, async () => {
-                try {
-                  return await tx.transaction(async (sp) => await write(sp));
-                } catch (error) {
-                  // The backstop (I8) refusing an overlap: Postgres's exclusion_violation on fasti's constraint.
-                  if (
-                    error instanceof DrizzleQueryError &&
-                    error.cause !== undefined &&
-                    "code" in error.cause &&
-                    error.cause.code === "23P01" &&
-                    "constraint" in error.cause &&
-                    error.cause.constraint === noOverlap
-                  ) {
-                    return "conflict";
+              /**
+               * Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable.
+               *
+               * @returns A promise of the write's value, or `"conflict"` when the backstop refused it.
+               */
+              async function backstopped<T>(
+                verb: string,
+                write: (sp: typeof tx) => Promise<T>
+              ): Promise<T | "conflict"> {
+                return await query(verb, async () => {
+                  try {
+                    return await tx.transaction(async (sp) => await write(sp));
+                  } catch (error) {
+                    // The backstop (I8) refusing an overlap: Postgres's exclusion_violation on fasti's constraint.
+                    if (
+                      error instanceof DrizzleQueryError &&
+                      error.cause !== undefined &&
+                      "code" in error.cause &&
+                      error.cause.code === "23P01" &&
+                      "constraint" in error.cause &&
+                      error.cause.constraint === noOverlap
+                    ) {
+                      return "conflict";
+                    }
+
+                    throw error;
+                  }
+                });
+              }
+
+              return await work({
+                ...reads(tx),
+                ...recordWrites<S>(tx, pluginTable),
+                insertBooking: async (booking) => {
+                  // SAFETY: encodeBooking writes one value per column of bookingTable(schema).
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row is built from the schema at runtime.
+                  const row = encodeBooking(
+                    codec,
+                    booking
+                  ) as typeof table.$inferInsert;
+
+                  const inserted = await backstopped(
+                    "insertBooking",
+                    async (sp) => {
+                      await sp.insert(table).values(row);
+                    }
+                  );
+
+                  return inserted === "conflict"
+                    ? { ok: false, reason: "conflict" }
+                    : { ok: true };
+                },
+                // SAFETY: `tx` is what DB's own transaction callback receives, which TxOf<DB> names.
+                tx: tx as TxOf<DB>,
+                updateBooking: async ({ changes, expected }) => {
+                  const updated = await backstopped(
+                    "updateBooking",
+                    async (sp) =>
+                      await compareAndSet(
+                        sp,
+                        bookings,
+                        encodeBooking(codec, expected),
+                        encodeBooking(codec, changes)
+                      )
+                  );
+
+                  if (updated === "conflict") {
+                    return { ok: false, reason: "conflict" };
                   }
 
-                  throw error;
-                }
+                  return updated
+                    ? { ok: true }
+                    : { ok: false, reason: "changed" };
+                },
               });
-            }
-
-            return await work({
-              ...reads(tx),
-              ...recordWrites<S>(tx, pluginTable),
-              insertBooking: async (booking) => {
-                // SAFETY: encodeBooking writes one value per column of bookingTable(schema).
-                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row is built from the schema at runtime.
-                const row = encodeBooking(
-                  codec,
-                  booking
-                ) as typeof table.$inferInsert;
-
-                const inserted = await backstopped(
-                  "insertBooking",
-                  async (sp) => {
-                    await sp.insert(table).values(row);
-                  }
-                );
-
-                return inserted === "conflict"
-                  ? { ok: false, reason: "conflict" }
-                  : { ok: true };
-              },
-              // SAFETY: `tx` is what DB's own transaction callback receives, which TxOf<DB> names.
-              tx: tx as TxOf<DB>,
-              updateBooking: async ({ changes, expected }) => {
-                const updated = await backstopped(
-                  "updateBooking",
-                  async (sp) =>
-                    await compareAndSet(
-                      sp,
-                      bookings,
-                      encodeBooking(codec, expected),
-                      encodeBooking(codec, changes)
-                    )
-                );
-
-                if (updated === "conflict") {
-                  return { ok: false, reason: "conflict" };
-                }
-
-                return updated
-                  ? { ok: true }
-                  : { ok: false, reason: "changed" };
-              },
-            });
-          }),
+            },
+            // The lock statement must not fix the snapshot: at REPEATABLE READ the reads after it would miss what the last holder committed.
+            { isolationLevel: "read committed" }
+          ),
       };
 
       return {

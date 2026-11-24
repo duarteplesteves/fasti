@@ -75,3 +75,9 @@ From `0.7`, Plugin data goes through one verb group, `"records"`, keyed by the t
 - **Conformance:** a `records` case group covers each verb on `conformancePlugin`'s timed and untimed tables, every column kind, sort order, compare-and-set, a rejected unit leaving no writes, and concurrent locked writes serialising. The Blocks and rule cases stay, now run through the Plugins.
 
 This removes the cost in the Consequences above: a new entity no longer widens the contract.
+
+## Amendment (2026-11-24): Postgres units run at READ COMMITTED
+
+- **Why.** The advisory lock is only correct at `READ COMMITTED`. At `REPEATABLE READ`, Postgres takes the transaction's snapshot at its first statement, the lock statement, before it waits. Once the lock is granted, the reads still miss the Booking or Block the previous holder committed, so a Resource can be double-booked.
+- **What.** Both Postgres Adapters set the level on every unit of work, whatever the database's or role's default is. There is no option to choose another. Any new Postgres Adapter must set it too.
+- **The cost.** An app defaulting to `SERIALIZABLE` gets `READ COMMITTED` inside units, `also` and in-transaction Hooks included.

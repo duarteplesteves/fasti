@@ -464,116 +464,122 @@ export function createPrismaAdapter<DB extends AnyPostgresClient>(
       const singleAttempt: SchemaAdapter<S, PrismaTxOf<DB>, "records"> = {
         ...reads(db),
         withResourceLock: async (lockedId, work) =>
-          await db.transaction(async (tx: Queryable) => {
-            if (lock) {
-              // The Resource Lock (I2, I-lock-pg): the unit's first statement, held until COMMIT or ROLLBACK.
-              await query("withResourceLock", async () => {
-                // A uuid hashes in Postgres's spelling: `A0EE…` and `a0ee…` are one Resource, so one lock.
-                await tx.execute(
-                  (uuidIds
-                    ? tx.raw
-                        .sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext((${String(lockedId)}::uuid)::text))`
-                    : tx.raw
-                        .sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${String(lockedId)}::text))`
-                  )
-                    .affectedCount()
-                    .build()
-                );
-              });
-            }
-
-            /**
-             * Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable.
-             *
-             * @returns A promise of the write's value, or `"conflict"` when the backstop refused it.
-             */
-            async function backstopped<T>(
-              verb: string,
-              write: () => Promise<T>
-            ): Promise<T | "conflict"> {
-              return await query(verb, async () => {
-                // Prisma's `tx` has no nested transaction, so the savepoint is raw.
-                await tx.execute(
-                  tx.raw.sql`savepoint fasti_backstop`.affectedCount().build()
-                );
-
-                try {
-                  const result = await write();
-
+          await db.transaction(
+            async (tx: Queryable) => {
+              if (lock) {
+                // The Resource Lock (I2, I-lock-pg): the unit's first statement, held until COMMIT or ROLLBACK.
+                await query("withResourceLock", async () => {
+                  // A uuid hashes in Postgres's spelling: `A0EE…` and `a0ee…` are one Resource, so one lock.
                   await tx.execute(
-                    tx.raw.sql`release savepoint fasti_backstop`
+                    (uuidIds
+                      ? tx.raw
+                          .sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext((${String(lockedId)}::uuid)::text))`
+                      : tx.raw
+                          .sql`select pg_advisory_xact_lock(${LOCK_NAMESPACE}::int4, hashtext(${String(lockedId)}::text))`
+                    )
                       .affectedCount()
                       .build()
                   );
+                });
+              }
 
-                  return result;
-                } catch (error) {
-                  // The backstop (I8) refusing an overlap: exclusion_violation on fasti's constraint, which Prisma's SqlQueryError names.
-                  if (
-                    error instanceof Object &&
-                    "sqlState" in error &&
-                    error.sqlState === "23P01" &&
-                    "constraint" in error &&
-                    error.constraint === noOverlap
-                  ) {
+              /**
+               * Run a write in a savepoint, so a backstop overlap undoes only the write and `tx` stays usable.
+               *
+               * @returns A promise of the write's value, or `"conflict"` when the backstop refused it.
+               */
+              async function backstopped<T>(
+                verb: string,
+                write: () => Promise<T>
+              ): Promise<T | "conflict"> {
+                return await query(verb, async () => {
+                  // Prisma's `tx` has no nested transaction, so the savepoint is raw.
+                  await tx.execute(
+                    tx.raw.sql`savepoint fasti_backstop`.affectedCount().build()
+                  );
+
+                  try {
+                    const result = await write();
+
                     await tx.execute(
-                      tx.raw.sql`rollback to savepoint fasti_backstop`
+                      tx.raw.sql`release savepoint fasti_backstop`
                         .affectedCount()
                         .build()
                     );
 
-                    return "conflict";
+                    return result;
+                  } catch (error) {
+                    // The backstop (I8) refusing an overlap: exclusion_violation on fasti's constraint, which Prisma's SqlQueryError names.
+                    if (
+                      error instanceof Object &&
+                      "sqlState" in error &&
+                      error.sqlState === "23P01" &&
+                      "constraint" in error &&
+                      error.constraint === noOverlap
+                    ) {
+                      await tx.execute(
+                        tx.raw.sql`rollback to savepoint fasti_backstop`
+                          .affectedCount()
+                          .build()
+                      );
+
+                      return "conflict";
+                    }
+
+                    throw error;
+                  }
+                });
+              }
+
+              return await work({
+                ...reads(tx),
+                ...recordWrites<S>(tx, pluginTable),
+                insertBooking: async (booking) => {
+                  const inserted = await backstopped(
+                    "insertBooking",
+                    async () => {
+                      await tx.execute(
+                        tableOf(tx, bookings.name)
+                          .insert([
+                            encodeBooking(codec, bookings.names, booking),
+                          ])
+                          .build()
+                      );
+                    }
+                  );
+
+                  return inserted === "conflict"
+                    ? { ok: false, reason: "conflict" }
+                    : { ok: true };
+                },
+                // SAFETY: `tx` is what DB's own transaction callback receives, which PrismaTxOf<DB> names.
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve PrismaTxOf<DB> for a generic DB.
+                tx: tx as PrismaTxOf<DB>,
+                updateBooking: async ({ changes, expected }) => {
+                  const updated = await backstopped(
+                    "updateBooking",
+                    async () =>
+                      await compareAndSet(
+                        tx,
+                        bookings,
+                        encodeBooking(codec, bookings.names, expected),
+                        encodeBooking(codec, bookings.names, changes)
+                      )
+                  );
+
+                  if (updated === "conflict") {
+                    return { ok: false, reason: "conflict" };
                   }
 
-                  throw error;
-                }
+                  return updated
+                    ? { ok: true }
+                    : { ok: false, reason: "changed" };
+                },
               });
-            }
-
-            return await work({
-              ...reads(tx),
-              ...recordWrites<S>(tx, pluginTable),
-              insertBooking: async (booking) => {
-                const inserted = await backstopped(
-                  "insertBooking",
-                  async () => {
-                    await tx.execute(
-                      tableOf(tx, bookings.name)
-                        .insert([encodeBooking(codec, bookings.names, booking)])
-                        .build()
-                    );
-                  }
-                );
-
-                return inserted === "conflict"
-                  ? { ok: false, reason: "conflict" }
-                  : { ok: true };
-              },
-              // SAFETY: `tx` is what DB's own transaction callback receives, which PrismaTxOf<DB> names.
-              // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TS can't resolve PrismaTxOf<DB> for a generic DB.
-              tx: tx as PrismaTxOf<DB>,
-              updateBooking: async ({ changes, expected }) => {
-                const updated = await backstopped(
-                  "updateBooking",
-                  async () =>
-                    await compareAndSet(
-                      tx,
-                      bookings,
-                      encodeBooking(codec, bookings.names, expected),
-                      encodeBooking(codec, bookings.names, changes)
-                    )
-                );
-
-                if (updated === "conflict") {
-                  return { ok: false, reason: "conflict" };
-                }
-
-                return updated
-                  ? { ok: true }
-                  : { ok: false, reason: "changed" };
-              },
-            });
-          }),
+            },
+            // The lock statement must not fix the snapshot: at REPEATABLE READ the reads after it would miss what the last holder committed.
+            { isolationLevel: "ReadCommitted" }
+          ),
       };
 
       return {

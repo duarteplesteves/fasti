@@ -262,6 +262,44 @@ describe.skipIf(url === undefined)("drizzleAdapter on Postgres", () => {
     recordsResources
   );
 
+  describe("on a database whose default isolation is repeatable read", () => {
+    let strict: TestDatabase;
+
+    beforeAll(async () => {
+      const strictUrl = new URL(url ?? "");
+
+      strictUrl.searchParams.set(
+        "options",
+        "-c default_transaction_isolation=repeatable\\ read"
+      );
+      strict = await testDatabase(strictUrl.toString(), tables);
+    });
+
+    afterAll(async () => {
+      await strict?.drop();
+    });
+
+    it.each(concurrencyCases.filter((c) => runsOn(c, textIdSchema)))(
+      "$name",
+      async (c) => {
+        await expect(
+          runCase(c, {
+            // No backstop: it would mask a lock that doesn't hold.
+            groups: { backstop: false, retry: null, tx: null },
+            makeAdapter: () => drizzleAdapter(strict.db),
+            reset: async () => {
+              await strict.db.execute(
+                sql`truncate ${tables.textBooking}, ${tables.textRule}, ${tables.textBlock}`
+              );
+            },
+            resources: textIdResources,
+            schema: textIdSchema,
+          })
+        ).resolves.toBeUndefined();
+      }
+    );
+  });
+
   it("a Block whose Resource id breaks the foreign key gives AdapterError with the driver's cause", async () => {
     const scheduler = createScheduler({
       policies: [],
