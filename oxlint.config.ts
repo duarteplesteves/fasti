@@ -97,7 +97,7 @@ export default defineConfig({
     // The in-memory Adapter implements an async contract with synchronous work.
     { files: ["src/memory/**"], rules: { "require-await": "off" } },
     {
-      files: ["**/*.test.ts", "src/test-utils/**"],
+      files: ["**/*.{test,bench}.ts", "src/test-utils/**"],
       rules: {
         "jsdoc-js/require-jsdoc": "off",
         "no-restricted-imports": "off",
@@ -107,7 +107,7 @@ export default defineConfig({
     // A test awaits in a loop to run steps in order: each repetition its own race, a migration before the constraint
     // that needs it, a case that sees the writes before it. Independent work is written with Promise.all.
     {
-      files: ["**/*.test.ts", "src/testing/cases/**"],
+      files: ["**/*.{test,bench}.ts", "src/testing/cases/**"],
       rules: { "no-await-in-loop": "off" },
     },
     // The rule can't see that `test.prop(arbitraries)(name, fn)` is a test, so it flags every `expect` inside one.

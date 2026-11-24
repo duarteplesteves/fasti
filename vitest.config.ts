@@ -20,6 +20,24 @@ export default defineConfig({
         },
       },
       { extends: true, test: { include: [conformance], name: "conformance" } },
+      {
+        extends: true,
+        // Time the built package, loaded by the runtime itself: through Vitest's module runner every call into another module pays for an export getter.
+        resolve: {
+          alias: [
+            {
+              find: /^\.\.\/src\/(?!test-utils\/)/u,
+              replacement: `${import.meta.dirname}/dist/`,
+            },
+          ],
+        },
+        test: {
+          benchmark: { include: ["bench/**/*.bench.ts"] },
+          include: [],
+          name: "bench",
+          server: { deps: { external: [/\/dist\//u] } },
+        },
+      },
     ],
     testTimeout: process.env.CI === undefined ? 60_000 : 120_000,
   },
