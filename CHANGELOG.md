@@ -1,5 +1,17 @@
 # @fastijs/scheduler
 
+## 0.7.3
+
+### Patch Changes
+
+- 8ff2059: In the plain form, `also: undefined` is now the same as leaving `also` out. Before, it rolled the write back and rejected with "also is not a function".
+- 160b51c: On a spring-forward day, an availability rule's window with an edge in the missing hour is now clipped to the times that exist, and one wholly inside it opens nothing. Before, the edge moved forward, so people could be booked outside the rule's hours, and `expandRules` could return a window ending before it starts.
+- 353392d: A search's 10,000-Grid-time limit now counts Grid times by the day: the span in days times the Grid times in a day, rounded up, because the Grid restarts at each midnight. An `interval` that divides a day is counted as before; one that doesn't reaches the limit slightly sooner.
+- 74ff6b9: After-commit Hooks now run when the caller is interrupted, in the Effect form. The unit of work already finished and committed, but its Hooks were lost. The caller still returns at once: the unit and its Hooks finish in the background.
+- 6d8cf4f: The Drizzle and Prisma Postgres Adapters now run every unit of work at `READ COMMITTED`, whatever the database's default isolation level. On a database or role defaulting to `REPEATABLE READ`, concurrent writes could double-book a Resource. If you default to `SERIALIZABLE`, units of work now run at `READ COMMITTED`, your `also` writes and in-transaction Hooks included.
+- b3e9814: `defineSchema` now throws on a Booking Developer Field named after a Booking column (`id`, `resourceId`, `start`, `end`, `status`), which was only a type error: plain JavaScript could declare one, and its `fields` patch could then move a Booking past the Resource Lock and the overlap check. A Plugin write Action with an `also` param is now a type error, since fasti takes `also` for itself. A Status named after an inherited property (`toString`, `constructor`) is now refused as unknown instead of reading as not blocking.
+- af2d71d: On Postgres, a `uuid` Resource id passed in another spelling (`A0EE…` for a stored `a0ee…`) no longer makes `book`, `blocks.create` and `findSlots` return `AdapterError` once the Resource has a Booking in the range.
+
 ## 0.7.2
 
 ### Patch Changes
