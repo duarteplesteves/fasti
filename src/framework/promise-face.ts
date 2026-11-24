@@ -137,7 +137,7 @@ export interface ReadDef<T extends Tables, Pm, V, E> {
 export interface WriteDef<T extends Tables, Pm, V, C, E> {
   readonly kind: "write";
   /**
-   * The Action, given the caller's params; `records` reads outside any unit. Resolve with what `lock` resolves with.
+   * The Action, given the caller's params, which can't include `also` (reserved); `records` reads outside any unit. Resolve with what `lock` resolves with.
    * `signal` aborts when the caller interrupts the call: a unit then rolls back, but code between `lock` calls runs on.
    */
   readonly run: (

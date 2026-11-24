@@ -113,7 +113,7 @@ export interface DefineSchemaParams<
     readonly initial?: I &
       NoInfer<readonly [StatusesOf<D>, ...StatusesOf<D>[]]>;
   };
-  /** The Plugins, from `definePlugin`; their Actions appear on `scheduler.<name>`. Two with one name, one named after a scheduler key (`book`, …), or two tables with one name (or one named `booking`) is a type error. */
+  /** The Plugins, from `definePlugin`; their Actions appear on `scheduler.<name>`. Two with one name, one named after a scheduler key (`book`, …), two tables with one name (or one named `booking`), or a write Action with an `also` param (reserved) is a type error. */
   readonly plugins?: Ps & InstallablePlugins<Ps>;
   /** Physical names; each defaults to its logical name, and names of one kind must be distinct. A Plugin table is named by its logical name. */
   readonly names?: {
@@ -315,7 +315,7 @@ function assertStatus(
   }
 }
 
-/** Throw on a Developer Field named after a key write Actions reserve on their value. */
+/** Throw on a Developer Field named after a column fasti owns, or a key write Actions reserve on their value. */
 function assertNotReserved(
   kind: string,
   fields: Fields,
@@ -441,7 +441,7 @@ function resolveLifecycle(
  * @typeParam Ps - The installed Plugins.
  * @returns The resolved schema, to pass to `createScheduler` and the Adapters.
  * @throws When a base Status is redeclared, `transitions` or `initial` names an unknown Status, `initial` is empty,
- * a Developer Field is named `also` (or a Booking one `waived`), Plugins or their tables clash by name, two Statuses share a stored value (I6), or two columns of one table, or two tables, share a physical name.
+ * a Developer Field is named `also` (or a Booking one `waived` or after a Booking column), Plugins or their tables clash by name, two Statuses share a stored value (I6), or two columns of one table, or two tables, share a physical name.
  */
 export function defineSchema<
   R extends ResourceIdColumn = Column<"text", string>,
@@ -476,7 +476,7 @@ export function defineSchema<
 
   checkPlugins(plugins);
 
-  assertNotReserved("Booking", fields, ["also", "waived"]);
+  assertNotReserved("Booking", fields, [...BOOKING_COLUMNS, "also", "waived"]);
 
   // SAFETY: resolveLifecycle has an entry for every St, adds booked → cancelled, and checks that transitions and initial name only St.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the Status names are only known at runtime.

@@ -21,6 +21,16 @@ describe(statusCodec, () => {
     expect(() => codec.isBlocking("held")).toThrow(/Unknown Status "held"/u);
   });
 
+  it.each(["toString", "constructor", "__proto__"])(
+    "rejects the inherited name `%s` as a Status",
+    (name) => {
+      // @ts-expect-error not a Status of this schema
+      expect(() => codec.isBlocking(name)).toThrow(`Unknown Status "${name}"`);
+      // @ts-expect-error as above
+      expect(() => codec.toStored(name)).toThrow(`Unknown Status "${name}"`);
+    }
+  );
+
   it("knows which Statuses block", () => {
     expect(codec.isBlocking("booked")).toBeTruthy();
     expect(codec.isBlocking("cancelled")).toBeFalsy();

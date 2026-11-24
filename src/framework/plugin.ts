@@ -155,7 +155,7 @@ export interface NativeRead<T extends Tables, Pm, V, E> {
 /** A Plugin Action that writes: through `lock`, which runs the caller's `also`. */
 export interface NativeWrite<T extends Tables, Pm, V, C, E> {
   readonly kind: "write";
-  /** The Action, given the caller's params; `records` reads outside any unit. Resolve with what `lock` resolves with. */
+  /** The Action, given the caller's params, which can't include `also` (reserved); `records` reads outside any unit. Resolve with what `lock` resolves with. */
   readonly run: (
     params: Pm,
     tools: { readonly records: RecordReadsOf<T>; readonly lock: Lock<T> }

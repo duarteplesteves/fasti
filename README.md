@@ -309,7 +309,7 @@ const result = await scheduler.book({
 - `also` runs under the Resource Lock, so a slow `also` delays every other write to that Resource. Don't call an Action from inside it: that's unsupported, and on the same Resource it deadlocks.
 - What each Action passes, besides `tx` and `now`: `book` gets `booking`; `reschedule`, `cancel` and `transition` get `booking` and `previous`; `availability.set` gets `resourceId`, `rules` and `previous`; `blocks.create` gets `block`; `blocks.update` gets `block` and `previous`; `blocks.delete` gets `previous`. Any other Plugin write Action gets the `context` its `lock` returned.
 - `also` runs only when something changed. A repeat `cancel` writes nothing, skips `also`, and its value (`alreadyCancelled: true`) has no `also` key. A `blocks.update` that changes nothing still runs it, with `block === previous`.
-- `also` is a reserved name: a Booking or Block Developer Field can't be called `also`.
+- `also` is a reserved name: a Booking or Block Developer Field, or a Plugin write Action's param, can't be called `also`.
 - A Plugin's own write Actions get `also` the same way, whether the Plugin was written in Effect or with plain async functions.
 
 ## Hooks
