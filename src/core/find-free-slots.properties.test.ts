@@ -3,6 +3,7 @@ import { array, constantFrom, integer, record } from "fast-check";
 import { describe, expect } from "vitest";
 
 import {
+  arbAroundClockChange,
   arbAvailabilityRule,
   arbBooking,
   arbBookingIn,
@@ -183,6 +184,48 @@ const arbNearGridCase = record({
     to: midnight.add({ days: 1 }).toInstant(),
   };
 });
+
+/** The Grid by definition (ADR 005, ADR 014), one Temporal conversion per Grid time: the reference for the Grid `findFreeSlots` computes as numbers. */
+function referenceGrid({
+  from,
+  interval,
+  timezone,
+  to,
+}: {
+  from: Temporal.Instant;
+  interval: number;
+  timezone: string;
+  to: Temporal.Instant;
+}): Temporal.ZonedDateTime[] {
+  const starts: Temporal.ZonedDateTime[] = [];
+  const lastDate = to.toZonedDateTimeISO(timezone).toPlainDate();
+
+  for (
+    let date = from.toZonedDateTimeISO(timezone).toPlainDate();
+    Temporal.PlainDate.compare(date, lastDate) <= 0;
+    date = date.add({ days: 1 })
+  ) {
+    for (let minutes = 0; minutes < 24 * 60; minutes += interval) {
+      const local = date.toPlainDateTime().add({ minutes });
+
+      const start = local.toZonedDateTime(timezone, {
+        disambiguation: "earlier",
+      });
+
+      const instant = start.toInstant();
+
+      if (
+        start.toPlainDateTime().equals(local) &&
+        Temporal.Instant.compare(instant, from) >= 0 &&
+        Temporal.Instant.compare(instant, to) < 0
+      ) {
+        starts.push(start);
+      }
+    }
+  }
+
+  return starts;
+}
 
 /** Asserts that a search returns exactly the Grid slots `isSlotValid` accepts. */
 function expectAgreesWithIsSlotValid(
@@ -373,6 +416,27 @@ describe(`${findFreeSlots.name} (property)`, () => {
         ]).toStrictEqual([0, 0, 0, 0]);
         expect((start.hour * 60 + start.minute) % grid.interval).toBe(0);
       }
+    }
+  );
+
+  test.prop([arbAroundClockChange(), arbInterval()], propConfig)(
+    "around a clock change, the Grid is the reference Grid",
+    (range, interval) => {
+      const slots = unwrap(
+        findFreeSlots({
+          ...range,
+          bookings: [],
+          duration: 30,
+          interval,
+          relax: ["availability"],
+          resourceId: "r1",
+          rules: [],
+        })
+      );
+
+      expect(slots.map((s) => s.start.toString())).toStrictEqual(
+        referenceGrid({ ...range, interval }).map((start) => start.toString())
+      );
     }
   );
 

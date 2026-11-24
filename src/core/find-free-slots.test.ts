@@ -945,3 +945,116 @@ describe("findFreeSlots with times finer than a millisecond", () => {
     }
   );
 });
+
+/** The 30-minute Grid, each time as its local date, time and offset. */
+function gridIn(timezone: string, from: string, to: string) {
+  return unwrap(
+    findFreeSlots({
+      bookings: [],
+      duration: 30,
+      from: Temporal.Instant.from(from),
+      interval: 30,
+      relax: ["availability"],
+      resourceId: "doc-1",
+      rules: [],
+      timezone,
+      to: Temporal.Instant.from(to),
+    })
+  ).map((s) =>
+    s.start.toString({ smallestUnit: "minute", timeZoneName: "never" })
+  );
+}
+
+describe("findFreeSlots' Grid", () => {
+  // Lisbon was on UTC+1 on both dates; epoch milliseconds are negative before 1970.
+  describe.each(["2026-05-12", "1969-05-12"])("on %s", (date) => {
+    it("leaves out the Grid time just before from", () => {
+      expect(
+        gridIn(
+          "Europe/Lisbon",
+          `${date}T08:00:00.000000001Z`,
+          `${date}T09:00:00Z`
+        )
+      ).toStrictEqual([`${date}T09:30+01:00`]);
+    });
+
+    it("keeps the Grid time just before to", () => {
+      expect(
+        gridIn(
+          "Europe/Lisbon",
+          `${date}T08:00:00Z`,
+          `${date}T09:00:00.000000001Z`
+        )
+      ).toStrictEqual([
+        `${date}T09:00+01:00`,
+        `${date}T09:30+01:00`,
+        `${date}T10:00+01:00`,
+      ]);
+    });
+  });
+
+  it("skips a gap at midnight", () => {
+    // Cairo: 00:00 → 01:00.
+    expect(
+      gridIn("Africa/Cairo", "2026-04-23T21:00:00Z", "2026-04-23T23:30:00Z")
+    ).toStrictEqual([
+      "2026-04-23T23:00+02:00",
+      "2026-04-23T23:30+02:00",
+      "2026-04-24T01:00+03:00",
+      "2026-04-24T01:30+03:00",
+      "2026-04-24T02:00+03:00",
+    ]);
+  });
+
+  it("uses the first occurrence when the clocks go back to midnight", () => {
+    // Azores: 01:00 → 00:00.
+    expect(
+      gridIn("Atlantic/Azores", "2026-10-24T23:00:00Z", "2026-10-25T03:00:00Z")
+    ).toStrictEqual([
+      "2026-10-24T23:00+00:00",
+      "2026-10-24T23:30+00:00",
+      "2026-10-25T00:00+00:00",
+      "2026-10-25T00:30+00:00",
+      "2026-10-25T01:00-01:00",
+      "2026-10-25T01:30-01:00",
+    ]);
+  });
+
+  it("uses the first occurrence when the clocks go back half an hour", () => {
+    // Lord Howe: 02:00 → 01:30.
+    expect(
+      gridIn(
+        "Australia/Lord_Howe",
+        "2026-04-04T13:30:00Z",
+        "2026-04-04T17:30:00Z"
+      )
+    ).toStrictEqual([
+      "2026-04-05T00:30+11:00",
+      "2026-04-05T01:00+11:00",
+      "2026-04-05T01:30+11:00",
+      "2026-04-05T02:00+10:30",
+      "2026-04-05T02:30+10:30",
+      "2026-04-05T03:00+10:30",
+      "2026-04-05T03:30+10:30",
+    ]);
+  });
+
+  it("has no Grid times on a date the timezone skipped", () => {
+    // Apia skipped 2011-12-30.
+    expect(
+      gridIn("Pacific/Apia", "2011-12-30T09:00:00Z", "2011-12-30T11:00:00Z")
+    ).toStrictEqual([
+      "2011-12-29T23:00-10:00",
+      "2011-12-29T23:30-10:00",
+      "2011-12-31T00:00+14:00",
+      "2011-12-31T00:30+14:00",
+    ]);
+  });
+
+  it.each([
+    ["America/New_York", "0001-01-01T00:00:00Z", "0001-01-01T01:00:00Z"],
+    ["Pacific/Kiritimati", "9999-12-31T22:00:00Z", "9999-12-31T23:00:00Z"],
+  ])("reaches ADR 019's limits in %s", (timezone, from, to) => {
+    expect(gridIn(timezone, from, to)).toHaveLength(2);
+  });
+});

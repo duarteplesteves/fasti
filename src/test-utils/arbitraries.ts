@@ -46,6 +46,19 @@ export function arbTimezone(): Arbitrary<string> {
   return constantFrom(...timezones);
 }
 
+/** Zones whose clocks change at or across midnight, by half an hour, or often. */
+const awkwardTimezones = [
+  "Africa/Cairo",
+  "Africa/Casablanca",
+  "America/Havana",
+  "America/Santiago",
+  "Asia/Beirut",
+  "Asia/Gaza",
+  "Atlantic/Azores",
+  "Australia/Lord_Howe",
+  "Pacific/Apia",
+] as const;
+
 function arbPlainTime(): Arbitrary<Temporal.PlainTime> {
   return record({
     hour: integer({ max: 23, min: 0 }),
@@ -340,6 +353,69 @@ export function arbDateRange(): Arbitrary<{
       to: _from.add({ milliseconds: _to }),
     }));
   });
+}
+
+/** Every clock change `timezone` made from 1900 to 2045. */
+function clockChanges(timezone: string): Temporal.Instant[] {
+  const changes: Temporal.Instant[] = [];
+
+  let change = Temporal.Instant.from("1900-01-01T00:00:00Z")
+    .toZonedDateTimeISO(timezone)
+    .getTimeZoneTransition("next");
+
+  while (change !== null && change.year <= 2045) {
+    changes.push(change.toInstant());
+    change = change.getTimeZoneTransition("next");
+  }
+
+  return changes;
+}
+
+const changesByTimezone = new Map<string, readonly Temporal.Instant[]>();
+
+/** `clockChanges`, walked once per timezone. */
+function clockChangesOf(timezone: string): readonly Temporal.Instant[] {
+  const changes = changesByTimezone.get(timezone) ?? clockChanges(timezone);
+  changesByTimezone.set(timezone, changes);
+
+  return changes;
+}
+
+/** A timezone and a range of up to 40 hours either side of one of its clock changes, finer than a millisecond one draw in two. */
+export function arbAroundClockChange(): Arbitrary<{
+  from: Temporal.Instant;
+  timezone: string;
+  to: Temporal.Instant;
+}> {
+  const arbOffset = record({
+    minutes: integer({ max: 40 * 60, min: 0 }),
+    nanoseconds: oneof(constant(0), integer({ max: 999_999, min: 1 })),
+  });
+
+  const arbClockChange = oneof(
+    constantFrom(...awkwardTimezones),
+    arbTimezone()
+  ).chain((timezone) =>
+    constantFrom(...clockChangesOf(timezone)).map((change) => ({
+      change,
+      timezone,
+    }))
+  );
+
+  return record({
+    after: arbOffset,
+    before: arbOffset,
+    clockChange: arbClockChange,
+  })
+    .map(({ after, before, clockChange: { change, timezone } }) => ({
+      // The nanoseconds go past the minute, where rounding the wrong way would show.
+      from: change
+        .subtract({ minutes: before.minutes })
+        .add({ nanoseconds: before.nanoseconds }),
+      timezone,
+      to: change.add(after),
+    }))
+    .filter(({ from, to }) => Temporal.Instant.compare(from, to) < 0);
 }
 
 // Arbitraries for any params, valid or not; most draws are valid or nearly so,
