@@ -178,7 +178,6 @@ Deferred past `1.0`, in no order.
 - **Cross-day availability windows.** Workaround: two rules.
 - **DST fall-back double-occurrence opt-in** ([ADR 005](./docs/adr/005-dst-policy.md)).
 - **Continuous slots**: free intervals instead of a grid.
-- **Performance benchmarks.**
 - **First-party integration plugins** (email, SMS, payments, calendar sync).
 - **Waitlists**, as a Plugin whose after-commit Hook on `cancel` notifies the first in line.
 - **Date overrides**: one date's hours changed, adding or removing time, as part of AvailabilityRule and so relaxable through the `availability` Policy. Today's whole-day `exceptions` are the crude form.

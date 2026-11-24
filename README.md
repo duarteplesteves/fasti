@@ -1001,6 +1001,10 @@ nub run typecheck
 # Run tests
 nub run test
 
+# Time searches and rule work, on Node and on Bun; compare runs by `min`, as garbage collection skews the mean
+nub run bench
+bun --bun run bench
+
 # Build, then check the published package
 nub run build
 nub run publint
