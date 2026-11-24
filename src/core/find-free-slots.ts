@@ -8,6 +8,7 @@ import {
   checkTimeZone,
 } from "./checks.js";
 import type { CheckIssue } from "./checks.js";
+import { DAY_MS, dayOffsets } from "./day-offset.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import type {
@@ -46,58 +47,14 @@ const outsideAvailability: AvailabilityViolation = {
   policy: "availability",
 };
 
-/**
- * The grid starts in `[from, to)`: local midnight in `timezone` plus whole `interval`s (ADR 014).
- * A time in a DST gap is dropped; a repeated time is its first occurrence (ADR 005).
- *
- * @returns Each grid start, in order, zoned in `timezone`.
- */
-function* gridStarts(
-  from: Temporal.Instant,
-  to: Temporal.Instant,
-  interval: number,
-  timezone: string
-): Generator<Temporal.ZonedDateTime> {
-  const lastDate = to.toZonedDateTimeISO(timezone).toPlainDate();
-
-  for (
-    let date = from.toZonedDateTimeISO(timezone).toPlainDate();
-    Temporal.PlainDate.compare(date, lastDate) <= 0;
-    date = date.add({ days: 1 })
-  ) {
-    for (let minutes = 0; minutes < 24 * 60; minutes += interval) {
-      const local = date.toPlainDateTime().add({ minutes });
-
-      const start = local.toZonedDateTime(timezone, {
-        disambiguation: "earlier",
-      });
-
-      const instant = start.toInstant();
-
-      if (
-        start.toPlainDateTime().equals(local) &&
-        Temporal.Instant.compare(instant, from) >= 0 &&
-        Temporal.Instant.compare(instant, to) < 0
-      ) {
-        yield start;
-      }
-    }
-  }
-}
-
 /** A half-open `[startMs, endMs)` range in epoch milliseconds. */
 interface MsRange {
   readonly startMs: number;
   readonly endMs: number;
 }
 
-/** A free Grid time: its zoned start, and its range. `end` isn't zoned yet, as most Grid times never become a Slot. */
-interface GridTime extends MsRange {
-  readonly start: Temporal.ZonedDateTime;
-}
-
-// Core inputs may be finer than a millisecond; Grid times never are. So rounding a Booking outwards and a window
-// inwards compares with a Grid time exactly as the unrounded Instants would.
+// Core inputs may be finer than a millisecond; Grid times never are. So rounding a Booking outwards, a window
+// inwards and a search's `from` and `to` up compares with a Grid time exactly as the unrounded Instants would.
 
 /**
  * `instant` in epoch milliseconds, rounded down (before 1970 too).
@@ -123,6 +80,80 @@ function ceilToMs(instant: Temporal.Instant): number {
   return (
     floorToMs(instant) + (instant.epochNanoseconds % 1_000_000n === 0n ? 0 : 1)
   );
+}
+
+/**
+ * The local midnight of `instant`'s date in `timezone`, as if it were UTC.
+ *
+ * @returns The milliseconds since the epoch.
+ */
+function localMidnightMs(instant: Temporal.Instant, timezone: string): number {
+  return instant
+    .toZonedDateTimeISO(timezone)
+    .toPlainDate()
+    .toZonedDateTime("UTC").epochMilliseconds;
+}
+
+/**
+ * The first occurrence of a local time in `timezone`.
+ *
+ * @param localMs - The local time as if it were UTC, in epoch milliseconds.
+ * @returns Its epoch milliseconds, or `undefined` when it falls in a DST gap.
+ */
+function firstOccurrenceMs(
+  localMs: number,
+  timezone: string
+): number | undefined {
+  const local = Temporal.Instant.fromEpochMilliseconds(localMs)
+    .toZonedDateTimeISO("UTC")
+    .toPlainDateTime();
+
+  const zoned = local.toZonedDateTime(timezone, { disambiguation: "earlier" });
+
+  return zoned.toPlainDateTime().equals(local)
+    ? zoned.epochMilliseconds
+    : undefined;
+}
+
+/**
+ * The grid starts in `[from, to)`: local midnight in `timezone` plus whole `interval`s (ADR 014).
+ * A time in a DST gap is dropped; a repeated time is its first occurrence (ADR 005).
+ *
+ * @returns Each grid start in epoch milliseconds, strictly increasing.
+ */
+function* gridStarts(
+  from: Temporal.Instant,
+  to: Temporal.Instant,
+  interval: number,
+  timezone: string
+): Generator<number> {
+  const fromMs = ceilToMs(from);
+  const toMs = ceilToMs(to);
+  const firstMidnight = localMidnightMs(from, timezone);
+  const lastMidnight = localMidnightMs(to, timezone);
+  const offsetOf = dayOffsets(timezone, firstMidnight);
+
+  for (
+    let midnight = firstMidnight;
+    midnight <= lastMidnight;
+    midnight += DAY_MS
+  ) {
+    const offsetMs = offsetOf(midnight);
+
+    for (let minutes = 0; minutes < 24 * 60; minutes += interval) {
+      const localMs = midnight + minutes * 60_000;
+
+      // Only a day the clocks change needs Temporal.
+      const startMs =
+        offsetMs === undefined
+          ? firstOccurrenceMs(localMs, timezone)
+          : localMs - offsetMs;
+
+      if (startMs !== undefined && startMs >= fromMs && startMs < toMs) {
+        yield startMs;
+      }
+    }
+  }
 }
 
 function byStart(a: MsRange, b: MsRange): number {
@@ -202,7 +233,7 @@ function fitsSweep(
 /**
  * The Grid times in `[from, to)` whose range overlaps no blocking Booking except `excludeBookingId`: the search before any Policy. Internal; not exported from the Core's entry.
  *
- * @returns The free Grid times in start order.
+ * @returns The free Grid times' ranges in start order. They aren't zoned yet, as most Grid times never become a Slot.
  */
 export function freeGridSlots({
   bookings,
@@ -221,14 +252,13 @@ export function freeGridSlots({
   | "interval"
   | "timezone"
   | "to"
->): GridTime[] {
-  const slots: GridTime[] = [];
+>): MsRange[] {
+  const slots: MsRange[] = [];
   const durationMs = duration * 60_000;
   const blocked = blockedSweep(bookings, excludeBookingId);
 
-  for (const start of gridStarts(from, to, interval, timezone)) {
-    const startMs = start.epochMilliseconds;
-    const slot = { endMs: startMs + durationMs, start, startMs };
+  for (const startMs of gridStarts(from, to, interval, timezone)) {
+    const slot = { endMs: startMs + durationMs, startMs };
 
     if (!blocked(slot)) {
       slots.push(slot);
@@ -256,7 +286,9 @@ function findFreeSlotsUnchecked(
               slot.endMs
             ).toZonedDateTimeISO(timezone),
             resourceId,
-            start: slot.start,
+            start: Temporal.Instant.fromEpochMilliseconds(
+              slot.startMs
+            ).toZonedDateTimeISO(timezone),
             waived: available ? [] : [outsideAvailability],
           },
         ]
@@ -302,7 +334,7 @@ export function checkSearch({
       ? Math.ceil(
           ((to.epochMilliseconds - from.epochMilliseconds) *
             Math.ceil(1440 / interval)) /
-            86_400_000
+            DAY_MS
         )
       : 0;
 
