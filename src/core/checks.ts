@@ -21,6 +21,9 @@ export const MAX_EXCEPTIONS = 1000;
 const earliest = Temporal.Instant.from("0001-01-01T00:00:00Z");
 const latest = Temporal.Instant.from("+010000-01-01T00:00:00Z");
 
+const earliestMs = earliest.epochMilliseconds;
+const latestMs = latest.epochMilliseconds;
+
 /** Where an issue sits in the params, e.g. `["rules", 0, "end"]`. */
 export type Path = readonly (string | number)[];
 
@@ -231,6 +234,23 @@ function checkSameResource(
 }
 
 /**
+ * A cheap test that never accepts an invalid Booking. It may miss a valid one, shorter than a millisecond.
+ *
+ * @returns Whether `booking` is certainly valid on `resourceId`.
+ */
+function plainlyValid(booking: Booking, resourceId: string): boolean {
+  const startMs = booking.start.epochMilliseconds;
+  const endMs = booking.end.epochMilliseconds;
+
+  return (
+    booking.resourceId === resourceId &&
+    startMs >= earliestMs &&
+    startMs < endMs &&
+    endMs < latestMs
+  );
+}
+
+/**
  * Each booking is on `resourceId` and ends after it starts.
  *
  * @returns The issues, with paths under `bookings[i]`; empty when all are valid.
@@ -239,6 +259,10 @@ export function checkBookings(
   bookings: readonly Booking[],
   resourceId: string
 ): CheckIssue[] {
+  if (bookings.every((b) => plainlyValid(b, resourceId))) {
+    return [];
+  }
+
   return [
     ...checkSameResource(bookings, "bookings", resourceId),
     ...bookings.flatMap((b, i) => checkInstantRange(b, ["bookings", i])),

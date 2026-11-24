@@ -85,12 +85,48 @@ function* gridStarts(
   }
 }
 
-function byStart(a: InstantRange, b: InstantRange): number {
-  return Temporal.Instant.compare(a.start, b.start);
+/** A half-open `[startMs, endMs)` range in epoch milliseconds. */
+interface MsRange {
+  readonly startMs: number;
+  readonly endMs: number;
 }
 
-function later(a: Temporal.Instant | null, b: Temporal.Instant) {
-  return a === null || Temporal.Instant.compare(a, b) < 0 ? b : a;
+/** A free Grid time: its zoned start, and its range. `end` isn't zoned yet, as most Grid times never become a Slot. */
+interface GridTime extends MsRange {
+  readonly start: Temporal.ZonedDateTime;
+}
+
+// Core inputs may be finer than a millisecond; Grid times never are. So rounding a Booking outwards and a window
+// inwards compares with a Grid time exactly as the unrounded Instants would.
+
+/**
+ * `instant` in epoch milliseconds, rounded down (before 1970 too).
+ *
+ * @returns The milliseconds; throws a `TypeError` when `instant` isn't an Instant, as `undefined` milliseconds would break the sweep and free a blocked time.
+ */
+function floorToMs(instant: Temporal.Instant): number {
+  const ms = instant.epochMilliseconds;
+
+  if (!Number.isFinite(ms)) {
+    throw new TypeError(`Expected a Temporal.Instant, got ${String(instant)}.`);
+  }
+
+  return ms;
+}
+
+/**
+ * `instant` in epoch milliseconds, rounded up.
+ *
+ * @returns The milliseconds; throws as `floorToMs` does.
+ */
+function ceilToMs(instant: Temporal.Instant): number {
+  return (
+    floorToMs(instant) + (instant.epochNanoseconds % 1_000_000n === 0n ? 0 : 1)
+  );
+}
+
+function byStart(a: MsRange, b: MsRange): number {
+  return a.startMs - b.startMs;
 }
 
 /**
@@ -102,31 +138,32 @@ function later(a: Temporal.Instant | null, b: Temporal.Instant) {
 function blockedSweep<Id extends string>(
   bookings: readonly Booking<Id>[],
   excludeBookingId: Id | undefined
-): (range: InstantRange) => boolean {
+): (range: MsRange) => boolean {
   const sorted = bookings
-    .filter((b) => b.isBlocking && b.id !== excludeBookingId)
+    .flatMap((b) =>
+      b.isBlocking && b.id !== excludeBookingId
+        ? [{ endMs: ceilToMs(b.end), startMs: floorToMs(b.start) }]
+        : []
+    )
     .toSorted(byStart);
 
   let next = 0;
   // The latest end among the Bookings that start before the current range ends.
-  let reach: Temporal.Instant | null = null;
+  let reach = Number.NEGATIVE_INFINITY;
 
-  return ({ end, start }) => {
+  return ({ endMs, startMs }) => {
     for (; next < sorted.length; next += 1) {
       const booking = sorted[next];
 
-      if (
-        booking === undefined ||
-        Temporal.Instant.compare(booking.start, end) >= 0
-      ) {
+      if (booking === undefined || booking.startMs >= endMs) {
         break;
       }
 
-      reach = later(reach, booking.end);
+      reach = Math.max(reach, booking.endMs);
     }
 
-    // Half-open: a Booking that starts before `end` overlaps iff it ends after `start`.
-    return reach !== null && Temporal.Instant.compare(start, reach) < 0;
+    // Half-open: a Booking that starts before `endMs` overlaps iff it ends after `startMs`.
+    return startMs < reach;
   };
 }
 
@@ -138,35 +175,34 @@ function blockedSweep<Id extends string>(
  */
 function fitsSweep(
   windows: readonly InstantRange[]
-): (range: InstantRange) => boolean {
-  const sorted = windows.toSorted(byStart);
+): (range: MsRange) => boolean {
+  const sorted = windows
+    .map((w) => ({ endMs: floorToMs(w.end), startMs: ceilToMs(w.start) }))
+    .toSorted(byStart);
 
   let next = 0;
   // The latest end among the windows that start at or before the current range starts.
-  let reach: Temporal.Instant | null = null;
+  let reach = Number.NEGATIVE_INFINITY;
 
-  return ({ end, start }) => {
+  return ({ endMs, startMs }) => {
     for (; next < sorted.length; next += 1) {
       const window = sorted[next];
 
-      if (
-        window === undefined ||
-        Temporal.Instant.compare(window.start, start) > 0
-      ) {
+      if (window === undefined || window.startMs > startMs) {
         break;
       }
 
-      reach = later(reach, window.end);
+      reach = Math.max(reach, window.endMs);
     }
 
-    return reach !== null && Temporal.Instant.compare(end, reach) <= 0;
+    return endMs <= reach;
   };
 }
 
 /**
- * The Grid slots in `[from, to)` that overlap no blocking Booking except `excludeBookingId`: the search before any Policy. Internal; not exported from the Core's entry.
+ * The Grid times in `[from, to)` whose range overlaps no blocking Booking except `excludeBookingId`: the search before any Policy. Internal; not exported from the Core's entry.
  *
- * @returns The free Grid slots in start order, as zoned start and end.
+ * @returns The free Grid times in start order.
  */
 export function freeGridSlots({
   bookings,
@@ -185,22 +221,17 @@ export function freeGridSlots({
   | "interval"
   | "timezone"
   | "to"
->): Pick<Slot, "start" | "end">[] {
-  const slots: {
-    start: Temporal.ZonedDateTime;
-    end: Temporal.ZonedDateTime;
-  }[] = [];
-
+>): GridTime[] {
+  const slots: GridTime[] = [];
+  const durationMs = duration * 60_000;
   const blocked = blockedSweep(bookings, excludeBookingId);
 
   for (const start of gridStarts(from, to, interval, timezone)) {
-    const range = {
-      end: start.toInstant().add({ minutes: duration }),
-      start: start.toInstant(),
-    };
+    const startMs = start.epochMilliseconds;
+    const slot = { endMs: startMs + durationMs, start, startMs };
 
-    if (!blocked(range)) {
-      slots.push({ end: range.end.toZonedDateTimeISO(timezone), start });
+    if (!blocked(slot)) {
+      slots.push(slot);
     }
   }
 
@@ -210,23 +241,22 @@ export function freeGridSlots({
 function findFreeSlotsUnchecked(
   params: FindFreeSlotsParams
 ): Slot<AvailabilityViolation>[] {
-  const { from, relax, resourceId, rules, to } = params;
+  const { from, relax, resourceId, rules, timezone, to } = params;
 
   const relaxAvailability = relax?.includes("availability") ?? false;
   const fits = fitsSweep(availableWindows(rules, { end: to, start: from }));
 
-  return freeGridSlots(params).flatMap(({ end, start }) => {
-    const available = fits({
-      end: end.toInstant(),
-      start: start.toInstant(),
-    });
+  return freeGridSlots(params).flatMap((slot) => {
+    const available = fits(slot);
 
     return available || relaxAvailability
       ? [
           {
-            end,
+            end: Temporal.Instant.fromEpochMilliseconds(
+              slot.endMs
+            ).toZonedDateTimeISO(timezone),
             resourceId,
-            start,
+            start: slot.start,
             waived: available ? [] : [outsideAvailability],
           },
         ]

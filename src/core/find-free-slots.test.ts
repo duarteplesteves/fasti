@@ -838,3 +838,110 @@ describe("findFreeSlots with relax", () => {
     expect(slots.every((s) => s.waived.length === 0)).toBeTruthy();
   });
 });
+
+describe("findFreeSlots with times finer than a millisecond", () => {
+  // Both dates are Tuesdays; epoch milliseconds are negative before 1970.
+  describe.each(["2026-05-12", "1969-12-30"])("on %s", (date) => {
+    function startsWith({
+      booking,
+      window = ["09:00", "11:30"],
+    }: {
+      booking?: readonly [string, string];
+      window?: readonly [string, string];
+    }) {
+      const bookings = booking
+        ? [
+            {
+              end: Temporal.Instant.from(`${date}T${booking[1]}Z`),
+              id: "b1",
+              isBlocking: true,
+              resourceId: "doc-1",
+              start: Temporal.Instant.from(`${date}T${booking[0]}Z`),
+            },
+          ]
+        : [];
+
+      return unwrap(
+        findFreeSlots({
+          bookings,
+          duration: 30,
+          from: Temporal.Instant.from(`${date}T00:00:00Z`),
+          interval: 30,
+          resourceId: "doc-1",
+          rules: [
+            {
+              recurrence: { daysOfWeek: [2], frequency: "weekly", interval: 1 },
+              resourceId: "doc-1",
+              timeWindow: {
+                end: Temporal.PlainTime.from(window[1]),
+                start: Temporal.PlainTime.from(window[0]),
+              },
+              timezone: "UTC",
+            },
+          ],
+          timezone: "UTC",
+          to: Temporal.Instant.from(`${date}T23:00:00Z`),
+        })
+      ).map((s) => s.start.toPlainTime().toString({ smallestUnit: "minute" }));
+    }
+
+    it("refuses the slot a Booking ends just inside", () => {
+      expect(
+        startsWith({ booking: ["09:00:00", "10:00:00.0000005"] })
+      ).toStrictEqual(["10:30", "11:00"]);
+    });
+
+    it("refuses the slot a Booking starts just inside", () => {
+      expect(
+        startsWith({ booking: ["09:59:59.9999995", "10:30:00"] })
+      ).toStrictEqual(["09:00", "10:30", "11:00"]);
+    });
+
+    it("keeps the slots a Booking stops just short of", () => {
+      expect(
+        startsWith({ booking: ["10:00:00.0000005", "10:29:59.9999995"] })
+      ).toStrictEqual(["09:00", "09:30", "10:30", "11:00"]);
+    });
+
+    it("refuses the slot starting just before the window", () => {
+      expect(
+        startsWith({ window: ["09:00:00.0000005", "11:30"] })
+      ).toStrictEqual(["09:30", "10:00", "10:30", "11:00"]);
+    });
+
+    it("refuses the slot ending just after the window", () => {
+      expect(
+        startsWith({ window: ["09:00", "11:29:59.9999995"] })
+      ).toStrictEqual(["09:00", "09:30", "10:00", "10:30"]);
+    });
+
+    it("refuses a slot holding a Booking shorter than a millisecond", () => {
+      expect(
+        startsWith({ booking: ["10:00:00.0000002", "10:00:00.0000005"] })
+      ).toStrictEqual(["09:00", "09:30", "10:30", "11:00"]);
+    });
+  });
+
+  it.each(["start", "end"])(
+    "throws on a Booking whose %s is an ISO string, rather than free its time",
+    (key) => {
+      const booking = {
+        ...blockingAt("b1", "10:00", "11:00"),
+        [key]: key === "start" ? "2026-05-12T10:00Z" : "2026-05-12T11:00Z",
+      };
+
+      expect(() =>
+        findFreeSlots({
+          bookings: [booking],
+          duration: 30,
+          from: Temporal.Instant.from("2026-05-12T00:00:00Z"),
+          interval: 30,
+          resourceId: "doc-1",
+          rules: [],
+          timezone: "UTC",
+          to: Temporal.Instant.from("2026-05-13T00:00:00Z"),
+        })
+      ).toThrow(TypeError);
+    }
+  );
+});

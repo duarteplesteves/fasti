@@ -1,5 +1,5 @@
 import { test } from "@fast-check/vitest";
-import { integer } from "fast-check";
+import { array, constantFrom, integer, record } from "fast-check";
 import { describe, expect } from "vitest";
 
 import {
@@ -121,6 +121,96 @@ const arbShortCase = arbDateRange().chain(({ from, to }) => {
   }));
 });
 
+const arbNanoseconds = constantFrom(-1_000_000, -500, -1, 0, 1, 500, 1_000_000);
+
+/** A range `first` to `first + steps` Grid steps into a day, each edge nudged by some nanoseconds. */
+const arbNearGrid = record({
+  endNs: arbNanoseconds,
+  first: integer({ max: 20, min: 1 }),
+  startNs: arbNanoseconds,
+  steps: integer({ max: 3, min: 1 }),
+});
+
+/** A day's Grid with Bookings and windows whose edges sit on or just off Grid boundaries, in a search from `date`'s midnight. */
+const arbNearGridCase = record({
+  bookings: array(arbNearGrid, { maxLength: 3, minLength: 1 }),
+  date: constantFrom("1969-12-30", "2024-03-31", "2024-10-27", "2026-05-12"),
+  interval: constantFrom(30, 60),
+  timezone: arbTimezone(),
+  windows: array(arbNearGrid, { maxLength: 3, minLength: 1 }),
+}).map(({ bookings, date, interval, timezone, windows }) => {
+  const midnight = Temporal.PlainDate.from(date).toZonedDateTime(timezone);
+
+  /** `steps` Grid steps and `ns` nanoseconds after midnight. */
+  function instantAt(steps: number, ns: number) {
+    return midnight
+      .add({ minutes: steps * interval })
+      .add({ nanoseconds: ns })
+      .toInstant();
+  }
+
+  function timeAt(steps: number, ns: number) {
+    return new Temporal.PlainTime()
+      .add({ minutes: steps * interval })
+      .add({ nanoseconds: ns });
+  }
+
+  return {
+    bookings: bookings.map((b, i) => ({
+      end: instantAt(b.first + b.steps, b.endNs),
+      id: `b${i}`,
+      isBlocking: true,
+      resourceId: "r1",
+      start: instantAt(b.first, b.startNs),
+    })),
+    from: midnight.toInstant(),
+    interval,
+    resourceId: "r1",
+    rules: windows.map((w): AvailabilityRule => ({
+      recurrence: {
+        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+        frequency: "weekly",
+        interval: 1,
+      },
+      resourceId: "r1",
+      timeWindow: {
+        end: timeAt(w.first + w.steps, w.endNs),
+        start: timeAt(w.first, w.startNs),
+      },
+      timezone,
+    })),
+    timezone,
+    to: midnight.add({ days: 1 }).toInstant(),
+  };
+});
+
+/** Asserts that a search returns exactly the Grid slots `isSlotValid` accepts. */
+function expectAgreesWithIsSlotValid(
+  params: Parameters<typeof findFreeSlots>[0]
+) {
+  const { bookings, resourceId, rules } = params;
+
+  // With no Bookings and availability relaxed, every Grid slot.
+  const grid = unwrap(
+    findFreeSlots({ ...params, bookings: [], relax: ["availability"] })
+  );
+
+  const expected = grid.filter(({ end, start }) =>
+    unwrap(
+      isSlotValid({
+        bookings,
+        resourceId,
+        rules,
+        slot: { end: end.toInstant(), start: start.toInstant() },
+      })
+    )
+  );
+
+  expect(
+    unwrap(findFreeSlots(params)).map((s) => s.start.toString())
+  ).toStrictEqual(expected.map((s) => s.start.toString()));
+}
+
 describe(`${findFreeSlots.name} (property)`, () => {
   test.prop(
     [
@@ -134,7 +224,8 @@ describe(`${findFreeSlots.name} (property)`, () => {
   )(
     "returns exactly the Grid slots isSlotValid accepts",
     ({ bookings, range }, rules, duration, interval, timezone) => {
-      const params = {
+      expectAgreesWithIsSlotValid({
+        bookings,
         duration,
         from: range.from,
         interval,
@@ -142,29 +233,17 @@ describe(`${findFreeSlots.name} (property)`, () => {
         rules,
         timezone,
         to: range.to,
-      };
+      });
+    }
+  );
 
-      // With no Bookings and availability relaxed, every Grid slot.
-      const grid = unwrap(
-        findFreeSlots({ ...params, bookings: [], relax: ["availability"] })
-      );
-
-      const expected = grid.filter(({ end, start }) =>
-        unwrap(
-          isSlotValid({
-            bookings,
-            resourceId: "r1",
-            rules,
-            slot: { end: end.toInstant(), start: start.toInstant() },
-          })
-        )
-      );
-
-      expect(
-        unwrap(findFreeSlots({ ...params, bookings })).map((s) =>
-          s.start.toString()
-        )
-      ).toStrictEqual(expected.map((s) => s.start.toString()));
+  test.prop([arbNearGridCase, integer({ max: 3, min: 1 })], propConfig)(
+    "returns exactly the Grid slots isSlotValid accepts, with edges nanoseconds off the Grid",
+    (search, steps) => {
+      expectAgreesWithIsSlotValid({
+        ...search,
+        duration: steps * search.interval,
+      });
     }
   );
 

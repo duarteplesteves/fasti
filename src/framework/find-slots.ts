@@ -166,9 +166,11 @@ export function findSlots<S extends AnySchema, Tx>(
       resourceId,
     });
 
-    return grid.value.flatMap(({ end, start }) => {
+    return grid.value.flatMap(({ endMs, start }) => {
+      const end = Temporal.Instant.fromEpochMilliseconds(endMs);
+
       const span = {
-        end: end.toInstant(),
+        end,
         resourceId,
         start: start.toInstant(),
       };
@@ -181,7 +183,16 @@ export function findSlots<S extends AnySchema, Tx>(
         relax ?? []
       );
 
-      return violations.length > 0 ? [] : [{ end, resourceId, start, waived }];
+      return violations.length > 0
+        ? []
+        : [
+            {
+              end: end.toZonedDateTimeISO(timezone),
+              resourceId,
+              start,
+              waived,
+            },
+          ];
     });
   });
 }
