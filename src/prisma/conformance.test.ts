@@ -760,6 +760,46 @@ describe.skipIf(url === undefined)("Prisma on Postgres", () => {
     await database?.drop();
   });
 
+  describe("on a database whose default isolation is repeatable read", () => {
+    let strict: typeof database;
+
+    beforeAll(async () => {
+      const strictUrl = new URL(url ?? "");
+
+      strictUrl.searchParams.set(
+        "options",
+        "-c default_transaction_isolation=repeatable\\ read"
+      );
+      strict = await prismaTestDatabase(strictUrl.toString(), contract);
+    });
+
+    afterAll(async () => {
+      await strict?.drop();
+    });
+
+    it.each(concurrencyCases.filter((c) => runsOn(c, textIdSchema)))(
+      "$name",
+      async (c) => {
+        await expect(
+          runCase(c, {
+            // No backstop: it would mask a lock that doesn't hold.
+            groups: { backstop: false, retry: null, tx: null },
+            makeAdapter: () => prismaAdapter(strict.db),
+            reset: async () => {
+              const names = textIdSchema.names.tables;
+
+              await strict.pool.query(
+                `truncate "${names.booking}", "${names.availabilityRule}", "${names.block}"`
+              );
+            },
+            resources: textIdResources,
+            schema: textIdSchema,
+          })
+        ).resolves.toBeUndefined();
+      }
+    );
+  });
+
   describe("spike: renamed tables through tx.sql", () => {
     it("inserts and selects a Booking on a table named at runtime", async () => {
       const id = randomUUID();
