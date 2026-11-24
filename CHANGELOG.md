@@ -1,5 +1,16 @@
 # @fastijs/scheduler
 
+## 0.7.2
+
+### Patch Changes
+
+- fc1cfe2: A very long slot no longer expands availability rules over its whole span. `isSlotValid` and the availability Policy on `book` and `reschedule` now refuse a slot longer than any window could hold before expanding anything, and `expandRules` walks only each rule's effective dates, with a constant-time exception lookup.
+- 1f73c6e: `cancel`, `transition`, `reschedule` and `blocks.update` no longer retry forever when an outside writer keeps moving or changing the row between reads: after 3 attempts they fail with `AdapterError`, as an exhausted transient retry does.
+- 3b067ad: Searches, rule checks and `expandRules` now have fixed limits, and every date must fall in the years 0001–9999 (ADR 019). Going over is `InvalidParams`, never a truncated list or a thrown `RangeError`. A search (`findSlots`, `findFreeSlots`) covers at most 10,000 Grid times, with a `duration` of at most 31 days. A direct `expandRules` call spans at most 366 days. A call takes at most 100 rules (so does `availability.set`), with at most 1,000 exceptions each. The limits are exported from `@fastijs/scheduler/core` as `MAX_GRID_TIMES`, `MAX_DURATION_MINUTES`, `MAX_EXPAND_DAYS`, `MAX_RULES` and `MAX_EXCEPTIONS`.
+- 4e12046: On a uuid Resource id, the Postgres Adapters now take the Resource Lock on Postgres's own spelling of the id, so `A0EE…`, `a0ee…` and `{a0ee…}` share one lock. Plugin and Action names can no longer contain a dot, which let two Actions share one Hook target (`a` + `b.c` and `a.b` + `c`).
+- 606e0d3: A Plugin's busy range whose id equals the Booking being moved no longer vanishes from `reschedule` and `findSlots({ excludeBookingId })`: only the stored Booking is left out. A Conflict now keeps its own `kind` when a busy range shares its id with a Booking.
+- 8e64b0c: `findFreeSlots` and `findSlots` no longer rescan every Booking and every availability window at each Grid time. They sweep both once, in start order, alongside the Grid. A one-year search on a 15-minute Grid with 3,000 Bookings drops from about 27 s to 130 ms, with the same slots.
+
 ## 0.7.1
 
 ### Patch Changes
