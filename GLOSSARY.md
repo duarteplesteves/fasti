@@ -88,7 +88,7 @@ Every core query is scoped to a single Resource. Multi-resource orchestration ("
 
 ### Expansion Semantics
 
-`expandRules()` is a faithful, opinion-free expansion. For each input rule, it emits one `ExpandedWindow` per calendar date in `[from, to]` that satisfies the rule's recurrence, `effectiveFrom`/`effectiveTo`, `daysOfWeek`, and `exceptions`.
+`expandRules()` is a faithful, opinion-free expansion. For each input rule, it emits one `ExpandedWindow` per calendar date in `[from, to]` that satisfies the rule's recurrence, `effectiveFrom`/`effectiveTo`, `daysOfWeek`, and `exceptions`. A window with an edge in a spring-forward gap is clipped to the times that exist; on a date where nothing is left, none is emitted (ADR 005).
 
 Properties of the output:
 
@@ -126,7 +126,7 @@ Properties of the output:
    Every entry point checks its input before computing, and reports all problems found rather than the first: a rule whose window doesn't end after it starts, `effectiveTo < effectiveFrom`, empty `daysOfWeek`, values outside 1–7, duplicates, `recurrence.interval < 1`, an unknown or fixed-offset timezone, any time range whose end isn't after its start, and a `withBlockingFlag` status listed as both blocking and non-blocking. The result is `{ ok: false, error: InvalidParams }` with every issue and its path; a check is skipped only when an earlier issue makes it meaningless. `checkRule(rule)` runs the rule checks on their own. Cross-day windows (`start > end` interpreted as wrapping past midnight) are **out of scope for v0.1** — split into two rules. See ADR 011.
 
 8. **DST policy (v0.1 simplification).**
-   Applied to the Grid in the query `timezone` (ADR 014), not to each rule's timezone.
+   Grid times follow the policy in the query `timezone` (ADR 014), not in each rule's timezone. Rule windows are clipped to the times that exist, in the rule's own `timezone`.
    - **Spring-forward gap** (e.g. Lisbon, last Sunday March, 01:00 → 02:00): if a Grid time falls in the gap, it is dropped. The next grid step is generated normally.
    - **Fall-back overlap** (e.g. last Sunday October, 02:00 → 01:00): only the **first occurrence** of the repeated wall-clock hour is a Grid time. The second occurrence's real-time bookable hour is lost in v0.1. Documented limitation; revisit in v0.2 if real usage requires double-occurrence slots.
    - `exceptions: PlainDate[]` are interpreted as dates in the **rule's `timezone`**, not UTC.

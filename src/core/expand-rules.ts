@@ -11,6 +11,61 @@ export interface ExpandRulesParams {
   to: Temporal.PlainDate;
 }
 
+/** A UTC day, and so a step of `midnight` in `expandRulesUnchecked`. */
+const DAY_MS = 86_400_000;
+
+/**
+ * The wall-clock time of `zoned` as milliseconds, as if it were UTC.
+ *
+ * @returns The milliseconds since the epoch of that wall-clock time.
+ */
+function localMs(zoned: Temporal.ZonedDateTime): number {
+  return zoned.epochMilliseconds + zoned.offsetNanoseconds / 1_000_000;
+}
+
+/**
+ * How far into a day `time` is.
+ *
+ * @returns The whole milliseconds since midnight.
+ */
+function msOfDay(time: Temporal.PlainTime): number {
+  return (
+    ((time.hour * 60 + time.minute) * 60 + time.second) * 1000 +
+    time.millisecond
+  );
+}
+
+/**
+ * The start of `date` in UTC.
+ *
+ * @returns The milliseconds since the epoch.
+ */
+function utcMidnightMs(date: Temporal.PlainDate): number {
+  return date.toZonedDateTime("UTC").epochMilliseconds;
+}
+
+/**
+ * `time` on `date` in `timeZone`; a time in a spring-forward gap is the moment the clocks jump (ADR 005).
+ *
+ * @returns The zoned time, at its first occurrence when it repeats.
+ */
+function clipped(
+  date: Temporal.PlainDate,
+  time: Temporal.PlainTime,
+  timeZone: string
+): Temporal.ZonedDateTime {
+  const local = date.toPlainDateTime(time);
+
+  const zoned = local.toZonedDateTime(timeZone, {
+    disambiguation: "earlier",
+  });
+
+  // In a gap, `earlier` lands before the jump, which is then the next transition.
+  return zoned.toPlainDateTime().equals(local)
+    ? zoned
+    : (zoned.getTimeZoneTransition("next") ?? zoned);
+}
+
 /**
  * `expandRules` without checks, for Core functions that already checked their params.
  *
@@ -21,6 +76,7 @@ export function expandRulesUnchecked(
 ): ExpandedWindow[] {
   const { from, rules, to } = params;
   const windows: ExpandedWindow[] = [];
+  const fromMidnight = utcMidnightMs(from);
 
   for (const rule of rules) {
     // Only the dates the rule is in effect, so a long range costs a short-lived rule nothing.
@@ -36,27 +92,50 @@ export function expandRulesUnchecked(
         : to;
 
     const exceptions = new Set(rule.exceptions?.map((e) => e.toString()));
+    const startMs = msOfDay(rule.timeWindow.start);
+    const endMs = msOfDay(rule.timeWindow.end);
+
+    // `date`'s midnight as `localMs` counts, one step back: the loop steps it first.
+    let midnight =
+      (first === from ? fromMidnight : utcMidnightMs(first)) - DAY_MS;
 
     for (
       let date = first;
       Temporal.PlainDate.compare(date, last) <= 0;
       date = date.add({ days: 1 })
     ) {
+      midnight += DAY_MS;
+
+      // Most rules have no exceptions, so most dates need no string.
       if (
-        !exceptions.has(date.toString()) &&
-        occursOn(rule.recurrence, date, rule.effectiveFrom)
+        occursOn(rule.recurrence, date, rule.effectiveFrom) &&
+        !(exceptions.size > 0 && exceptions.has(date.toString()))
       ) {
-        windows.push({
-          end: date.toZonedDateTime({
-            plainTime: rule.timeWindow.end,
-            timeZone: rule.timezone,
-          }),
-          resourceId: rule.resourceId,
-          start: date.toZonedDateTime({
-            plainTime: rule.timeWindow.start,
-            timeZone: rule.timezone,
-          }),
+        let start = date.toZonedDateTime({
+          plainTime: rule.timeWindow.start,
+          timeZone: rule.timezone,
         });
+
+        let end = date.toZonedDateTime({
+          plainTime: rule.timeWindow.end,
+          timeZone: rule.timezone,
+        });
+
+        // Temporal moved an edge that falls in a gap. Compared as numbers: this runs for every window, the clipping almost never.
+        if (
+          localMs(start) !== midnight + startMs ||
+          localMs(end) !== midnight + endMs
+        ) {
+          start = clipped(date, rule.timeWindow.start, rule.timezone);
+          end = clipped(date, rule.timeWindow.end, rule.timezone);
+
+          // A window wholly in a gap clips to nothing.
+          if (Temporal.ZonedDateTime.compare(start, end) >= 0) {
+            continue;
+          }
+        }
+
+        windows.push({ end, resourceId: rule.resourceId, start });
       }
     }
   }

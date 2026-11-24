@@ -38,3 +38,21 @@ Both behaviours are documented in GLOSSARY.md as a v0.1 simplification.
 ## Amendment (2026-11-12)
 
 Since ADR 014, `findFreeSlots` walks one Grid from local midnight in the query's required `timezone`, not a grid inside each rule's window. The two rules above now apply to that Grid in the query `timezone`: a Grid time in a spring-forward gap is dropped, and a repeated fall-back time is used only at its first occurrence. A rule's own timezone only decides its expanded windows, which are compared to Grid candidates by instant. The `disambiguation: 'reject'` construction is replaced by `'earlier'` plus a check that the wall-clock time survived, since `'reject'` also throws on the fall-back overlap.
+
+## Amendment (2026-11-24): windows are clipped to the times that exist
+
+A rule window with an edge in a spring-forward gap used Temporal's default, which moves the edge forward: it opened times the rule never named, or ended before it started. Now a window covers exactly the times in the rule that exist that day, in the rule's timezone: an edge in the gap becomes the moment the clocks jump, and a window wholly inside the gap vanishes. This applies "a time that doesn't exist is dropped" to windows.
+
+In Lisbon on 2026-03-29 (01:00 → 02:00):
+
+- `00:30–01:30` becomes `00:30–02:00`, 30 real minutes.
+- `01:30–02:15` becomes `02:00–02:15`.
+- `01:00–01:30` vanishes.
+
+Rejected:
+
+- **Drop any window that touches the gap.** It removes real time.
+- **Keep the window's length.** It opens time past the rule's end.
+- **Leave it as is.** Bookings land outside the rule's stated hours.
+
+Fall-back days are unchanged: a repeated time is its first occurrence.

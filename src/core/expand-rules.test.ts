@@ -2,7 +2,44 @@ import { describe, expect, it } from "vitest";
 
 import { unwrap, issuePaths } from "../test-utils/results.js";
 import { expandRules, expandRulesUnchecked } from "./expand-rules.js";
+import { findFreeSlots } from "./find-free-slots.js";
 import type { AvailabilityRule } from "./types.js";
+
+/** The windows of a daily `start`–`end` rule on `date`, as `start → end` wall-clock times. */
+function windowsOn(
+  date: string,
+  timezone: string,
+  [start, end]: readonly [string, string]
+) {
+  const day = Temporal.PlainDate.from(date);
+
+  const windows = unwrap(
+    expandRules({
+      from: day,
+      rules: [
+        {
+          recurrence: {
+            daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+            frequency: "weekly",
+            interval: 1,
+          },
+          resourceId: "doc-1",
+          timeWindow: {
+            end: Temporal.PlainTime.from(end),
+            start: Temporal.PlainTime.from(start),
+          },
+          timezone,
+        },
+      ],
+      to: day,
+    })
+  );
+
+  return windows.map(
+    (w) =>
+      `${w.start.toPlainTime().toString()} → ${w.end.toPlainTime().toString()}`
+  );
+}
 
 describe(expandRules, () => {
   it("emits one window for a weekly rule that matches one day in range", () => {
@@ -315,6 +352,88 @@ describe(expandRules, () => {
     expect(window.start.until(window.end, { largestUnit: "hours" }).hours).toBe(
       5
     );
+  });
+
+  describe("a window with an edge in a spring-forward gap (ADR 005)", () => {
+    // Lisbon jumps 01:00 → 02:00 on 2026-03-29, Cairo 00:00 → 01:00 on 2026-04-24, New York 02:00 → 03:00 on 2026-03-08.
+    it.each([
+      [
+        "2026-03-29",
+        "Europe/Lisbon",
+        "00:30",
+        "01:30",
+        ["00:30:00 → 02:00:00"],
+      ],
+      [
+        "2026-03-29",
+        "Europe/Lisbon",
+        "01:30",
+        "02:15",
+        ["02:00:00 → 02:15:00"],
+      ],
+      ["2026-03-29", "Europe/Lisbon", "01:00", "01:30", []],
+      ["2026-03-29", "Europe/Lisbon", "01:00", "02:00", []],
+      [
+        "2026-03-29",
+        "Europe/Lisbon",
+        "00:30",
+        "01:00",
+        ["00:30:00 → 02:00:00"],
+      ],
+      [
+        "2026-03-29",
+        "Europe/Lisbon",
+        "02:00",
+        "03:00",
+        ["02:00:00 → 03:00:00"],
+      ],
+      ["2026-04-24", "Africa/Cairo", "00:30", "01:30", ["01:00:00 → 01:30:00"]],
+      ["2026-04-24", "Africa/Cairo", "00:15", "00:45", []],
+      [
+        "2026-03-08",
+        "America/New_York",
+        "01:30",
+        "02:30",
+        ["01:30:00 → 03:00:00"],
+      ],
+      // Samoa skipped the whole of 2011-12-30.
+      ["2011-12-30", "Pacific/Apia", "09:00", "17:00", []],
+    ])(
+      "%s in %s: %s–%s is clipped to the times that exist",
+      (date, timezone, start, end, expected) => {
+        expect(windowsOn(date, timezone, [start, end])).toStrictEqual(expected);
+      }
+    );
+
+    it("opens no Slot outside the rule's wall-clock times", () => {
+      const slots = unwrap(
+        findFreeSlots({
+          bookings: [],
+          duration: 15,
+          from: Temporal.Instant.from("2026-03-29T00:00:00Z"),
+          interval: 15,
+          resourceId: "doc-1",
+          rules: [
+            {
+              recurrence: { daysOfWeek: [7], frequency: "weekly", interval: 1 },
+              resourceId: "doc-1",
+              timeWindow: {
+                end: Temporal.PlainTime.from("01:30"),
+                start: Temporal.PlainTime.from("00:30"),
+              },
+              timezone: "Europe/Lisbon",
+            },
+          ],
+          timezone: "Europe/Lisbon",
+          to: Temporal.Instant.from("2026-03-30T00:00:00Z"),
+        })
+      );
+
+      expect(slots.map((s) => s.start.toPlainTime().toString())).toStrictEqual([
+        "00:30:00",
+        "00:45:00",
+      ]);
+    });
   });
 
   describe("validation", () => {

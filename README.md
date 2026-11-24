@@ -790,6 +790,7 @@ Stored `AvailabilityRule` and `Booking` data keeps the same shape.
 
 - **Spring-forward gap** — slots whose wall-clock start falls in the missing hour are dropped.
 - **Fall-back overlap** — only the first occurrence of an ambiguous wall-clock time is emitted.
+- **Rule windows** — a window with an edge in the missing hour is clipped to the times that exist that day, in the rule's own timezone. One wholly inside it opens nothing.
 
 See [ADR 005](./docs/adr/005-dst-policy.md) for the rationale.
 
