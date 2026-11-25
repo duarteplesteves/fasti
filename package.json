@@ -1,7 +1,7 @@
 {
   "name": "@fastijs/scheduler",
   "version": "0.8.0",
-  "description": "A type-safe, stateless scheduling engine for TypeScript.",
+  "description": "A type-safe scheduling framework for TypeScript that runs on your own database.",
   "keywords": [
     "appointments",
     "bookings",
@@ -17,6 +17,7 @@
   },
   "files": [
     "dist",
+    "docs/guides",
     "README.md",
     "LICENSE"
   ],
