@@ -9,6 +9,8 @@ import {
 } from "./checks.js";
 import type { CheckIssue } from "./checks.js";
 import { DAY_MS, dayOffsets } from "./day-offset.js";
+import { ceilToMs, floorToMs } from "./ms-range.js";
+import type { MsRange } from "./ms-range.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import { epochDay } from "./rule-dates.js";
@@ -18,7 +20,6 @@ import type {
   Booking,
   CorePolicy,
   CoreViolations,
-  InstantRange,
   Slot,
 } from "./types.js";
 
@@ -47,41 +48,6 @@ const outsideAvailability: AvailabilityViolation = {
   detail: {},
   policy: "availability",
 };
-
-/** A half-open `[startMs, endMs)` range in epoch milliseconds. */
-interface MsRange {
-  readonly startMs: number;
-  readonly endMs: number;
-}
-
-// Core inputs may be finer than a millisecond; Grid times never are. So rounding a Booking outwards, a window
-// inwards and a search's `from` and `to` up compares with a Grid time exactly as the unrounded Instants would.
-
-/**
- * `instant` in epoch milliseconds, rounded down (before 1970 too).
- *
- * @returns The milliseconds; throws a `TypeError` when `instant` isn't an Instant, as `undefined` milliseconds would break the sweep and free a blocked time.
- */
-function floorToMs(instant: Temporal.Instant): number {
-  const ms = instant.epochMilliseconds;
-
-  if (!Number.isFinite(ms)) {
-    throw new TypeError(`Expected a Temporal.Instant, got ${String(instant)}.`);
-  }
-
-  return ms;
-}
-
-/**
- * `instant` in epoch milliseconds, rounded up.
- *
- * @returns The milliseconds; throws as `floorToMs` does.
- */
-function ceilToMs(instant: Temporal.Instant): number {
-  return (
-    floorToMs(instant) + (instant.epochNanoseconds % 1_000_000n === 0n ? 0 : 1)
-  );
-}
 
 /**
  * The local midnight of `instant`'s date in `timezone`, as if it were UTC.
@@ -202,12 +168,8 @@ function blockedSweep<Id extends string>(
  *
  * @returns Whether a range fits fully inside one of `windows`.
  */
-function fitsSweep(
-  windows: readonly InstantRange[]
-): (range: MsRange) => boolean {
-  const sorted = windows
-    .map((w) => ({ endMs: floorToMs(w.end), startMs: ceilToMs(w.start) }))
-    .toSorted(byStart);
+function fitsSweep(windows: readonly MsRange[]): (range: MsRange) => boolean {
+  const sorted = windows.toSorted(byStart);
 
   let next = 0;
   // The latest end among the windows that start at or before the current range starts.

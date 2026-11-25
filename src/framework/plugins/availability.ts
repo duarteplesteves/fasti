@@ -1,12 +1,16 @@
 import { Effect } from "effect";
 
-import { fitsInSomeWindow, windowsFor } from "../../core/availability.js";
+import {
+  fitsInSomeWindow,
+  openWindows,
+  windowsFor,
+} from "../../core/availability.js";
+import type { OpenWindows } from "../../core/availability.js";
 import { checkRules } from "../../core/checks.js";
+import type { MsRange } from "../../core/ms-range.js";
 import { checked } from "../../core/result.js";
 import type { InvalidParams } from "../../core/result.js";
-import { prepareRules } from "../../core/rule-dates.js";
-import type { PreparedRule } from "../../core/rule-dates.js";
-import type { AvailabilityRule, InstantRange } from "../../core/types.js";
+import type { AvailabilityRule } from "../../core/types.js";
 import { column } from "../../schema/column.js";
 import type { PluginResourceId, RecordOf } from "../../schema/table.js";
 import { AdapterError } from "../errors.js";
@@ -200,20 +204,20 @@ export function availability() {
       {
         appliesTo: ["book", "reschedule"],
         // Expands around each candidate, not over `load`'s range: a findSlots range is long, and a long candidate expands nothing.
-        // `byDate` lives for one call, so findSlots' candidates share each date's windows; `rules` are prepared once for all of them.
+        // `open` and `byDate` live for one call, so findSlots' candidates share the prepared rules and each date's windows.
         check: (
           candidate,
           {
             byDate,
-            rules,
+            open,
           }: {
-            readonly rules: readonly PreparedRule[];
-            readonly byDate: Map<number, readonly InstantRange[]>;
+            readonly open: OpenWindows;
+            readonly byDate: Map<number, readonly MsRange[]>;
           }
         ): AvailabilityDetail | null =>
           // `appliesTo` only passes these two; the others have no range of their own.
           (candidate.action !== "book" && candidate.action !== "reschedule") ||
-          fitsInSomeWindow(windowsFor(rules, candidate, byDate), candidate)
+          fitsInSomeWindow(windowsFor(open, candidate, byDate), candidate)
             ? null
             : {},
         load: ({ records, resourceId }) =>
@@ -230,8 +234,8 @@ export function availability() {
               }));
 
               const valid = checked(checkRules(rules), () => ({
-                byDate: new Map<number, readonly InstantRange[]>(),
-                rules: prepareRules(rules),
+                byDate: new Map<number, readonly MsRange[]>(),
+                open: openWindows(rules),
               }));
 
               // Invalid stored rules are the Adapter's data (Invariant 6).

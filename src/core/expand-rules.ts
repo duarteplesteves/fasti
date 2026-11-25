@@ -27,7 +27,7 @@ function localMs(zoned: Temporal.ZonedDateTime): number {
  *
  * @returns The whole milliseconds since midnight.
  */
-function msOfDay(time: Temporal.PlainTime): number {
+export function msOfDay(time: Temporal.PlainTime): number {
   return (
     ((time.hour * 60 + time.minute) * 60 + time.second) * 1000 +
     time.millisecond
@@ -39,7 +39,7 @@ function msOfDay(time: Temporal.PlainTime): number {
  *
  * @returns The zoned time, at its first occurrence when it repeats.
  */
-function clipped(
+export function clipped(
   date: Temporal.PlainDate,
   time: Temporal.PlainTime,
   timeZone: string

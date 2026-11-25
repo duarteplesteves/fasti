@@ -1,31 +1,71 @@
-import { DAY_MS } from "./day-offset.js";
-import { expandRulesUnchecked } from "./expand-rules.js";
+import { DAY_MS, dayOffsets } from "./day-offset.js";
+import { clipped, expandRulesUnchecked, msOfDay } from "./expand-rules.js";
+import { ceilToMs, floorToMs } from "./ms-range.js";
+import type { MsRange } from "./ms-range.js";
 import { dateOf, prepareRules } from "./rule-dates.js";
-import type { PreparedRule } from "./rule-dates.js";
 import type { AvailabilityRule, InstantRange } from "./types.js";
 
-/**
- * The windows `rules` open around `range`, as instants.
- *
- * @returns The open windows, possibly overlapping.
- */
-export function availableWindows(
-  rules: readonly AvailabilityRule[],
-  range: InstantRange
-): InstantRange[] {
-  // ±1 day around the UTC dates covers every rule timezone's local dates.
-  return expandRulesUnchecked({
-    from: range.start
-      .toZonedDateTimeISO("UTC")
-      .toPlainDate()
-      .subtract({ days: 1 }),
-    rules: prepareRules(rules),
-    to: range.end.toZonedDateTimeISO("UTC").toPlainDate().add({ days: 1 }),
-  }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
-}
+/** The windows some rules open on the dates from `first` to `last`, both included and given as days since the epoch. */
+export type OpenWindows = (first: number, last: number) => MsRange[];
 
-/** Longer than any window: a window is one local day, under 26 hours even across a DST change. */
-const LONGEST_WINDOW_MS = 48 * 60 * 60 * 1000;
+/**
+ * Prepares `rules` once, to ask for their windows on any dates in any order.
+ *
+ * @returns The lookup. A window is rounded inwards to milliseconds; one lost to a DST gap ends at or before its start, so holds no slot.
+ */
+export function openWindows(rules: readonly AvailabilityRule[]): OpenWindows {
+  const prepared = prepareRules(rules).map(({ datesIn, rule }) => {
+    const { end, start } = rule.timeWindow;
+    const isSubMs = start.microsecond > 0 || start.nanosecond > 0;
+
+    return {
+      datesIn,
+      endMs: msOfDay(end),
+      rule,
+      startMs: msOfDay(start) + (isSubMs ? 1 : 0),
+    };
+  });
+
+  const offsetsByZone = new Map<string, ReturnType<typeof dayOffsets>>();
+
+  return (first, last) => {
+    const windows: MsRange[] = [];
+
+    for (const { datesIn, endMs, rule, startMs } of prepared) {
+      for (const day of datesIn(first, last)) {
+        const midnight = day * DAY_MS;
+        const { timeWindow, timezone } = rule;
+        let offsetOf = offsetsByZone.get(timezone);
+
+        if (offsetOf === undefined) {
+          offsetOf = dayOffsets(timezone, midnight);
+          offsetsByZone.set(timezone, offsetOf);
+        }
+
+        const offsetMs = offsetOf(midnight);
+
+        // Only a day the clocks change needs Temporal.
+        if (offsetMs === undefined) {
+          const date = dateOf(day);
+          const start = clipped(date, timeWindow.start, timezone);
+          const end = clipped(date, timeWindow.end, timezone);
+
+          windows.push({
+            endMs: floorToMs(end.toInstant()),
+            startMs: ceilToMs(start.toInstant()),
+          });
+        } else {
+          windows.push({
+            endMs: midnight + endMs - offsetMs,
+            startMs: midnight + startMs - offsetMs,
+          });
+        }
+      }
+    }
+
+    return windows;
+  };
+}
 
 /**
  * `instant`'s UTC date.
@@ -35,6 +75,22 @@ const LONGEST_WINDOW_MS = 48 * 60 * 60 * 1000;
 function utcDay(instant: Temporal.Instant): number {
   return Math.floor(instant.epochMilliseconds / DAY_MS);
 }
+
+/**
+ * The windows `rules` open around `range`.
+ *
+ * @returns The open windows, possibly overlapping.
+ */
+export function availableWindows(
+  rules: readonly AvailabilityRule[],
+  range: InstantRange
+): MsRange[] {
+  // ±1 day around the UTC dates covers every rule timezone's local dates.
+  return openWindows(rules)(utcDay(range.start) - 1, utcDay(range.end) + 1);
+}
+
+/** Longer than any window: a window is one local day, under 26 hours even across a DST change. */
+const LONGEST_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
  * Whether `slot` is too long for any window to hold, so a slot of any length expands at most a few dates.
@@ -49,34 +105,29 @@ function isTooLong(slot: InstantRange): boolean {
 }
 
 /**
- * The windows that could hold `slot`, so a slot of any length expands at most a few dates.
- * `byDate` caches each UTC date's windows, by days since the epoch: pass one Map across slots over the same `rules`, so each date expands once.
+ * The windows that could hold `slot`.
+ * `byDate` caches each UTC date's windows, by days since the epoch: pass one Map across slots over the same `open`, so each date opens once.
  *
  * @returns The open windows around `slot`, or none when `slot` is too long for any window to hold.
  */
 export function windowsFor(
-  rules: readonly PreparedRule[],
+  open: OpenWindows,
   slot: InstantRange,
-  byDate: Map<number, readonly InstantRange[]>
-): InstantRange[] {
+  byDate: Map<number, readonly MsRange[]>
+): MsRange[] {
   if (isTooLong(slot)) {
     return [];
   }
 
-  const windows: InstantRange[] = [];
-  const first = utcDay(slot.start);
-  const last = utcDay(slot.end);
+  const windows: MsRange[] = [];
+  const last = utcDay(slot.end) + 1;
 
   // ±1 day around the UTC dates covers every rule timezone's local dates, as in `availableWindows`.
-  for (let day = first - 1; day <= last + 1; day += 1) {
+  for (let day = utcDay(slot.start) - 1; day <= last; day += 1) {
     let cached = byDate.get(day);
 
     if (cached === undefined) {
-      const date = dateOf(day);
-
-      cached = expandRulesUnchecked({ from: date, rules, to: date }).map(
-        (w) => ({ end: w.end.toInstant(), start: w.start.toInstant() })
-      );
+      cached = open(day, day);
       byDate.set(day, cached);
     }
 
@@ -87,19 +138,18 @@ export function windowsFor(
 }
 
 /**
- * Whether `range` fits fully inside one of `windows`.
+ * Whether `range`, rounded outwards to milliseconds, fits fully inside one of `windows`. Exact for a range of whole milliseconds.
  *
  * @returns `true` when one window contains all of `range`.
  */
 export function fitsInSomeWindow(
-  windows: readonly InstantRange[],
+  windows: readonly MsRange[],
   range: InstantRange
 ): boolean {
-  return windows.some(
-    (w) =>
-      Temporal.Instant.compare(w.start, range.start) <= 0 &&
-      Temporal.Instant.compare(range.end, w.end) <= 0
-  );
+  const startMs = floorToMs(range.start);
+  const endMs = ceilToMs(range.end);
+
+  return windows.some((w) => w.startMs <= startMs && endMs <= w.endMs);
 }
 
 /**
