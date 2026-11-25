@@ -5,10 +5,10 @@ import { windowFit } from "../src/core/availability.js";
 import { checkRules } from "../src/core/checks.js";
 import { ruleSet } from "./scenarios.js";
 
-// A Tuesday, open in every rule set below.
+// A Monday, open in every rule set below: 5 rules only cover Tuesday afternoon, and exceptions take every other day.
 const slot = {
-  end: Temporal.Instant.from("2026-12-01T10:30:00Z"),
-  start: Temporal.Instant.from("2026-12-01T10:00:00Z"),
+  end: Temporal.Instant.from("2026-11-30T10:30:00Z"),
+  start: Temporal.Instant.from("2026-11-30T10:00:00Z"),
 };
 
 const ruleSets = [
