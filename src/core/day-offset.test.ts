@@ -38,6 +38,18 @@ describe(dayOffsets, () => {
     ]);
   });
 
+  it("gives a repeated midnight's day the same answer after a later day", () => {
+    // The Azores repeat 00:00–01:00 that day: its midnight is the first one, before the change.
+    const day = Date.parse("2026-10-25T00:00Z");
+    const offsetOf = dayOffsets("Atlantic/Azores", day);
+
+    expect([
+      offsetOf(day),
+      offsetOf(day + DAY_MS),
+      offsetOf(day),
+    ]).toStrictEqual([undefined, -60 * 60 * 1000, undefined]);
+  });
+
   it("gives each day its own side of a clock change", () => {
     const hour = 60 * 60 * 1000;
     const first = Date.parse("2026-03-28T00:00Z");

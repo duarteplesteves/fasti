@@ -29,8 +29,8 @@ function stretchFrom(startMs: number, timezone: string): Stretch {
 }
 
 /**
- * A forward-only lookup of `timezone`'s UTC offset by day, from `firstMidnight` on. Give each local midnight as if it
- * were UTC, in epoch milliseconds, never decreasing.
+ * A lookup of `timezone`'s UTC offset by day. Give each local midnight as if it were UTC, in epoch milliseconds, in any
+ * order; `firstMidnight` is the first. Going forward is cheap, going back starts over.
  *
  * @returns A day's offset in milliseconds, or `undefined` when the clocks change that day, so no one offset holds.
  */
@@ -40,8 +40,16 @@ export function dayOffsets(
 ): (midnight: number) => number | undefined {
   // Far enough back that the first stretch's start, which is no clock change, never falls in a day asked for.
   let stretch = stretchFrom(firstMidnight - 4 * DAY_MS, timezone);
+  let previous = firstMidnight;
 
   return (midnight) => {
+    // Going back within a stretch would miss a repeated midnight's first occurrence.
+    if (midnight < previous) {
+      stretch = stretchFrom(midnight - 4 * DAY_MS, timezone);
+    }
+
+    previous = midnight;
+
     // Under the old offset, so a midnight the old stretch still reaches keeps its first occurrence.
     while (midnight - stretch.offsetMs >= stretch.endMs) {
       stretch = stretchFrom(stretch.endMs, timezone);
