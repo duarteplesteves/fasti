@@ -1,3 +1,5 @@
+import { setImmediate } from "node:timers/promises";
+
 import { assert, describe, expect, expectTypeOf, it } from "vitest";
 
 import { defineAdapter } from "../adapter/index.js";
@@ -490,4 +492,107 @@ describe("findSlots with Policies", () => {
       ["relax", 0],
     ]);
   });
+});
+
+/** A memory Adapter whose reads each take a turn of the event loop, counting them and how many overlap. */
+function counting() {
+  const reads = { atOnce: 0, inFlight: 0, total: 0 };
+
+  async function counted<T>(read: () => Promise<T>): Promise<T> {
+    reads.inFlight += 1;
+    reads.total += 1;
+    reads.atOnce = Math.max(reads.atOnce, reads.inFlight);
+
+    await setImmediate();
+
+    reads.inFlight -= 1;
+
+    return await read();
+  }
+
+  const inner = memoryAdapter();
+
+  const adapter = defineAdapter<undefined, "records">((s) => {
+    const raw = inner(s);
+
+    return {
+      ...raw,
+      listBookings: async (q) =>
+        await counted(async () => await raw.listBookings(q)),
+      listRecords: async (table, q) =>
+        await counted(async () => await raw.listRecords(table, q)),
+      withResourceLock: async (id, work) =>
+        await raw.withResourceLock(
+          id,
+          async (locked) =>
+            await work({
+              ...locked,
+              listBookings: async (q) =>
+                await counted(async () => await locked.listBookings(q)),
+              listRecords: async (table, q) =>
+                await counted(async () => await locked.listRecords(table, q)),
+            })
+        ),
+    };
+  });
+
+  return { adapter, reads };
+}
+
+describe("findSlots reads", () => {
+  /** A search on `room` on Monday 3 June 2030. */
+  const search = query(Temporal.Instant.from("2030-06-03T16:00:00Z"));
+
+  it("reads Bookings, Blocks and rules at once", async () => {
+    const { adapter, reads } = counting();
+
+    unwrap(await createScheduler({ adapter, schema }).findSlots(search));
+
+    expect(reads).toStrictEqual({ atOnce: 3, inFlight: 0, total: 3 });
+  });
+
+  it("reads one at a time under the Resource Lock, on its one connection", async () => {
+    const { adapter, reads } = counting();
+
+    const result = await createScheduler({ adapter, schema }).book({
+      end: from.add({ hours: 1 }),
+      relax: ["availability"],
+      resourceId: room,
+      start: from,
+    });
+
+    unwrap(result);
+    expect(reads).toStrictEqual({ atOnce: 1, inFlight: 0, total: 3 });
+  });
+
+  it.each(["booking", "block", "availabilityRule"])(
+    "gives AdapterError with the original cause when only the %s read fails",
+    async (failing) => {
+      const boom = new Error("boom");
+      const inner = await seeded();
+
+      const adapter = defineAdapter<undefined, "records">((s) => {
+        const raw = inner(s);
+
+        return {
+          ...raw,
+          listBookings: async (q) =>
+            await (failing === "booking"
+              ? Promise.reject(boom)
+              : raw.listBookings(q)),
+          listRecords: async (table, q) =>
+            await (failing === table
+              ? Promise.reject(boom)
+              : raw.listRecords(table, q)),
+        };
+      });
+
+      const result = await createScheduler({ adapter, schema }).findSlots(
+        search
+      );
+
+      assert(!result.ok, "expected an error");
+      expect(result.error).toMatchObject({ _tag: "AdapterError", cause: boom });
+    }
+  );
 });

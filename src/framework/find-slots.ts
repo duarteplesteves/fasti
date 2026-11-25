@@ -135,13 +135,21 @@ export function findSlots<S extends AnySchema, Tx>(
     // A slot starting before `to` can run to `to + duration`.
     const range = { from, to: to.add({ minutes: duration }) };
 
-    const { bookings } = yield* occupants(
-      ctx,
-      adapter,
-      "booking",
-      resourceId,
-      range,
-      excludeBookingId ?? null
+    // Unlocked, so the reads needn't share a connection: they run at once, each Policy's `load` still in turn.
+    const [{ bookings }, loaded] = yield* Effect.all(
+      [
+        occupants(
+          ctx,
+          adapter,
+          "booking",
+          resourceId,
+          range,
+          excludeBookingId ?? null,
+          "unbounded"
+        ),
+        loadPolicies(adapter, policies, { ...range, now, resourceId }),
+      ],
+      { concurrency: "unbounded" }
     );
 
     // Stored data the Core finds invalid is the Adapter's (Invariant 6).
@@ -159,12 +167,6 @@ export function findSlots<S extends AnySchema, Tx>(
     if (!grid.ok) {
       return yield* Effect.fail(new AdapterError(grid.error));
     }
-
-    const loaded = yield* loadPolicies(adapter, policies, {
-      ...range,
-      now,
-      resourceId,
-    });
 
     return grid.value.flatMap(({ endMs, startMs }) => {
       const start = Temporal.Instant.fromEpochMilliseconds(startMs);
