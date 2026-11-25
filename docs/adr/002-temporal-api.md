@@ -22,3 +22,7 @@ The engine will use the **Temporal API** (TC39 proposal) via `@js-temporal/polyf
 ## Amendment (2026-11-08)
 
 The polyfill was removed. The engine now uses the global `Temporal`, typed by TypeScript 7.1's `esnext` lib and native in Node.js 26+ and Bun 1.4+. `engines.node` is `>=26`. Consumers on other runtimes must install a global polyfill themselves.
+
+## Amendment (2026-11-25)
+
+Polyfills are no longer supported: fasti needs a runtime with native `Temporal`. They were never tested, and opening hours around clock changes depend on how a runtime answers.
