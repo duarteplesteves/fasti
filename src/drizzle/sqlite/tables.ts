@@ -138,14 +138,18 @@ export function bookingTable<
   const table = schema.names.tables.booking;
 
   return sqliteTable(table, columns, (self) => [
-    index(`${table}_resource_start_idx`).on(self.resourceId, self.start),
+    index(`${table}_resource_start_idx`).on(
+      self.resourceId,
+      self.start,
+      self.end
+    ),
     // DDL takes no bind parameters, so the stored values go in as escaped literals.
     check(`${table}_status_check`, sql`${self.status} in (${sql.raw(stored)})`),
   ]);
 }
 
 /**
- * One Plugin table, with your physical names: `id` (fasti mints it; the default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. Indexed by Resource, and `start` when timed.
+ * One Plugin table, with your physical names: `id` (fasti mints it; the default stays unless `idDefault: false`, as on 0.6's tables, R4), `resourceId`, a timed table's range, then its columns. Indexed by Resource, and `start` and `end` when timed.
  *
  * @returns The Drizzle table.
  */
@@ -175,14 +179,21 @@ function pluginTable<S extends AnySchema, C extends AnySQLiteColumn>(
       ),
     },
     (self) => {
-      // SAFETY: a timed table's `start` is the SQLite column built above; an untimed table has none.
+      // SAFETY: a timed table's `start` and `end` are the SQLite columns built above; an untimed table has neither.
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the spread above widens the column's own types.
       const start = self.start as AnySQLiteColumn | undefined;
+      // SAFETY: as `start`.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above.
+      const end = self.end as AnySQLiteColumn | undefined;
 
       return [
-        start === undefined
+        start === undefined || end === undefined
           ? index(`${table}_resource_idx`).on(self.resourceId)
-          : index(`${table}_resource_start_idx`).on(self.resourceId, start),
+          : index(`${table}_resource_start_idx`).on(
+              self.resourceId,
+              start,
+              end
+            ),
       ];
     }
   );

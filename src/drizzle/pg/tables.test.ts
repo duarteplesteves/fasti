@@ -48,8 +48,8 @@ describe("bookingTable references (type tests: the @ts-expect-error lines are th
   });
 });
 
-describe("indexes by Resource and start", () => {
-  it("names each index after its physical table, and adds start only when timed", () => {
+describe("indexes by Resource, start and end", () => {
+  it("names each index after its physical table, and adds start and end only when timed", () => {
     const schema = defineSchema({
       names: {
         columns: { booking: { resourceId: "room_id", start: "starts_at" } },
@@ -77,8 +77,8 @@ describe("indexes by Resource and start", () => {
         ])
       )
     ).toStrictEqual([
-      [["appointments_resource_start_idx", ["room_id", "starts_at"]]],
-      [["shift_resource_start_idx", ["resourceId", "start"]]],
+      [["appointments_resource_start_idx", ["room_id", "starts_at", "end"]]],
+      [["shift_resource_start_idx", ["resourceId", "start", "end"]]],
       [["tag_resource_idx", ["resourceId"]]],
     ]);
   });
