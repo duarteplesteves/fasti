@@ -629,6 +629,73 @@ describe("Effect form Policies", () => {
     expect(exit.value.also).toStrictEqual(frozen);
   });
 
+  it("stops a Policy's load at its next read once findSlots is interrupted", async () => {
+    const { adapter, booking } = await seeded();
+    const started = Promise.withResolvers<undefined>();
+    const release = Promise.withResolvers<undefined>();
+    const settled = Promise.withResolvers<undefined>();
+    const afterRead = vi.fn<() => void>();
+
+    const reading = definePolicy(schema, {
+      appliesTo: ["book"],
+      check: () => null,
+      load: async ({ reads }) => {
+        started.resolve(undefined);
+        await release.promise;
+
+        try {
+          await reads.getBooking(booking.id);
+          afterRead();
+        } finally {
+          settled.resolve(undefined);
+        }
+      },
+      name: "reading",
+    });
+
+    class ReadingScheduler extends Scheduler<
+      ReadingScheduler,
+      typeof schema,
+      Tx,
+      readonly [typeof reading]
+    >()("test/ReadingScheduler") {}
+
+    const exit = await Effect.runPromise(
+      Effect.gen(function* searchInterrupted() {
+        const s = yield* ReadingScheduler;
+
+        const fiber = yield* Effect.forkChild(
+          s.findSlots({
+            duration: 30,
+            from: at(0),
+            interval: 30,
+            resourceId: room,
+            timezone: "Europe/Lisbon",
+            to: at(4),
+          })
+        );
+
+        yield* Effect.promise(async () => {
+          await started.promise;
+        });
+        yield* Fiber.interrupt(fiber);
+
+        return yield* Fiber.await(fiber);
+      }).pipe(
+        Effect.provide(
+          ReadingScheduler.layer({ adapter, policies: [reading], schema })
+        )
+      )
+    );
+
+    expect(Exit.hasInterrupts(exit)).toBeTruthy();
+
+    release.resolve(undefined);
+    await settled.promise;
+
+    expect(afterRead).not.toHaveBeenCalled();
+  });
+
   it("book passes notice, then breaks it after TestClock.adjust", async () => {
     const { adapter } = await seeded();
     const hourNotice = notice(schema, { appliesTo: ["book"], minimum: 60 });

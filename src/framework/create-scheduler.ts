@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Predicate, Result as EffectResult } from "effect";
+import { Effect, Predicate } from "effect";
 
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";
@@ -7,6 +7,7 @@ import type { PolicyNamesOf } from "../schema/table.js";
 import type { ErasedError } from "./errors.js";
 import type { AnyHookOf } from "./hook.js";
 import type { AnyPolicyOf, UniqueNames } from "./policy.js";
+import { exitToResult } from "./promise-crossing.js";
 import { bindActions } from "./scheduler-service.js";
 import type { SchedulerActions } from "./scheduler-service.js";
 
@@ -32,30 +33,6 @@ export type Scheduler<
   Tx,
   P extends readonly AnyPolicyOf<S>[],
 > = SchedulerActions<S, Tx, P, "plain">;
-
-/**
- * A typed failure becomes `error`; a defect or interruption is thrown, so the promise rejects.
- *
- * @returns The success as `{ ok: true, value }`, or the typed failure as `{ ok: false, error }`.
- */
-export function exitToResult<A, E>(exit: Exit.Exit<A, E>): Result<A, E> {
-  if (Exit.isSuccess(exit)) {
-    return { ok: true, value: exit.value };
-  }
-
-  const { cause } = exit;
-  const found = Cause.findError(cause);
-
-  if (
-    Cause.hasDies(cause) ||
-    Cause.hasInterrupts(cause) ||
-    EffectResult.isFailure(found)
-  ) {
-    throw Cause.squash(cause);
-  }
-
-  return { error: found.success, ok: false };
-}
 
 /** A plain `also`: sync or async, a {@link Result} either way. SchedulerActions types its context and Result at the call site. */
 type PlainAlso = (
