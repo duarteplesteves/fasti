@@ -37,18 +37,48 @@ describe(isSlotValid, () => {
     timezone: "Europe/Lisbon",
   };
 
+  // Expanding 20 rules over it takes far longer than the timeout.
   it("returns false for a slot spanning millennia, without expanding the rules over it", () => {
     expect(
       unwrap(
         isSlotValid({
           bookings: [],
           resourceId: "doc-1",
-          rules: [tuesdayMorning],
+          rules: Array.from({ length: 20 }, () => tuesdayMorning),
           slot: slotAt("2026-05-12T08:30:00Z", "9999-12-31T00:00:00Z"),
         })
       )
     ).toBeFalsy();
-  });
+  }, 5000);
+
+  it.each([
+    ["10:00:00.0001", false],
+    ["10:00:00.0002", true],
+    ["10:00:00.0005", true],
+  ])(
+    "compares a slot from %s with a window from 10:00:00.0002 to the nanosecond",
+    (start, valid) => {
+      const rule: AvailabilityRule = {
+        ...tuesdayMorning,
+        timeWindow: {
+          end: Temporal.PlainTime.from("17:00"),
+          start: Temporal.PlainTime.from("10:00:00.0002"),
+        },
+        timezone: "UTC",
+      };
+
+      expect(
+        unwrap(
+          isSlotValid({
+            bookings: [],
+            resourceId: "doc-1",
+            rules: [rule],
+            slot: slotAt(`2026-05-12T${start}Z`, "2026-05-12T10:30:00Z"),
+          })
+        )
+      ).toBe(valid);
+    }
+  );
 
   it("returns true for a slot fully inside a rule with no bookings", () => {
     // 2026-05-12 is a Tuesday. 09:30 Lisbon (WEST, UTC+1) = 08:30 UTC.

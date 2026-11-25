@@ -220,7 +220,7 @@ describe(expandRules, () => {
       timezone: "Europe/Lisbon",
     };
 
-    // Unchecked: the internal path `windowsFor` takes; a direct call is capped at 366 days.
+    // Unchecked: the internal path `isSlotValid` takes; a direct call is capped at 366 days.
     const result = expandRulesUnchecked({
       from: Temporal.PlainDate.from("2000-01-01"),
       rules: prepareRules([rule]),

@@ -28,6 +28,27 @@ export function availableWindows(
 const LONGEST_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
+ * `instant`'s UTC date.
+ *
+ * @returns The days since the epoch.
+ */
+function utcDay(instant: Temporal.Instant): number {
+  return Math.floor(instant.epochMilliseconds / DAY_MS);
+}
+
+/**
+ * Whether `slot` is too long for any window to hold, so a slot of any length expands at most a few dates.
+ *
+ * @returns `true` when no window could hold `slot`.
+ */
+function isTooLong(slot: InstantRange): boolean {
+  return (
+    slot.end.epochMilliseconds - slot.start.epochMilliseconds >
+    LONGEST_WINDOW_MS
+  );
+}
+
+/**
  * The windows that could hold `slot`, so a slot of any length expands at most a few dates.
  * `byDate` caches each UTC date's windows, by days since the epoch: pass one Map across slots over the same `rules`, so each date expands once.
  *
@@ -38,16 +59,13 @@ export function windowsFor(
   slot: InstantRange,
   byDate: Map<number, readonly InstantRange[]>
 ): InstantRange[] {
-  if (
-    slot.end.epochMilliseconds - slot.start.epochMilliseconds >
-    LONGEST_WINDOW_MS
-  ) {
+  if (isTooLong(slot)) {
     return [];
   }
 
   const windows: InstantRange[] = [];
-  const first = Math.floor(slot.start.epochMilliseconds / DAY_MS);
-  const last = Math.floor(slot.end.epochMilliseconds / DAY_MS);
+  const first = utcDay(slot.start);
+  const last = utcDay(slot.end);
 
   // ±1 day around the UTC dates covers every rule timezone's local dates, as in `availableWindows`.
   for (let day = first - 1; day <= last + 1; day += 1) {
@@ -81,5 +99,30 @@ export function fitsInSomeWindow(
     (w) =>
       Temporal.Instant.compare(w.start, range.start) <= 0 &&
       Temporal.Instant.compare(range.end, w.end) <= 0
+  );
+}
+
+/**
+ * Whether `slot` fits fully inside one of the windows `rules` open, exact to the nanosecond: slots and rule times may both be finer than a millisecond.
+ *
+ * @returns `true` when one window contains all of `slot`.
+ */
+export function fitsExactly(
+  rules: readonly AvailabilityRule[],
+  slot: InstantRange
+): boolean {
+  if (isTooLong(slot)) {
+    return false;
+  }
+
+  // ±1 day around the UTC dates covers every rule timezone's local dates.
+  return expandRulesUnchecked({
+    from: dateOf(utcDay(slot.start) - 1),
+    rules: prepareRules(rules),
+    to: dateOf(utcDay(slot.end) + 1),
+  }).some(
+    (w) =>
+      Temporal.Instant.compare(w.start.toInstant(), slot.start) <= 0 &&
+      Temporal.Instant.compare(slot.end, w.end.toInstant()) <= 0
   );
 }
