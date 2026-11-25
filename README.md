@@ -841,7 +841,7 @@ const adapter = drizzleAdapter(db);
 
 **Isolation.** Units of work, `also` and in-transaction Hooks included, run at `READ COMMITTED` whatever your database's default isolation level, because the Resource Lock needs it.
 
-**The index.** The builders declare an index on the Resource id and `start` (`<table>_resource_start_idx`), or on the Resource id alone for an untimed Plugin table (`<table>_resource_idx`), so fasti's reads don't scan the whole table. After upgrading, generate a migration. On a large live table, change the generated statement to `create index concurrently` and run it outside a transaction: a plain one blocks writes until it finishes.
+**The index.** The builders declare an index on the Resource id, `start` and `end` (`<table>_resource_start_idx`), or on the Resource id alone for an untimed Plugin table (`<table>_resource_idx`), so fasti's reads don't scan the whole table. After upgrading, generate a migration. On a large live table, change the generated statement to `create index concurrently` and run it outside a transaction: a plain one blocks writes until it finishes.
 
 **The backstop.** `backstopSql(schema)` returns the statements for an `EXCLUDE` constraint so no two blocking Bookings overlap on one Resource, even when a write skips fasti's lock. Drizzle can't express `EXCLUDE`, so add it as a custom migration after the one that creates the tables:
 
@@ -949,7 +949,7 @@ export const myAdapter = defineAdapter<MyTx, "records">((schema) => ({
 
 The `"records"` group stores every Plugin's tables, present and future, so you write it once. A schema whose Plugins declare tables (`availability()`, `blocks()`, …) needs it, and the types enforce it; a schema with none doesn't. `schema.tables` lists each table's physical name, whether it's `timed` (fasti-owned `start` and `end`), and its columns with their kinds: `text`, `uuid`, `integer`, `boolean`, `instant`, `date` (`Temporal.PlainDate`), `time` (`Temporal.PlainTime`), `json` and `dates` (a list of `PlainDate`). Compare `json` values by content, not by key order.
 
-Index each table on its Resource id and `start` (the Resource id alone when untimed), as fasti's own tables are: most reads ask for one Resource's rows in a range, some while holding the Resource Lock.
+Index each table on its Resource id, `start` and `end` (the Resource id alone when untimed), as fasti's own tables are: most reads ask for one Resource's rows in a range, some while holding the Resource Lock.
 
 Expected outcomes (`conflict`, `changed`, `missing`) are returned as values; anything else rejects with an `Error`, carrying your driver's error as `cause` when the driver failed. Records use logical names (`start`, `"booked"`); map them to your columns and stored values inside the Adapter.
 

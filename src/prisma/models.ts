@@ -97,6 +97,7 @@ function tableModel(
     Record<string, ScalarFieldBuilder> & {
       resourceId: ScalarFieldBuilder;
       start?: ScalarFieldBuilder;
+      end?: ScalarFieldBuilder;
     }
   >,
   checks: readonly ReturnType<typeof check>[],
@@ -115,9 +116,9 @@ function tableModel(
             }),
           ],
     indexes: [
-      cols.start === undefined
+      cols.start === undefined || cols.end === undefined
         ? constraints.index([cols.resourceId], { map: `${table}_resource_idx` })
-        : constraints.index([cols.resourceId, cols.start], {
+        : constraints.index([cols.resourceId, cols.start, cols.end], {
             map: `${table}_resource_start_idx`,
           }),
     ],

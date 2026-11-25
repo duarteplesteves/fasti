@@ -77,8 +77,8 @@ describe("indexes by Resource and start", () => {
         ])
       )
     ).toStrictEqual([
-      [["appointments_resource_start_idx", ["room_id", "starts_at"]]],
-      [["shift_resource_start_idx", ["resourceId", "start"]]],
+      [["appointments_resource_start_idx", ["room_id", "starts_at", "end"]]],
+      [["shift_resource_start_idx", ["resourceId", "start", "end"]]],
       [["tag_resource_idx", ["resourceId"]]],
     ]);
   });

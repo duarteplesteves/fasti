@@ -70,3 +70,7 @@ A security review (deepsec finding `d77c31ce75`) flagged that a Plugin can write
 ## Amendment (2026-11-24): fasti's tables are indexed by Resource and start
 
 Every Adapter's tables now declare an index on the Resource id and `start` (`<table>_resource_start_idx`), or on the Resource id alone for an untimed Plugin table (`<table>_resource_idx`), named from the physical table so switching ORM needs no migration. Without it, reads of one Resource's rows scan the whole table, some while holding the Resource Lock. This ships in a minor after `0.7`, so the promise that `0.6` to `0.7` needs no migration holds. The parity tests now allow this one difference from `0.6`. fasti works without the indexes, only slower.
+
+## Amendment (2026-11-25): the index includes `end`
+
+A timed table's index, still unreleased, is on the Resource id, `start` and `end`, under the same name. On the Resource id and `start` alone, each read fetches the Resource's whole past to check `end`: 12 ms per read with 20,000 past Bookings on Postgres, against 0.4 ms.

@@ -228,18 +228,25 @@ describe("prismaModels references", () => {
       u_closures: fk(
         "u_off_room_id",
         "u_closures_resource_start_idx",
-        "u_off_starts_at"
+        "u_off_starts_at",
+        "u_off_ends_at"
       ),
       u_hours: fk("u_staff_id", "u_hours_resource_idx"),
       u_reservations: fk(
         "u_room_id",
         "u_reservations_resource_start_idx",
-        "u_starts_at"
+        "u_starts_at",
+        "u_ends_at"
       ),
     });
     expect(foreignKeysOf(integerIdSchema, "Int")).toMatchObject({
       i_hours: fk("i_staff_id", "i_hours_resource_idx"),
-      i_visits: fk("i_staff_id", "i_visits_resource_start_idx", "i_starts_at"),
+      i_visits: fk(
+        "i_staff_id",
+        "i_visits_resource_start_idx",
+        "i_starts_at",
+        "i_ends_at"
+      ),
     });
   });
 
