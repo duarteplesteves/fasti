@@ -17,9 +17,12 @@ import type {
   TableDef,
   Tables,
 } from "../schema/table.js";
-import { exitToResult } from "./create-scheduler.js";
-import { AdapterError } from "./errors.js";
-import type { ConflictingBooking, ErasedError, Vetoed } from "./errors.js";
+import type {
+  AdapterError,
+  ConflictingBooking,
+  ErasedError,
+  Vetoed,
+} from "./errors.js";
 import type { Committed } from "./hook.js";
 import { checkPluginHooks } from "./plugin.js";
 import type {
@@ -33,6 +36,7 @@ import type {
   Written,
 } from "./plugin.js";
 import type { Candidate } from "./policy.js";
+import { attempt, promisedVerb, settle } from "./promise-crossing.js";
 import type { BookingActionName } from "./target.js";
 import type { Outcome } from "./write-unit.js";
 
@@ -307,74 +311,12 @@ interface ErasedTools {
 }
 
 /**
- * Run `effect` with the caller's `services`: interrupted on `signal`; a typed failure becomes `error`, a defect or interrupt rejects.
- *
- * @returns A promise of `effect`'s success as `{ ok: true, value }`, or its typed failure as `{ ok: false, error }`.
- */
-async function settle<A, E>(
-  services: Context.Context<never>,
-  signal: AbortSignal,
-  effect: Effect.Effect<A, E>
-): Promise<Result<A, E>> {
-  return exitToResult(
-    await Effect.runPromiseExitWith(services)(effect, { signal })
-  );
-}
-
-/**
- * An {@link AdapterError} stays the failure; anything else thrown is a defect.
- *
- * @returns An Effect that fails with `thrown` when it is an `AdapterError`, and dies with it otherwise.
- */
-function adapterErrorOrDie(
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- whatever a Plugin's Promise rejected with.
-  thrown: unknown
-): Effect.Effect<never, AdapterError> {
-  return thrown instanceof AdapterError
-    ? Effect.fail(thrown)
-    : Effect.die(thrown);
-}
-
-/**
- * Await `run`: a rejection with an {@link AdapterError} is that failure; any other rejection is a defect.
- *
- * @returns An Effect of `run`'s value; it fails with `AdapterError`.
- */
-function attempt<A>(
-  run: (signal: AbortSignal) => Promise<A>
-): Effect.Effect<A, AdapterError> {
-  // A rejection is a defect first, so the error channel never holds `unknown`.
-  return Effect.promise(run).pipe(Effect.catchDefect(adapterErrorOrDie));
-}
-
-/**
  * A resolved {@link Result} as an Effect.
  *
  * @returns An Effect of the success; it fails with the error.
  */
 function fromResult<A, E>(result: Result<A, E>): Effect.Effect<A, E> {
   return result.ok ? Effect.succeed(result.value) : Effect.fail(result.error);
-}
-
-/**
- * A native verb as a Promise, run with the caller's services; a failure rejects with its AdapterError.
- *
- * @returns The verb, returning a Promise.
- */
-function promisedVerb<Args extends readonly unknown[], A>(
-  verb: (...args: Args) => Effect.Effect<A, AdapterError>,
-  services: Context.Context<never>,
-  signal: AbortSignal
-): (...args: Args) => Promise<A> {
-  return async (...args) => {
-    const result = await settle(services, signal, verb(...args));
-
-    if (!result.ok) {
-      throw result.error;
-    }
-
-    return result.value;
-  };
 }
 
 /**

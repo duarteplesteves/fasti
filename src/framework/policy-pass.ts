@@ -1,11 +1,11 @@
-import { Cause, Effect, Exit } from "effect";
+import { Effect } from "effect";
+import type { Context } from "effect";
 
 import { checked } from "../core/result.js";
 import type { InvalidParams, Result } from "../core/result.js";
 import type { AnySchema } from "../schema/define-schema.js";
 import type { EffectReads } from "./effect-adapter.js";
-import { AdapterError } from "./errors.js";
-import type { PolicyViolation } from "./errors.js";
+import type { AdapterError, PolicyViolation } from "./errors.js";
 import type {
   AnyPolicyOf,
   Candidate,
@@ -14,6 +14,7 @@ import type {
   Violation,
   ViolationOf,
 } from "./policy.js";
+import { attempt, promisedVerb } from "./promise-crossing.js";
 import type { ActionContext } from "./scheduler-service.js";
 import { isNamedTarget, matchesTarget } from "./target.js";
 import type { CalledTarget, PolicyTarget } from "./target.js";
@@ -64,31 +65,18 @@ export function applicable<S extends AnySchema, Tx>(
 }
 
 /**
- * Run a read, rejecting with its `AdapterError` on failure.
- *
- * @returns A promise of the read's value.
- */
-async function run<A>(read: Effect.Effect<A, AdapterError>): Promise<A> {
-  const exit = await Effect.runPromiseExit(read);
-
-  if (Exit.isSuccess(exit)) {
-    return exit.value;
-  }
-
-  throw Cause.squash(exit.cause);
-}
-
-/**
- * fasti's Effect reads as the Promises `load` gets.
+ * fasti's Effect reads as the Promises `load` gets, run with the caller's services.
  *
  * @returns The reads in Promise form.
  */
 function promiseReads<S extends AnySchema>(
-  reads: EffectReads<S>
+  reads: EffectReads<S>,
+  services: Context.Context<never>,
+  signal: AbortSignal
 ): PolicyReads<S> {
   return {
-    getBooking: async (id) => await run(reads.getBooking(id)),
-    listBookings: async (query) => await run(reads.listBookings(query)),
+    getBooking: promisedVerb(reads.getBooking, services, signal),
+    listBookings: promisedVerb(reads.listBookings, services, signal),
   };
 }
 
@@ -107,23 +95,14 @@ export function appPolicy<S extends AnySchema>(
     load:
       load &&
       ((reads, ctx) =>
-        // A rejection other than AdapterError escapes Effect.promise as a defect.
-        Effect.flatMap(
-          Effect.promise(async () => {
-            try {
-              return {
-                data: await load({ ...ctx, reads: promiseReads(reads) }),
-                ok: true,
-              } as const;
-            } catch (error) {
-              if (error instanceof AdapterError) {
-                return { error, ok: false } as const;
-              }
-
-              throw error;
-            }
-          }),
-          (r) => (r.ok ? Effect.succeed(r.data) : Effect.fail(r.error))
+        Effect.flatMap(Effect.context(), (services) =>
+          attempt(
+            async (signal) =>
+              await load({
+                ...ctx,
+                reads: promiseReads(reads, services, signal),
+              })
+          )
         )),
   };
 }
