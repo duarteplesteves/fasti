@@ -1,7 +1,8 @@
 import { MAX_EXPAND_DAYS, checkDate, checkRules } from "./checks.js";
-import { occursOn } from "./recurrence.js";
+import { DAY_MS } from "./day-offset.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
+import { dateAt, ruleDates, utcMidnightMs } from "./rule-dates.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";
 
 /** Rules to expand over every date in `[from, to]`, both ends included. */
@@ -10,9 +11,6 @@ export interface ExpandRulesParams {
   from: Temporal.PlainDate;
   to: Temporal.PlainDate;
 }
-
-/** A UTC day, and so a step of `midnight` in `expandRulesUnchecked`. */
-const DAY_MS = 86_400_000;
 
 /**
  * The wall-clock time of `zoned` as milliseconds, as if it were UTC.
@@ -33,15 +31,6 @@ function msOfDay(time: Temporal.PlainTime): number {
     ((time.hour * 60 + time.minute) * 60 + time.second) * 1000 +
     time.millisecond
   );
-}
-
-/**
- * The start of `date` in UTC.
- *
- * @returns The milliseconds since the epoch.
- */
-function utcMidnightMs(date: Temporal.PlainDate): number {
-  return date.toZonedDateTime("UTC").epochMilliseconds;
 }
 
 /**
@@ -77,40 +66,21 @@ export function expandRulesUnchecked(
   const { from, rules, to } = params;
   const windows: ExpandedWindow[] = [];
   const fromMidnight = utcMidnightMs(from);
+  const toMidnight = utcMidnightMs(to);
 
   for (const rule of rules) {
-    // Only the dates the rule is in effect, so a long range costs a short-lived rule nothing.
-    const first =
-      rule.effectiveFrom &&
-      Temporal.PlainDate.compare(rule.effectiveFrom, from) > 0
-        ? rule.effectiveFrom
-        : from;
-
-    const last =
-      rule.effectiveTo && Temporal.PlainDate.compare(rule.effectiveTo, to) < 0
-        ? rule.effectiveTo
-        : to;
-
-    const exceptions = new Set(rule.exceptions?.map((e) => e.toString()));
+    const dates = ruleDates(rule);
     const startMs = msOfDay(rule.timeWindow.start);
     const endMs = msOfDay(rule.timeWindow.end);
 
-    // `date`'s midnight as `localMs` counts, one step back: the loop steps it first.
-    let midnight =
-      (first === from ? fromMidnight : utcMidnightMs(first)) - DAY_MS;
+    // Only the dates the rule is in effect, so a long range costs a short-lived rule nothing.
+    const first = Math.max(dates.first, fromMidnight);
+    const last = Math.min(dates.last, toMidnight);
 
-    for (
-      let date = first;
-      Temporal.PlainDate.compare(date, last) <= 0;
-      date = date.add({ days: 1 })
-    ) {
-      midnight += DAY_MS;
+    for (let midnight = first; midnight <= last; midnight += DAY_MS) {
+      if (dates.includes(midnight)) {
+        const date = dateAt(midnight).withCalendar(from.calendarId);
 
-      // Most rules have no exceptions, so most dates need no string.
-      if (
-        occursOn(rule.recurrence, date, rule.effectiveFrom) &&
-        !(exceptions.size > 0 && exceptions.has(date.toString()))
-      ) {
         let start = date.toZonedDateTime({
           plainTime: rule.timeWindow.start,
           timeZone: rule.timezone,
