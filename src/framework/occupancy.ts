@@ -45,7 +45,8 @@ interface Occupants {
 /**
  * Everything occupying `resourceId` over the half-open `[from, to)` for a candidate of kind `candidate`: the one place occupants enter the Core.
  * Only a Booking candidate sees the busy sources: busy time may overlap busy time (ADR 016).
- * `exclude` leaves out that stored Booking only (the one being moved), never busy time with the same id. Internal.
+ * `exclude` leaves out that stored Booking only (the one being moved), never busy time with the same id.
+ * `concurrency` is `1` on a unit of work, whose reads share one connection. Internal.
  *
  * @returns An Effect of the overlapping Bookings and busy time; it fails with `AdapterError`.
  */
@@ -58,20 +59,27 @@ export function occupants<S extends AnySchema, Tx>(
     readonly from: Temporal.Instant;
     readonly to: Temporal.Instant;
   },
-  exclude: BookingId | null
+  exclude: BookingId | null,
+  concurrency: 1 | "unbounded"
 ): Effect.Effect<Occupants, AdapterError> {
   const query = { overlapping, resourceId };
   const sources = candidate === "booking" ? busy : [];
 
   return Effect.map(
-    Effect.all([
-      reads.listBookings(query),
-      Effect.forEach(sources, (source) =>
-        Effect.map(source.list(reads, query), (ranges) =>
-          ranges.map((range) => ({ kind: source.kind, range }))
-        )
-      ),
-    ]),
+    Effect.all(
+      [
+        reads.listBookings(query),
+        Effect.forEach(
+          sources,
+          (source) =>
+            Effect.map(source.list(reads, query), (ranges) =>
+              ranges.map((range) => ({ kind: source.kind, range }))
+            ),
+          { concurrency }
+        ),
+      ],
+      { concurrency }
+    ),
     ([bookings, busyLists]) => {
       const kindOf = new Map<Booking, Kind>([
         ...bookings
@@ -164,7 +172,8 @@ export function conflictsAt<S extends AnySchema, Tx>(
       kind,
       resourceId,
       { from: start, to: end },
-      excludeBookingId
+      excludeBookingId,
+      1
     ),
     ({ bookings, kindOf }) => {
       // `occupants` already left out `excludeBookingId`, and only the stored Booking.
