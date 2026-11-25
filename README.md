@@ -31,7 +31,7 @@ One package, several entry points:
 | `@fastijs/scheduler/testing`    | `testAdapter`, the Conformance Suite every Adapter must pass (needs `vitest`).          |
 | `@fastijs/scheduler/core`       | The Core: the stateless functions under [The Core](#the-core). No runtime dependencies. |
 
-fasti uses the global `Temporal` (Node.js 26+, Bun 1.4+). On runtimes without native Temporal, install a global polyfill before importing the package.
+fasti needs a runtime with native `Temporal` (Node.js 26+, Bun 1.4+).
 
 
 ## Quickstart
