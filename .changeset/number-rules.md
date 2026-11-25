@@ -2,4 +2,4 @@
 "@fastijs/scheduler": patch
 ---
 
-`findFreeSlots`, `findSlots` and the `availability` Policy compute availability windows as numbers and prepare each rule once. Same Slots, windows, issues and Policy answers, in less time.
+Availability windows are computed as numbers, in one place: `findFreeSlots`, `findSlots`, `expandRules`, `isSlotValid` and the `availability` Policy all use it. Same Slots, windows, issues and Policy answers, in less time.

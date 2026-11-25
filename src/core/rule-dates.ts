@@ -1,6 +1,6 @@
-import { DAY_MS } from "./day-offset.js";
 import { occursOn } from "./recurrence.js";
 import type { AvailabilityRule } from "./types.js";
+import { DAY_MS } from "./zone-clock.js";
 
 /**
  * `date`, whatever its calendar, as days since the epoch: how this module and its callers count dates.
@@ -15,26 +15,15 @@ export function epochDay(date: Temporal.PlainDate): number {
   return Date.UTC(iso.year + 8000, iso.month - 1, iso.day) / DAY_MS - 2_921_940;
 }
 
-/**
- * The date `day` days since the epoch.
- *
- * @returns The date, in the ISO calendar.
- */
-export function dateOf(day: number): Temporal.PlainDate {
-  return Temporal.Instant.fromEpochMilliseconds(day * DAY_MS)
-    .toZonedDateTimeISO("UTC")
-    .toPlainDate();
-}
-
 /** The dates a rule occurs on from `first` to `last`, both included, in order; all in days since the epoch. */
-type RuleDates = (first: number, last: number) => readonly number[];
+export type RuleDates = (first: number, last: number) => readonly number[];
 
 /**
  * `rule`'s dates: its effective dates, recurrence and exceptions. The only place that decides them.
  *
- * @returns The lookup, for any range.
+ * @returns The lookup, for any number of ranges: it reads the exceptions once.
  */
-function ruleDates(rule: AvailabilityRule): RuleDates {
+export function ruleDates(rule: AvailabilityRule): RuleDates {
   const { effectiveFrom, effectiveTo, exceptions = [], recurrence } = rule;
   const from = effectiveFrom && epochDay(effectiveFrom);
   const to = effectiveTo && epochDay(effectiveTo);
@@ -61,21 +50,4 @@ function ruleDates(rule: AvailabilityRule): RuleDates {
 
     return dates;
   };
-}
-
-/** A rule with its dates worked out, so asking about many ranges reads its exceptions once. */
-export interface PreparedRule {
-  readonly rule: AvailabilityRule;
-  readonly datesIn: RuleDates;
-}
-
-/**
- * Prepares `rules` to expand, any number of times.
- *
- * @returns Each rule with its dates, in order.
- */
-export function prepareRules(
-  rules: readonly AvailabilityRule[]
-): readonly PreparedRule[] {
-  return rules.map((rule) => ({ datesIn: ruleDates(rule), rule }));
 }
