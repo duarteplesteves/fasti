@@ -1,5 +1,20 @@
 # @fastijs/scheduler
 
+## 0.8.0
+
+### Minor Changes
+
+- 7cf1eed: Temporal polyfills are no longer supported: fasti needs a runtime with native `Temporal` (Node.js 26+, Bun 1.4+). Nothing stops a polyfill from working, but none was ever tested.
+- 7e2f689: The Drizzle and Prisma tables now declare an index on the Resource id, `start` and `end` (the Resource id alone on untimed Plugin tables), so booking and searching no longer scan the whole table. Generate a migration after upgrading; on a large live Postgres table, create the indexes concurrently. fasti works without them, only slower.
+
+### Patch Changes
+
+- 4c0810c: `findFreeSlots` and `findSlots` compare Bookings and availability windows as numbers, check valid Bookings without allocating, and zone a Slot's `end` only when the Slot is returned. Same Slots and issues, in less time. Untyped callers who pass a string as a blocking Booking's `start` or `end` to `findFreeSlots`, which the types never allowed, now get a `TypeError`.
+- e455323: `findSlots` makes its reads at once instead of one after another, so a search waits for one round trip. A search can use one pool connection per read; give your Adapter a pool rather than a single client. Policies' `load`s still run in order, but now start before the stored Bookings have been checked.
+- 6109d68: `findFreeSlots` and `findSlots` compute Grid times as numbers and zone a Slot's `start` only when the Slot is returned. Same Slots and issues, in less time.
+- 9d22a1c: Availability windows are computed as numbers, in one place: `findFreeSlots`, `findSlots`, `expandRules`, `isSlotValid` and the `availability` Policy all use it. Same Slots, windows, issues and Policy answers, in less time.
+- 8dc3307: A rule's dates are worked out as numbers, and a search or Policy call prepares each rule once, so both take less time. Rule dates in a calendar other than ISO are now read by the date they name: such an exception was ignored or such an `effectiveFrom` could throw. `expandRules` windows are always in `from`'s calendar.
+
 ## 0.7.3
 
 ### Patch Changes
