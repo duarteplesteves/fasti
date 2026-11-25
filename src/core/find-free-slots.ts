@@ -11,6 +11,7 @@ import type { CheckIssue } from "./checks.js";
 import { DAY_MS, dayOffsets } from "./day-offset.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
+import { epochDay } from "./rule-dates.js";
 import type {
   AvailabilityRule,
   AvailabilityViolation,
@@ -88,10 +89,7 @@ function ceilToMs(instant: Temporal.Instant): number {
  * @returns The milliseconds since the epoch.
  */
 function localMidnightMs(instant: Temporal.Instant, timezone: string): number {
-  return instant
-    .toZonedDateTimeISO(timezone)
-    .toPlainDate()
-    .toZonedDateTime("UTC").epochMilliseconds;
+  return epochDay(instant.toZonedDateTimeISO(timezone).toPlainDate()) * DAY_MS;
 }
 
 /**

@@ -2,7 +2,7 @@ import { MAX_EXPAND_DAYS, checkDate, checkRules } from "./checks.js";
 import { DAY_MS } from "./day-offset.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
-import { dateAt, prepareRules, utcMidnightMs } from "./rule-dates.js";
+import { dateOf, epochDay, prepareRules } from "./rule-dates.js";
 import type { PreparedRule } from "./rule-dates.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";
 
@@ -68,47 +68,42 @@ export function expandRulesUnchecked(
 ): ExpandedWindow[] {
   const { from, rules, to } = params;
   const windows: ExpandedWindow[] = [];
-  const fromMidnight = utcMidnightMs(from);
-  const toMidnight = utcMidnightMs(to);
+  const first = epochDay(from);
+  const last = epochDay(to);
 
-  for (const { dates, rule } of rules) {
+  for (const { datesIn, rule } of rules) {
     const startMs = msOfDay(rule.timeWindow.start);
     const endMs = msOfDay(rule.timeWindow.end);
 
-    // Only the dates the rule is in effect, so a long range costs a short-lived rule nothing.
-    const first = Math.max(dates.first, fromMidnight);
-    const last = Math.min(dates.last, toMidnight);
+    for (const day of datesIn(first, last)) {
+      const midnight = day * DAY_MS;
+      const date = dateOf(day).withCalendar(from.calendarId);
 
-    for (let midnight = first; midnight <= last; midnight += DAY_MS) {
-      if (dates.includes(midnight)) {
-        const date = dateAt(midnight).withCalendar(from.calendarId);
+      let start = date.toZonedDateTime({
+        plainTime: rule.timeWindow.start,
+        timeZone: rule.timezone,
+      });
 
-        let start = date.toZonedDateTime({
-          plainTime: rule.timeWindow.start,
-          timeZone: rule.timezone,
-        });
+      let end = date.toZonedDateTime({
+        plainTime: rule.timeWindow.end,
+        timeZone: rule.timezone,
+      });
 
-        let end = date.toZonedDateTime({
-          plainTime: rule.timeWindow.end,
-          timeZone: rule.timezone,
-        });
+      // Temporal moved an edge that falls in a gap. Compared as numbers: this runs for every window, the clipping almost never.
+      if (
+        localMs(start) !== midnight + startMs ||
+        localMs(end) !== midnight + endMs
+      ) {
+        start = clipped(date, rule.timeWindow.start, rule.timezone);
+        end = clipped(date, rule.timeWindow.end, rule.timezone);
 
-        // Temporal moved an edge that falls in a gap. Compared as numbers: this runs for every window, the clipping almost never.
-        if (
-          localMs(start) !== midnight + startMs ||
-          localMs(end) !== midnight + endMs
-        ) {
-          start = clipped(date, rule.timeWindow.start, rule.timezone);
-          end = clipped(date, rule.timeWindow.end, rule.timezone);
-
-          // A window wholly in a gap clips to nothing.
-          if (Temporal.ZonedDateTime.compare(start, end) >= 0) {
-            continue;
-          }
+        // A window wholly in a gap clips to nothing.
+        if (Temporal.ZonedDateTime.compare(start, end) >= 0) {
+          continue;
         }
-
-        windows.push({ end, resourceId: rule.resourceId, start });
       }
+
+      windows.push({ end, resourceId: rule.resourceId, start });
     }
   }
 

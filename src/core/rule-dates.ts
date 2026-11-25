@@ -3,102 +3,70 @@ import { occursOn } from "./recurrence.js";
 import type { AvailabilityRule } from "./types.js";
 
 /**
- * The start of `date` in UTC: how this module and its callers count dates.
+ * `date`, whatever its calendar, as days since the epoch: how this module and its callers count dates.
  *
- * @returns The milliseconds since the epoch.
+ * @returns The whole days, negative before 1970.
  */
-export function utcMidnightMs(date: Temporal.PlainDate): number {
-  return date.toZonedDateTime("UTC").epochMilliseconds;
+export function epochDay(date: Temporal.PlainDate): number {
+  const iso =
+    date.calendarId === "iso8601" ? date : date.withCalendar("iso8601");
+
+  // 8,000 years later and back, whole 400-year cycles: `Date.UTC` reads years 0 to 99 as 1900 to 1999, and year 1 of some calendars is before -5000.
+  return Date.UTC(iso.year + 8000, iso.month - 1, iso.day) / DAY_MS - 2_921_940;
 }
 
 /**
- * The date whose UTC midnight is `midnight`.
+ * The date `day` days since the epoch.
  *
- * @returns The date.
+ * @returns The date, in the ISO calendar.
  */
-export function dateAt(midnight: number): Temporal.PlainDate {
-  return Temporal.Instant.fromEpochMilliseconds(midnight)
+export function dateOf(day: number): Temporal.PlainDate {
+  return Temporal.Instant.fromEpochMilliseconds(day * DAY_MS)
     .toZonedDateTimeISO("UTC")
     .toPlainDate();
 }
 
-/** The dates a rule occurs on, as UTC midnights in epoch milliseconds. */
-interface RuleDates {
-  /** No date before this one; `-Infinity` without `effectiveFrom`. */
-  readonly first: number;
-  /** No date after this one; `Infinity` without `effectiveTo`. */
-  readonly last: number;
-  /** Whether the rule occurs on the date, given its UTC midnight. */
-  readonly includes: (midnight: number) => boolean;
-}
-
-/** A number per ISO date, cheaper to make from a PlainDate than its UTC midnight. */
-function dateKey(year: number, month: number, day: number): number {
-  return (year * 16 + month) * 32 + day;
-}
-
-/**
- * `date`'s `dateKey`, whatever its calendar.
- *
- * @returns The key.
- */
-function keyOf(date: Temporal.PlainDate): number {
-  const iso =
-    date.calendarId === "iso8601" ? date : date.withCalendar("iso8601");
-
-  return dateKey(iso.year, iso.month, iso.day);
-}
+/** The dates a rule occurs on from `first` to `last`, both included, in order; all in days since the epoch. */
+type RuleDates = (first: number, last: number) => readonly number[];
 
 /**
  * `rule`'s dates: its effective dates, recurrence and exceptions. The only place that decides them.
  *
- * @returns The dates, for any range.
+ * @returns The lookup, for any range.
  */
 function ruleDates(rule: AvailabilityRule): RuleDates {
   const { effectiveFrom, effectiveTo, exceptions = [], recurrence } = rule;
-
-  const first = effectiveFrom
-    ? utcMidnightMs(effectiveFrom)
-    : Number.NEGATIVE_INFINITY;
-
-  const last = effectiveTo
-    ? utcMidnightMs(effectiveTo)
-    : Number.POSITIVE_INFINITY;
-
-  const firstDay = effectiveFrom ? first / DAY_MS : undefined;
+  const from = effectiveFrom && epochDay(effectiveFrom);
+  const to = effectiveTo && epochDay(effectiveTo);
 
   // Built on first use: many rules never reach a date that needs it.
-  let keys: Set<number> | undefined;
+  let closed: Set<number> | undefined;
 
-  function isException(midnight: number): boolean {
-    if (exceptions.length === 0) {
-      return false;
+  return (first, last) => {
+    const dates: number[] = [];
+
+    // Only the dates the rule is in effect, so a long range costs a short-lived rule nothing.
+    const start = Math.max(first, from ?? first);
+    const end = Math.min(last, to ?? last);
+
+    for (let day = start; day <= end; day += 1) {
+      if (occursOn(recurrence, day, from)) {
+        closed ??= new Set(exceptions.map(epochDay));
+
+        if (!closed.has(day)) {
+          dates.push(day);
+        }
+      }
     }
 
-    keys ??= new Set(exceptions.map(keyOf));
-
-    const date = new Date(midnight);
-
-    return keys.has(
-      dateKey(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate())
-    );
-  }
-
-  return {
-    first,
-    includes: (midnight) =>
-      midnight >= first &&
-      midnight <= last &&
-      occursOn(recurrence, midnight / DAY_MS, firstDay) &&
-      !isException(midnight),
-    last,
+    return dates;
   };
 }
 
 /** A rule with its dates worked out, so asking about many ranges reads its exceptions once. */
 export interface PreparedRule {
   readonly rule: AvailabilityRule;
-  readonly dates: RuleDates;
+  readonly datesIn: RuleDates;
 }
 
 /**
@@ -109,5 +77,5 @@ export interface PreparedRule {
 export function prepareRules(
   rules: readonly AvailabilityRule[]
 ): readonly PreparedRule[] {
-  return rules.map((rule) => ({ dates: ruleDates(rule), rule }));
+  return rules.map((rule) => ({ datesIn: ruleDates(rule), rule }));
 }
