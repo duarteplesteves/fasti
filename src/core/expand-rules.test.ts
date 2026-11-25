@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { unwrap, issuePaths } from "../test-utils/results.js";
 import { expandRules, expandRulesUnchecked } from "./expand-rules.js";
 import { findFreeSlots } from "./find-free-slots.js";
+import { prepareRules } from "./rule-dates.js";
 import type { AvailabilityRule } from "./types.js";
 
 /** The windows of a daily `start`–`end` rule on `date`, as `start → end` wall-clock times. */
@@ -41,7 +42,136 @@ function windowsOn(
   );
 }
 
+/** The dates a rule with `fields` opens in `[from, to]`. */
+function datesOf(fields: Partial<AvailabilityRule>, from: string, to: string) {
+  const windows = unwrap(
+    expandRules({
+      from: Temporal.PlainDate.from(from),
+      rules: [
+        {
+          recurrence: {
+            daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+            frequency: "weekly",
+            interval: 1,
+          },
+          resourceId: "doc-1",
+          timeWindow: {
+            end: Temporal.PlainTime.from("17:00"),
+            start: Temporal.PlainTime.from("09:00"),
+          },
+          timezone: "UTC",
+          ...fields,
+        },
+      ],
+      to: Temporal.PlainDate.from(to),
+    })
+  );
+
+  return windows.map((w) => w.start.toPlainDate().toString());
+}
+
+function weekly(daysOfWeek: readonly number[], interval = 1) {
+  return { daysOfWeek, frequency: "weekly", interval } as const;
+}
+
 describe(expandRules, () => {
+  it("opens the first and last effective dates, and none outside them", () => {
+    expect(
+      datesOf(
+        {
+          effectiveFrom: Temporal.PlainDate.from("2026-05-11"),
+          effectiveTo: Temporal.PlainDate.from("2026-05-12"),
+        },
+        "2026-05-01",
+        "2026-05-31"
+      )
+    ).toStrictEqual(["2026-05-11", "2026-05-12"]);
+  });
+
+  it.each([
+    [1, "1969-12-29"],
+    [2, "1969-12-30"],
+    [3, "1969-12-31"],
+    [4, "1970-01-01"],
+    [5, "1970-01-02"],
+    [6, "1970-01-03"],
+    [7, "1970-01-04"],
+  ])("opens weekday %i on %s, and the week before", (day, date) => {
+    const before = Temporal.PlainDate.from(date).subtract({ days: 7 });
+
+    expect(
+      datesOf({ recurrence: weekly([day]) }, "1969-12-22", "1970-01-04")
+    ).toStrictEqual([before.toString(), date]);
+  });
+
+  it("counts weeks from effectiveFrom's Monday before 1970", () => {
+    expect(
+      datesOf(
+        {
+          effectiveFrom: Temporal.PlainDate.from("1969-12-03"),
+          recurrence: weekly([1, 7], 2),
+        },
+        "1969-11-24",
+        "1970-01-11"
+      )
+    ).toStrictEqual([
+      "1969-12-07",
+      "1969-12-15",
+      "1969-12-21",
+      "1969-12-29",
+      "1970-01-04",
+    ]);
+  });
+
+  it("opens the years 0001, 0099 and 9999, except on exceptions", () => {
+    expect(
+      datesOf(
+        {
+          effectiveFrom: Temporal.PlainDate.from("0001-01-01"),
+          exceptions: [Temporal.PlainDate.from("0001-01-03")],
+          recurrence: weekly([1, 3]),
+        },
+        "0001-01-01",
+        "0001-01-08"
+      )
+    ).toStrictEqual(["0001-01-01", "0001-01-08"]);
+
+    expect(
+      datesOf(
+        { exceptions: [Temporal.PlainDate.from("0099-12-30")] },
+        "0099-12-29",
+        "0099-12-31"
+      )
+    ).toStrictEqual(["0099-12-29", "0099-12-31"]);
+
+    expect(
+      datesOf(
+        {
+          effectiveTo: Temporal.PlainDate.from("9999-12-31"),
+          exceptions: [Temporal.PlainDate.from("9999-12-30")],
+        },
+        "9999-12-29",
+        "9999-12-31"
+      )
+    ).toStrictEqual(["9999-12-29", "9999-12-31"]);
+  });
+
+  it("reads dates in any calendar, and keeps from's", () => {
+    expect(
+      datesOf(
+        {
+          effectiveFrom: Temporal.PlainDate.from("2026-05-11"),
+          exceptions: [
+            Temporal.PlainDate.from("2026-05-12"),
+            Temporal.PlainDate.from("2026-05-14[u-ca=buddhist]"),
+          ],
+        },
+        "2026-05-10[u-ca=buddhist]",
+        "2026-05-14[u-ca=buddhist]"
+      )
+    ).toStrictEqual(["2026-05-11[u-ca=buddhist]", "2026-05-13[u-ca=buddhist]"]);
+  });
+
   it("emits one window for a weekly rule that matches one day in range", () => {
     // 2026-05-12 is a Tuesday (ISO weekday 2).
     const rule: AvailabilityRule = {
@@ -93,7 +223,7 @@ describe(expandRules, () => {
     // Unchecked: the internal path `windowsFor` takes; a direct call is capped at 366 days.
     const result = expandRulesUnchecked({
       from: Temporal.PlainDate.from("2000-01-01"),
-      rules: [rule],
+      rules: prepareRules([rule]),
       to: Temporal.PlainDate.from("9999-12-31"),
     });
 

@@ -1,7 +1,9 @@
 import { MAX_EXPAND_DAYS, checkDate, checkRules } from "./checks.js";
-import { occursOn } from "./recurrence.js";
+import { DAY_MS } from "./day-offset.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
+import { dateOf, epochDay, prepareRules } from "./rule-dates.js";
+import type { PreparedRule } from "./rule-dates.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";
 
 /** Rules to expand over every date in `[from, to]`, both ends included. */
@@ -10,9 +12,6 @@ export interface ExpandRulesParams {
   from: Temporal.PlainDate;
   to: Temporal.PlainDate;
 }
-
-/** A UTC day, and so a step of `midnight` in `expandRulesUnchecked`. */
-const DAY_MS = 86_400_000;
 
 /**
  * The wall-clock time of `zoned` as milliseconds, as if it were UTC.
@@ -33,15 +32,6 @@ function msOfDay(time: Temporal.PlainTime): number {
     ((time.hour * 60 + time.minute) * 60 + time.second) * 1000 +
     time.millisecond
   );
-}
-
-/**
- * The start of `date` in UTC.
- *
- * @returns The milliseconds since the epoch.
- */
-function utcMidnightMs(date: Temporal.PlainDate): number {
-  return date.toZonedDateTime("UTC").epochMilliseconds;
 }
 
 /**
@@ -72,71 +62,48 @@ function clipped(
  * @returns The expanded windows, sorted by start then `resourceId`.
  */
 export function expandRulesUnchecked(
-  params: ExpandRulesParams
+  params: Pick<ExpandRulesParams, "from" | "to"> & {
+    readonly rules: readonly PreparedRule[];
+  }
 ): ExpandedWindow[] {
   const { from, rules, to } = params;
   const windows: ExpandedWindow[] = [];
-  const fromMidnight = utcMidnightMs(from);
+  const first = epochDay(from);
+  const last = epochDay(to);
 
-  for (const rule of rules) {
-    // Only the dates the rule is in effect, so a long range costs a short-lived rule nothing.
-    const first =
-      rule.effectiveFrom &&
-      Temporal.PlainDate.compare(rule.effectiveFrom, from) > 0
-        ? rule.effectiveFrom
-        : from;
-
-    const last =
-      rule.effectiveTo && Temporal.PlainDate.compare(rule.effectiveTo, to) < 0
-        ? rule.effectiveTo
-        : to;
-
-    const exceptions = new Set(rule.exceptions?.map((e) => e.toString()));
+  for (const { datesIn, rule } of rules) {
     const startMs = msOfDay(rule.timeWindow.start);
     const endMs = msOfDay(rule.timeWindow.end);
 
-    // `date`'s midnight as `localMs` counts, one step back: the loop steps it first.
-    let midnight =
-      (first === from ? fromMidnight : utcMidnightMs(first)) - DAY_MS;
+    for (const day of datesIn(first, last)) {
+      const midnight = day * DAY_MS;
+      const date = dateOf(day).withCalendar(from.calendarId);
 
-    for (
-      let date = first;
-      Temporal.PlainDate.compare(date, last) <= 0;
-      date = date.add({ days: 1 })
-    ) {
-      midnight += DAY_MS;
+      let start = date.toZonedDateTime({
+        plainTime: rule.timeWindow.start,
+        timeZone: rule.timezone,
+      });
 
-      // Most rules have no exceptions, so most dates need no string.
+      let end = date.toZonedDateTime({
+        plainTime: rule.timeWindow.end,
+        timeZone: rule.timezone,
+      });
+
+      // Temporal moved an edge that falls in a gap. Compared as numbers: this runs for every window, the clipping almost never.
       if (
-        occursOn(rule.recurrence, date, rule.effectiveFrom) &&
-        !(exceptions.size > 0 && exceptions.has(date.toString()))
+        localMs(start) !== midnight + startMs ||
+        localMs(end) !== midnight + endMs
       ) {
-        let start = date.toZonedDateTime({
-          plainTime: rule.timeWindow.start,
-          timeZone: rule.timezone,
-        });
+        start = clipped(date, rule.timeWindow.start, rule.timezone);
+        end = clipped(date, rule.timeWindow.end, rule.timezone);
 
-        let end = date.toZonedDateTime({
-          plainTime: rule.timeWindow.end,
-          timeZone: rule.timezone,
-        });
-
-        // Temporal moved an edge that falls in a gap. Compared as numbers: this runs for every window, the clipping almost never.
-        if (
-          localMs(start) !== midnight + startMs ||
-          localMs(end) !== midnight + endMs
-        ) {
-          start = clipped(date, rule.timeWindow.start, rule.timezone);
-          end = clipped(date, rule.timeWindow.end, rule.timezone);
-
-          // A window wholly in a gap clips to nothing.
-          if (Temporal.ZonedDateTime.compare(start, end) >= 0) {
-            continue;
-          }
+        // A window wholly in a gap clips to nothing.
+        if (Temporal.ZonedDateTime.compare(start, end) >= 0) {
+          continue;
         }
-
-        windows.push({ end, resourceId: rule.resourceId, start });
       }
+
+      windows.push({ end, resourceId: rule.resourceId, start });
     }
   }
 
@@ -183,5 +150,7 @@ export function expandRules(
     }
   }
 
-  return checked(issues, () => expandRulesUnchecked(params));
+  return checked(issues, () =>
+    expandRulesUnchecked({ from, rules: prepareRules(rules), to })
+  );
 }

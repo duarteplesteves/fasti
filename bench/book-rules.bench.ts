@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { decodeValue } from "../src/adapter/column-value.js";
 import { windowsFor } from "../src/core/availability.js";
 import { checkRules } from "../src/core/checks.js";
+import { prepareRules } from "../src/core/rule-dates.js";
 import { ruleSet } from "./scenarios.js";
 
 // A Tuesday, open in every rule set below.
@@ -31,7 +32,9 @@ describe("rule work per book", () => {
       );
 
       expect(checkRules(rules)).toStrictEqual([]);
-      expect(windowsFor(rules, slot, new Map())).not.toHaveLength(0);
+      expect(windowsFor(prepareRules(rules), slot, new Map())).not.toHaveLength(
+        0
+      );
 
       await bench.compare(
         bench("decode exceptions", () => {
@@ -43,7 +46,7 @@ describe("rule work per book", () => {
           checkRules(rules);
         }),
         bench("windowsFor", () => {
-          windowsFor(rules, slot, new Map());
+          windowsFor(prepareRules(rules), slot, new Map());
         })
       );
     }

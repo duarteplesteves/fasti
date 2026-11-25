@@ -4,6 +4,8 @@ import { fitsInSomeWindow, windowsFor } from "../../core/availability.js";
 import { checkRules } from "../../core/checks.js";
 import { checked } from "../../core/result.js";
 import type { InvalidParams } from "../../core/result.js";
+import { prepareRules } from "../../core/rule-dates.js";
+import type { PreparedRule } from "../../core/rule-dates.js";
 import type { AvailabilityRule, InstantRange } from "../../core/types.js";
 import { column } from "../../schema/column.js";
 import type { PluginResourceId, RecordOf } from "../../schema/table.js";
@@ -198,14 +200,14 @@ export function availability() {
       {
         appliesTo: ["book", "reschedule"],
         // Expands around each candidate, not over `load`'s range: a findSlots range is long, and a long candidate expands nothing.
-        // `byDate` lives for one call, so findSlots' candidates share each date's windows.
+        // `byDate` lives for one call, so findSlots' candidates share each date's windows; `rules` are prepared once for all of them.
         check: (
           candidate,
           {
             byDate,
             rules,
           }: {
-            readonly rules: readonly AvailabilityRule[];
+            readonly rules: readonly PreparedRule[];
             readonly byDate: Map<number, readonly InstantRange[]>;
           }
         ): AvailabilityDetail | null =>
@@ -229,7 +231,7 @@ export function availability() {
 
               const valid = checked(checkRules(rules), () => ({
                 byDate: new Map<number, readonly InstantRange[]>(),
-                rules,
+                rules: prepareRules(rules),
               }));
 
               // Invalid stored rules are the Adapter's data (Invariant 6).

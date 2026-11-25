@@ -62,46 +62,53 @@ export function checkRecurrence(recurrence: Recurrence): CheckIssue[] {
 }
 
 /**
+ * The ISO weekday of `day`, in days since the epoch. Day 0, 1970-01-01, was a Thursday.
+ *
+ * @returns 1 (Monday) to 7 (Sunday).
+ */
+function isoWeekday(day: number): number {
+  // `%` is negative before 1970.
+  return ((((day + 3) % 7) + 7) % 7) + 1;
+}
+
+function mondayOf(day: number): number {
+  return day - (isoWeekday(day) - 1);
+}
+
+/**
  * Weeks count from the Monday of `effectiveFrom`; without it every week is on.
  *
- * @returns `true` when `date`'s weekday is listed and its week is one of every `interval`.
+ * @returns `true` when `day`'s weekday is listed and its week is one of every `interval`.
  */
 function occursOnWeekly(
   recurrence: WeeklyRecurrence,
-  date: Temporal.PlainDate,
-  effectiveFrom: Temporal.PlainDate | undefined
+  day: number,
+  effectiveFrom: number | undefined
 ): boolean {
   const weekIndex =
     effectiveFrom === undefined
       ? 0
-      : date
-          .subtract({ days: date.dayOfWeek - 1 })
-          .since(
-            effectiveFrom.subtract({ days: effectiveFrom.dayOfWeek - 1 }),
-            {
-              largestUnit: "days",
-            }
-          ).days / 7;
+      : (mondayOf(day) - mondayOf(effectiveFrom)) / 7;
 
   return (
     weekIndex % recurrence.interval === 0 &&
-    recurrence.daysOfWeek.includes(date.dayOfWeek)
+    recurrence.daysOfWeek.includes(isoWeekday(day))
   );
 }
 
 /**
- * Whether `recurrence` puts the rule on `date`.
+ * Whether `recurrence` puts the rule on `day`. Both dates are days since the epoch.
  *
- * @returns `true` when the rule occurs on `date`.
+ * @returns `true` when the rule occurs on `day`.
  */
 export function occursOn(
   recurrence: Recurrence,
-  date: Temporal.PlainDate,
-  effectiveFrom: Temporal.PlainDate | undefined
+  day: number,
+  effectiveFrom: number | undefined
 ): boolean {
   switch (recurrence.frequency) {
     case "weekly": {
-      return occursOnWeekly(recurrence, date, effectiveFrom);
+      return occursOnWeekly(recurrence, day, effectiveFrom);
     }
 
     default: {

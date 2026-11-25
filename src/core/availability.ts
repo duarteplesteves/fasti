@@ -1,4 +1,7 @@
+import { DAY_MS } from "./day-offset.js";
 import { expandRulesUnchecked } from "./expand-rules.js";
+import { dateOf, prepareRules } from "./rule-dates.js";
+import type { PreparedRule } from "./rule-dates.js";
 import type { AvailabilityRule, InstantRange } from "./types.js";
 
 /**
@@ -16,16 +19,13 @@ export function availableWindows(
       .toZonedDateTimeISO("UTC")
       .toPlainDate()
       .subtract({ days: 1 }),
-    rules,
+    rules: prepareRules(rules),
     to: range.end.toZonedDateTimeISO("UTC").toPlainDate().add({ days: 1 }),
   }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
 }
 
 /** Longer than any window: a window is one local day, under 26 hours even across a DST change. */
 const LONGEST_WINDOW_MS = 48 * 60 * 60 * 1000;
-
-/** A UTC day: the cache key in `windowsFor` is days since the epoch. */
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The windows that could hold `slot`, so a slot of any length expands at most a few dates.
@@ -34,7 +34,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * @returns The open windows around `slot`, or none when `slot` is too long for any window to hold.
  */
 export function windowsFor(
-  rules: readonly AvailabilityRule[],
+  rules: readonly PreparedRule[],
   slot: InstantRange,
   byDate: Map<number, readonly InstantRange[]>
 ): InstantRange[] {
@@ -54,9 +54,7 @@ export function windowsFor(
     let cached = byDate.get(day);
 
     if (cached === undefined) {
-      const date = Temporal.Instant.fromEpochMilliseconds(day * DAY_MS)
-        .toZonedDateTimeISO("UTC")
-        .toPlainDate();
+      const date = dateOf(day);
 
       cached = expandRulesUnchecked({ from: date, rules, to: date }).map(
         (w) => ({ end: w.end.toInstant(), start: w.start.toInstant() })
