@@ -1,5 +1,12 @@
 # @fastijs/scheduler
 
+## 0.8.1
+
+### Patch Changes
+
+- 465cfea: In the Effect form, interrupting `findSlots` now rejects the reads a Policy's `load` is waiting for or makes afterwards, so `load` stops there, as a Plugin's already did. Before, it ran on.
+- dfb0881: The README is now a short introduction, and its reference sections are guides under `docs/guides`, shipped in the package. They add examples, and say what the README didn't: `definePlugin` needs `actions` (which can be empty), and `drizzle/sqlite` has no `backstopSql`.
+
 ## 0.8.0
 
 ### Minor Changes
