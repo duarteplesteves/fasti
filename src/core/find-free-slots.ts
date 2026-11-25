@@ -8,7 +8,8 @@ import {
   checkTimeZone,
 } from "./checks.js";
 import type { CheckIssue } from "./checks.js";
-import { DAY_MS, dayOffsets } from "./day-offset.js";
+import { ceilToMs, floorToMs } from "./exact-time.js";
+import type { MsRange } from "./exact-time.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
 import { epochDay } from "./rule-dates.js";
@@ -18,9 +19,9 @@ import type {
   Booking,
   CorePolicy,
   CoreViolations,
-  InstantRange,
   Slot,
 } from "./types.js";
+import { DAY_MS, zoneClock } from "./zone-clock.js";
 
 /** A search for `duration`-minute Slots on one Resource, starting on the Grid in `[from, to)`. */
 export interface FindFreeSlotsParams<
@@ -48,41 +49,6 @@ const outsideAvailability: AvailabilityViolation = {
   policy: "availability",
 };
 
-/** A half-open `[startMs, endMs)` range in epoch milliseconds. */
-interface MsRange {
-  readonly startMs: number;
-  readonly endMs: number;
-}
-
-// Core inputs may be finer than a millisecond; Grid times never are. So rounding a Booking outwards, a window
-// inwards and a search's `from` and `to` up compares with a Grid time exactly as the unrounded Instants would.
-
-/**
- * `instant` in epoch milliseconds, rounded down (before 1970 too).
- *
- * @returns The milliseconds; throws a `TypeError` when `instant` isn't an Instant, as `undefined` milliseconds would break the sweep and free a blocked time.
- */
-function floorToMs(instant: Temporal.Instant): number {
-  const ms = instant.epochMilliseconds;
-
-  if (!Number.isFinite(ms)) {
-    throw new TypeError(`Expected a Temporal.Instant, got ${String(instant)}.`);
-  }
-
-  return ms;
-}
-
-/**
- * `instant` in epoch milliseconds, rounded up.
- *
- * @returns The milliseconds; throws as `floorToMs` does.
- */
-function ceilToMs(instant: Temporal.Instant): number {
-  return (
-    floorToMs(instant) + (instant.epochNanoseconds % 1_000_000n === 0n ? 0 : 1)
-  );
-}
-
 /**
  * The local midnight of `instant`'s date in `timezone`, as if it were UTC.
  *
@@ -90,27 +56,6 @@ function ceilToMs(instant: Temporal.Instant): number {
  */
 function localMidnightMs(instant: Temporal.Instant, timezone: string): number {
   return epochDay(instant.toZonedDateTimeISO(timezone).toPlainDate()) * DAY_MS;
-}
-
-/**
- * The first occurrence of a local time in `timezone`.
- *
- * @param localMs - The local time as if it were UTC, in epoch milliseconds.
- * @returns Its epoch milliseconds, or `undefined` when it falls in a DST gap.
- */
-function firstOccurrenceMs(
-  localMs: number,
-  timezone: string
-): number | undefined {
-  const local = Temporal.Instant.fromEpochMilliseconds(localMs)
-    .toZonedDateTimeISO("UTC")
-    .toPlainDateTime();
-
-  const zoned = local.toZonedDateTime(timezone, { disambiguation: "earlier" });
-
-  return zoned.toPlainDateTime().equals(local)
-    ? zoned.epochMilliseconds
-    : undefined;
 }
 
 /**
@@ -129,25 +74,25 @@ function* gridStarts(
   const toMs = ceilToMs(to);
   const firstMidnight = localMidnightMs(from, timezone);
   const lastMidnight = localMidnightMs(to, timezone);
-  const offsetOf = dayOffsets(timezone, firstMidnight);
+  const clock = zoneClock(timezone);
+  let stretch = clock(firstMidnight);
 
   for (
     let midnight = firstMidnight;
     midnight <= lastMidnight;
     midnight += DAY_MS
   ) {
-    const offsetMs = offsetOf(midnight);
-
     for (let minutes = 0; minutes < 24 * 60; minutes += interval) {
       const localMs = midnight + minutes * 60_000;
 
-      // Only a day the clocks change needs Temporal.
-      const startMs =
-        offsetMs === undefined
-          ? firstOccurrenceMs(localMs, timezone)
-          : localMs - offsetMs;
+      // Grid times only go forward, so most are in the last one's stretch.
+      if (localMs - stretch.offsetMs >= stretch.endMs) {
+        stretch = clock(localMs);
+      }
 
-      if (startMs !== undefined && startMs >= fromMs && startMs < toMs) {
+      const startMs = localMs - stretch.offsetMs;
+
+      if (startMs >= stretch.startMs && startMs >= fromMs && startMs < toMs) {
         yield startMs;
       }
     }
@@ -197,17 +142,13 @@ function blockedSweep<Id extends string>(
 }
 
 /**
- * A forward-only `fitsInSomeWindow`: call the result with ranges whose start and end never decrease.
+ * A forward-only `windowFit`: call the result with ranges whose start and end never decrease.
  * Each window is visited once across all calls.
  *
  * @returns Whether a range fits fully inside one of `windows`.
  */
-function fitsSweep(
-  windows: readonly InstantRange[]
-): (range: MsRange) => boolean {
-  const sorted = windows
-    .map((w) => ({ endMs: floorToMs(w.end), startMs: ceilToMs(w.start) }))
-    .toSorted(byStart);
+function fitsSweep(windows: readonly MsRange[]): (range: MsRange) => boolean {
+  const sorted = windows.toSorted(byStart);
 
   let next = 0;
   // The latest end among the windows that start at or before the current range starts.

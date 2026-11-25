@@ -418,6 +418,51 @@ export function arbAroundClockChange(): Arbitrary<{
     .filter(({ from, to }) => Temporal.Instant.compare(from, to) < 0);
 }
 
+/** A time of day, finer than a millisecond one draw in two, and one in two in the hours the clocks change. */
+function arbFineTime(): Arbitrary<Temporal.PlainTime> {
+  return record({
+    minutes: oneof(
+      integer({ max: 4 * 60, min: 0 }),
+      integer({ max: 24 * 60 - 1, min: 0 })
+    ),
+    nanoseconds: oneof(constant(0), integer({ max: 999_999, min: 1 })),
+  }).map((time) => Temporal.PlainTime.from("00:00").add(time));
+}
+
+/** A valid rule whose effective dates and exceptions fall within days of `date`. */
+export function arbRuleAround(
+  date: Temporal.PlainDate,
+  timezone: string
+): Arbitrary<AvailabilityRule> {
+  function arbDay(min: number, max: number) {
+    return integer({ max, min }).map((days) => date.add({ days }));
+  }
+
+  return record(
+    {
+      effectiveFrom: arbDay(-30, 1),
+      effectiveTo: arbDay(1, 6),
+      exceptions: array(arbDay(-2, 5), { maxLength: 2 }),
+      recurrence: record({
+        // Mostly open, or few windows would be left to compare.
+        daysOfWeek: oneof(constant([1, 2, 3, 4, 5, 6, 7]), arbDaysOfWeek()),
+        frequency: constant("weekly" as const),
+        interval: integer({ max: 3, min: 1 }),
+      }),
+      resourceId: constant("r1"),
+      timeWindow: tuple(arbFineTime(), arbFineTime())
+        .filter(([a, b]) => !a.equals(b))
+        .map(([a, b]) =>
+          Temporal.PlainTime.compare(a, b) < 0
+            ? { end: b, start: a }
+            : { end: a, start: b }
+        ),
+      timezone: oneof(constant(timezone), arbTimezone()),
+    },
+    { requiredKeys: ["recurrence", "resourceId", "timeWindow", "timezone"] }
+  );
+}
+
 // Arbitraries for any params, valid or not; most draws are valid or nearly so,
 // so each bad value also reaches the compute path on its own. Magnitudes are bounded (|n| ≤ 1e6,
 // dates 1900–2100) because Temporal overflow is an accepted gap (see checks.ts).

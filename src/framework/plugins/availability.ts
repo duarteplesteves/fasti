@@ -1,11 +1,9 @@
 import { Effect } from "effect";
 
-import { fitsInSomeWindow, windowsFor } from "../../core/availability.js";
+import { windowFit } from "../../core/availability.js";
 import { checkRules } from "../../core/checks.js";
 import { checked } from "../../core/result.js";
 import type { InvalidParams } from "../../core/result.js";
-import { prepareRules } from "../../core/rule-dates.js";
-import type { PreparedRule } from "../../core/rule-dates.js";
 import type { AvailabilityRule, InstantRange } from "../../core/types.js";
 import { column } from "../../schema/column.js";
 import type { PluginResourceId, RecordOf } from "../../schema/table.js";
@@ -200,20 +198,14 @@ export function availability() {
       {
         appliesTo: ["book", "reschedule"],
         // Expands around each candidate, not over `load`'s range: a findSlots range is long, and a long candidate expands nothing.
-        // `byDate` lives for one call, so findSlots' candidates share each date's windows; `rules` are prepared once for all of them.
+        // `fits` lives for one call, so findSlots' candidates share the prepared rules and each date's windows.
         check: (
           candidate,
-          {
-            byDate,
-            rules,
-          }: {
-            readonly rules: readonly PreparedRule[];
-            readonly byDate: Map<number, readonly InstantRange[]>;
-          }
+          fits: (slot: InstantRange) => boolean
         ): AvailabilityDetail | null =>
           // `appliesTo` only passes these two; the others have no range of their own.
           (candidate.action !== "book" && candidate.action !== "reschedule") ||
-          fitsInSomeWindow(windowsFor(rules, candidate, byDate), candidate)
+          fits(candidate)
             ? null
             : {},
         load: ({ records, resourceId }) =>
@@ -229,10 +221,7 @@ export function availability() {
                 resourceId: coreId,
               }));
 
-              const valid = checked(checkRules(rules), () => ({
-                byDate: new Map<number, readonly InstantRange[]>(),
-                rules: prepareRules(rules),
-              }));
+              const valid = checked(checkRules(rules), () => windowFit(rules));
 
               // Invalid stored rules are the Adapter's data (Invariant 6).
               return valid.ok

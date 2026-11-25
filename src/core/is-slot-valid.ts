@@ -1,9 +1,8 @@
-import { fitsInSomeWindow, windowsFor } from "./availability.js";
+import { windowFit } from "./availability.js";
 import { checkInstantRange, checkResourceInputs } from "./checks.js";
 import { overlapsBlockingBooking } from "./detect-conflicts.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
-import { prepareRules } from "./rule-dates.js";
 import type { AvailabilityRule, Booking } from "./types.js";
 
 /** One proposed `slot` on one Resource, checked against its rules and Bookings. */
@@ -34,9 +33,7 @@ export function isSlotValid<Id extends string = string>(
   return checked(
     issues,
     () =>
-      fitsInSomeWindow(
-        windowsFor(prepareRules(rules), slot, new Map()),
-        slot
-      ) && !overlapsBlockingBooking(bookings, slot, excludeBookingId)
+      windowFit(rules)(slot) &&
+      !overlapsBlockingBooking(bookings, slot, excludeBookingId)
   );
 }

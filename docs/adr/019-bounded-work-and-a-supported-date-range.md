@@ -23,7 +23,7 @@ We choose option 3.
 - **The limits** are constants in the Core, exported from `@fastijs/scheduler/core`:
   - **10,000 Grid times per search**, in `findFreeSlots` and the Framework's `findSlots`. A search's Grid-time count is its span in minutes divided by `interval`; a DST day counts as 24 hours.
   - **`duration` at most 44,640 minutes (31 days)**, and a safe integer, like every other minute count.
-  - **366 days per `expandRules` call**, inclusive. Only direct calls: `availableWindows` and the per-slot `windowsFor` are already bounded.
+  - **366 days per `expandRules` call**, inclusive. Only direct calls: `availableWindows` and the per-slot `windowFit` are already bounded.
   - **100 rules per call**, wherever rules are checked, which also caps `availability.set`, since `set` replaces all of a Resource's rules.
   - **1,000 exceptions per rule.**
 - **The supported date range is years 0001 to 9999.** Every Instant and PlainDate a caller passes must fall in it: a search's `from` and `to`, a Booking's `start` and `end`, a rule's `effectiveFrom`, `effectiveTo` and exceptions, and `expandRules`' `from` and `to`. The checks in `src/core/checks.ts` enforce it before any Temporal arithmetic, so no input reaches a `RangeError`. We never wrap expansion in a `try`/`catch`.

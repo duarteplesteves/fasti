@@ -1,85 +1,86 @@
-import { DAY_MS } from "./day-offset.js";
-import { expandRulesUnchecked } from "./expand-rules.js";
-import { dateOf, prepareRules } from "./rule-dates.js";
-import type { PreparedRule } from "./rule-dates.js";
+import { compareTimes, exactTime } from "./exact-time.js";
+import type { MsRange } from "./exact-time.js";
+import { ruleWindows } from "./rule-windows.js";
+import type { RuleWindow } from "./rule-windows.js";
 import type { AvailabilityRule, InstantRange } from "./types.js";
+import { DAY_MS } from "./zone-clock.js";
 
 /**
- * The windows `rules` open around `range`, as instants.
+ * The dates whose windows could meet `[startMs, endMs)`, as days since the epoch.
+ * A day either side of the UTC dates covers every rule timezone's local dates.
+ *
+ * @returns The first and last date, both included.
+ */
+function datesAround({ endMs, startMs }: MsRange) {
+  return {
+    first: Math.floor(startMs / DAY_MS) - 1,
+    last: Math.floor(endMs / DAY_MS) + 1,
+  };
+}
+
+/**
+ * The windows `rules` open around `range`, rounded inwards to milliseconds.
  *
  * @returns The open windows, possibly overlapping.
  */
 export function availableWindows(
   rules: readonly AvailabilityRule[],
   range: InstantRange
-): InstantRange[] {
-  // ±1 day around the UTC dates covers every rule timezone's local dates.
-  return expandRulesUnchecked({
-    from: range.start
-      .toZonedDateTimeISO("UTC")
-      .toPlainDate()
-      .subtract({ days: 1 }),
-    rules: prepareRules(rules),
-    to: range.end.toZonedDateTimeISO("UTC").toPlainDate().add({ days: 1 }),
-  }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
+): MsRange[] {
+  const { first, last } = datesAround({
+    endMs: range.end.epochMilliseconds,
+    startMs: range.start.epochMilliseconds,
+  });
+
+  return ruleWindows(rules)(first, last).map(({ end, start }) => ({
+    endMs: end.ms,
+    startMs: start.ns > 0 ? start.ms + 1 : start.ms,
+  }));
 }
 
 /** Longer than any window: a window is one local day, under 26 hours even across a DST change. */
 const LONGEST_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
- * The windows that could hold `slot`, so a slot of any length expands at most a few dates.
- * `byDate` caches each UTC date's windows, by days since the epoch: pass one Map across slots over the same `rules`, so each date expands once.
+ * Prepares `rules` once, to ask about any slots in any order. Slots share each date's windows, so each date opens once.
  *
- * @returns The open windows around `slot`, or none when `slot` is too long for any window to hold.
+ * @returns Whether a slot fits fully inside one window, exact to the nanosecond. One too long for any window opens no dates.
  */
-export function windowsFor(
-  rules: readonly PreparedRule[],
-  slot: InstantRange,
-  byDate: Map<number, readonly InstantRange[]>
-): InstantRange[] {
-  if (
-    slot.end.epochMilliseconds - slot.start.epochMilliseconds >
-    LONGEST_WINDOW_MS
-  ) {
-    return [];
+export function windowFit(
+  rules: readonly AvailabilityRule[]
+): (slot: InstantRange) => boolean {
+  const windowsIn = ruleWindows(rules);
+  const byDay = new Map<number, readonly RuleWindow[]>();
+
+  function windowsOn(day: number): readonly RuleWindow[] {
+    const windows = byDay.get(day) ?? windowsIn(day, day);
+
+    byDay.set(day, windows);
+
+    return windows;
   }
 
-  const windows: InstantRange[] = [];
-  const first = Math.floor(slot.start.epochMilliseconds / DAY_MS);
-  const last = Math.floor(slot.end.epochMilliseconds / DAY_MS);
+  return (slot) => {
+    const start = exactTime(slot.start);
+    const end = exactTime(slot.end);
 
-  // ±1 day around the UTC dates covers every rule timezone's local dates, as in `availableWindows`.
-  for (let day = first - 1; day <= last + 1; day += 1) {
-    let cached = byDate.get(day);
-
-    if (cached === undefined) {
-      const date = dateOf(day);
-
-      cached = expandRulesUnchecked({ from: date, rules, to: date }).map(
-        (w) => ({ end: w.end.toInstant(), start: w.start.toInstant() })
-      );
-      byDate.set(day, cached);
+    if (end.ms - start.ms > LONGEST_WINDOW_MS) {
+      return false;
     }
 
-    windows.push(...cached);
-  }
+    const { first, last } = datesAround({ endMs: end.ms, startMs: start.ms });
 
-  return windows;
-}
+    for (let day = first; day <= last; day += 1) {
+      if (
+        windowsOn(day).some(
+          (w) =>
+            compareTimes(w.start, start) <= 0 && compareTimes(end, w.end) <= 0
+        )
+      ) {
+        return true;
+      }
+    }
 
-/**
- * Whether `range` fits fully inside one of `windows`.
- *
- * @returns `true` when one window contains all of `range`.
- */
-export function fitsInSomeWindow(
-  windows: readonly InstantRange[],
-  range: InstantRange
-): boolean {
-  return windows.some(
-    (w) =>
-      Temporal.Instant.compare(w.start, range.start) <= 0 &&
-      Temporal.Instant.compare(range.end, w.end) <= 0
-  );
+    return false;
+  };
 }

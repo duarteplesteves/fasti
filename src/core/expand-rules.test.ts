@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { unwrap, issuePaths } from "../test-utils/results.js";
-import { expandRules, expandRulesUnchecked } from "./expand-rules.js";
+import { expandRules } from "./expand-rules.js";
 import { findFreeSlots } from "./find-free-slots.js";
-import { prepareRules } from "./rule-dates.js";
 import type { AvailabilityRule } from "./types.js";
 
 /** The windows of a daily `start`–`end` rule on `date`, as `start → end` wall-clock times. */
@@ -200,39 +199,6 @@ describe(expandRules, () => {
     expect(result[0]?.end.toString()).toBe(
       Temporal.ZonedDateTime.from("2026-05-12T17:00[Europe/Lisbon]").toString()
     );
-  });
-
-  it("walks only a rule's effective dates, however long the range", () => {
-    const rule: AvailabilityRule = {
-      effectiveFrom: Temporal.PlainDate.from("2026-05-11"),
-      effectiveTo: Temporal.PlainDate.from("2026-05-17"),
-      exceptions: [Temporal.PlainDate.from("2026-05-13")],
-      recurrence: {
-        daysOfWeek: [1, 2, 3, 4, 5],
-        frequency: "weekly",
-        interval: 1,
-      },
-      resourceId: "doc-1",
-      timeWindow: {
-        end: Temporal.PlainTime.from("17:00"),
-        start: Temporal.PlainTime.from("09:00"),
-      },
-      timezone: "Europe/Lisbon",
-    };
-
-    // Unchecked: the internal path `windowsFor` takes; a direct call is capped at 366 days.
-    const result = expandRulesUnchecked({
-      from: Temporal.PlainDate.from("2000-01-01"),
-      rules: prepareRules([rule]),
-      to: Temporal.PlainDate.from("9999-12-31"),
-    });
-
-    expect(result.map((w) => w.start.toPlainDate().toString())).toStrictEqual([
-      "2026-05-11",
-      "2026-05-12",
-      "2026-05-14",
-      "2026-05-15",
-    ]);
   });
 
   it("emits no windows when range is entirely before effectiveFrom", () => {
