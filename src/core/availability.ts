@@ -1,4 +1,6 @@
 import { expandRulesUnchecked } from "./expand-rules.js";
+import { prepareRules } from "./rule-dates.js";
+import type { PreparedRule } from "./rule-dates.js";
 import type { AvailabilityRule, InstantRange } from "./types.js";
 
 /**
@@ -16,7 +18,7 @@ export function availableWindows(
       .toZonedDateTimeISO("UTC")
       .toPlainDate()
       .subtract({ days: 1 }),
-    rules,
+    rules: prepareRules(rules),
     to: range.end.toZonedDateTimeISO("UTC").toPlainDate().add({ days: 1 }),
   }).map((w) => ({ end: w.end.toInstant(), start: w.start.toInstant() }));
 }
@@ -34,7 +36,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * @returns The open windows around `slot`, or none when `slot` is too long for any window to hold.
  */
 export function windowsFor(
-  rules: readonly AvailabilityRule[],
+  rules: readonly PreparedRule[],
   slot: InstantRange,
   byDate: Map<number, readonly InstantRange[]>
 ): InstantRange[] {

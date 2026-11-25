@@ -23,7 +23,7 @@ export function dateAt(midnight: number): Temporal.PlainDate {
 }
 
 /** The dates a rule occurs on, as UTC midnights in epoch milliseconds. */
-export interface RuleDates {
+interface RuleDates {
   /** No date before this one; `-Infinity` without `effectiveFrom`. */
   readonly first: number;
   /** No date after this one; `Infinity` without `effectiveTo`. */
@@ -54,7 +54,7 @@ function keyOf(date: Temporal.PlainDate): number {
  *
  * @returns The dates, for any range.
  */
-export function ruleDates(rule: AvailabilityRule): RuleDates {
+function ruleDates(rule: AvailabilityRule): RuleDates {
   const { effectiveFrom, effectiveTo, exceptions = [], recurrence } = rule;
 
   const first = effectiveFrom
@@ -93,4 +93,21 @@ export function ruleDates(rule: AvailabilityRule): RuleDates {
       !isException(midnight),
     last,
   };
+}
+
+/** A rule with its dates worked out, so asking about many ranges reads its exceptions once. */
+export interface PreparedRule {
+  readonly rule: AvailabilityRule;
+  readonly dates: RuleDates;
+}
+
+/**
+ * Prepares `rules` to expand, any number of times.
+ *
+ * @returns Each rule with its dates, in order.
+ */
+export function prepareRules(
+  rules: readonly AvailabilityRule[]
+): readonly PreparedRule[] {
+  return rules.map((rule) => ({ dates: ruleDates(rule), rule }));
 }

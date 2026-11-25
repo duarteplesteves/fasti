@@ -2,7 +2,8 @@ import { MAX_EXPAND_DAYS, checkDate, checkRules } from "./checks.js";
 import { DAY_MS } from "./day-offset.js";
 import { checked } from "./result.js";
 import type { InvalidParams, Result } from "./result.js";
-import { dateAt, ruleDates, utcMidnightMs } from "./rule-dates.js";
+import { dateAt, prepareRules, utcMidnightMs } from "./rule-dates.js";
+import type { PreparedRule } from "./rule-dates.js";
 import type { AvailabilityRule, ExpandedWindow } from "./types.js";
 
 /** Rules to expand over every date in `[from, to]`, both ends included. */
@@ -61,15 +62,16 @@ function clipped(
  * @returns The expanded windows, sorted by start then `resourceId`.
  */
 export function expandRulesUnchecked(
-  params: ExpandRulesParams
+  params: Pick<ExpandRulesParams, "from" | "to"> & {
+    readonly rules: readonly PreparedRule[];
+  }
 ): ExpandedWindow[] {
   const { from, rules, to } = params;
   const windows: ExpandedWindow[] = [];
   const fromMidnight = utcMidnightMs(from);
   const toMidnight = utcMidnightMs(to);
 
-  for (const rule of rules) {
-    const dates = ruleDates(rule);
+  for (const { dates, rule } of rules) {
     const startMs = msOfDay(rule.timeWindow.start);
     const endMs = msOfDay(rule.timeWindow.end);
 
@@ -153,5 +155,7 @@ export function expandRules(
     }
   }
 
-  return checked(issues, () => expandRulesUnchecked(params));
+  return checked(issues, () =>
+    expandRulesUnchecked({ from, rules: prepareRules(rules), to })
+  );
 }

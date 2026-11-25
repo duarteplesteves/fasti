@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { unwrap, issuePaths } from "../test-utils/results.js";
 import { expandRules, expandRulesUnchecked } from "./expand-rules.js";
 import { findFreeSlots } from "./find-free-slots.js";
+import { prepareRules } from "./rule-dates.js";
 import type { AvailabilityRule } from "./types.js";
 
 /** The windows of a daily `start`–`end` rule on `date`, as `start → end` wall-clock times. */
@@ -222,7 +223,7 @@ describe(expandRules, () => {
     // Unchecked: the internal path `windowsFor` takes; a direct call is capped at 366 days.
     const result = expandRulesUnchecked({
       from: Temporal.PlainDate.from("2000-01-01"),
-      rules: [rule],
+      rules: prepareRules([rule]),
       to: Temporal.PlainDate.from("9999-12-31"),
     });
 
