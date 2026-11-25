@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import { windowFit } from "../../core/availability.js";
 import { checkRules } from "../../core/checks.js";

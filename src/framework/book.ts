@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import type { BookingRecord, ResourceIdOf } from "../adapter/records.js";
 import { checkInstantRange } from "../core/checks.js";

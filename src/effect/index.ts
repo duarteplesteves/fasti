@@ -1,4 +1,5 @@
-import { Context, Layer } from "effect";
+import * as Context from "effect/Context";
+import * as Layer from "effect/Layer";
 
 import type { Adapter } from "../adapter/contract.js";
 import type { CreateSchedulerParams } from "../framework/create-scheduler.js";

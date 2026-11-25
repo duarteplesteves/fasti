@@ -1,7 +1,8 @@
 // The Promise face (ADR 010's second face, for Plugin authors): the root `definePlugin`, and `promiseFace`, the only
 // place a Plugin's Promises cross into Effect.
-import { Effect } from "effect";
-import type { Context } from "effect";
+
+import type * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
 
 import type { Result } from "../core/result.js";
 import type { AnySchema, NoKeys } from "../schema/define-schema.js";

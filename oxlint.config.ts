@@ -28,6 +28,12 @@ const noEffect = {
   message: "Only the Effect layer imports effect (ADR 012).",
 };
 
+const noEffectBarrel = {
+  message:
+    'Import the module, e.g. "effect/Effect": the barrel loads all of effect.',
+  regex: "^effect$",
+};
+
 const noAdaptersOrTesting = {
   group: [
     "**/memory/**",
@@ -71,7 +77,17 @@ export default defineConfig({
     },
     {
       files: ["src/{framework,effect}/**", "src/index.ts"],
-      rules: restrict([noVitest, noDrizzle, noPrisma, noAdaptersOrTesting]),
+      rules: {
+        ...restrict([
+          noVitest,
+          noDrizzle,
+          noPrisma,
+          noAdaptersOrTesting,
+          noEffectBarrel,
+        ]),
+        // Misreads data-first `Effect.forEach(xs, f)` as `Array#forEach`.
+        "unicorn/no-array-for-each": "off",
+      },
     },
     {
       files: ["src/drizzle/**"],

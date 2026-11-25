@@ -1,4 +1,4 @@
-import type { Effect } from "effect";
+import type * as Effect from "effect/Effect";
 
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { ResourceIdOf } from "../adapter/records.js";

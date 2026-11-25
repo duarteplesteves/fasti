@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import { checkInstantRange } from "../../core/checks.js";
 import { checked } from "../../core/result.js";

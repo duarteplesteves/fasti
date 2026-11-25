@@ -1,4 +1,8 @@
-import { Cause, Effect, Exit, Predicate, Result as EffectResult } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Predicate from "effect/Predicate";
+import * as EffectResult from "effect/Result";
 
 import type { Adapter, GroupsOf } from "../adapter/contract.js";
 import type { Result } from "../core/result.js";

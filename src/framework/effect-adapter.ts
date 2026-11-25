@@ -1,4 +1,7 @@
-import { Cause, Effect, Exit, Result as EffectResult } from "effect";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as EffectResult from "effect/Result";
 
 import type {
   AdapterReads,

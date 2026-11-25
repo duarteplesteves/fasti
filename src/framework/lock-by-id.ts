@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";

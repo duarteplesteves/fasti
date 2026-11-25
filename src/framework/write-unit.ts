@@ -1,4 +1,8 @@
-import { Cause, Clock, Effect, Fiber, pipe } from "effect";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import { pipe } from "effect/Function";
 
 import type { ResourceIdOf } from "../adapter/records.js";
 import type { AnySchema } from "../schema/define-schema.js";

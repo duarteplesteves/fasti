@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import type { BookingChanges, StatusOf } from "../adapter/records.js";
 import type { InvalidParams } from "../core/result.js";

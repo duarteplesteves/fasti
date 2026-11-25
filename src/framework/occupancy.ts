@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 
 import type { ListBookingsQuery } from "../adapter/contract.js";
 import { toCoreBooking } from "../adapter/records.js";
