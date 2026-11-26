@@ -87,6 +87,8 @@ bun add @fastijs/scheduler
 
 fasti needs a runtime with native `Temporal`: **Node.js 26+ or Bun 1.4+**.
 
+**Using a coding agent?** The package ships a `fasti` skill that points the agent to these docs and the mistakes to avoid. Link it from `node_modules` with `npx skills experimental_sync`, so it updates with the package, or install it from GitHub with `npx skills add duarteplesteves/fasti --skill fasti`.
+
 ## Quickstart on Postgres
 
 With [Drizzle](https://orm.drizzle.team) (`drizzle-orm` 1.0 RC.5+). For SQLite, Prisma or your own storage, see [Databases](#databases). A full, runnable version that CI runs on every push is in [`examples/basic`](./examples/basic).

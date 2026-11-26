@@ -18,6 +18,7 @@
   "files": [
     "dist",
     "docs/guides",
+    "skills",
     "README.md",
     "LICENSE"
   ],
