@@ -17,9 +17,15 @@
   },
   "files": [
     "dist",
+    "docs/adr",
     "docs/guides",
+    "examples/basic/*.ts",
+    "examples/basic/README.md",
     "skills",
+    "CHANGELOG.md",
+    "GLOSSARY.md",
     "README.md",
+    "ROADMAP.md",
     "LICENSE"
   ],
   "type": "module",
@@ -74,9 +80,10 @@
     "prepare": "husky && effect-tsgo patch --oxlint",
     "check": "ultracite check",
     "fix": "ultracite fix",
-    "typecheck": "tsc && tsc -p bench",
+    "typecheck": "tsc && tsc -p bench && tsc -p scripts",
     "typecheck:budget": "node bench/types/check-budget.ts",
     "publint": "publint",
+    "check:links": "node scripts/check-pack-links.ts",
     "attw": "attw --pack --profile esm-only",
     "test:integration": "vitest run --project conformance",
     "release": "nub run build && changeset publish"
