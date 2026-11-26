@@ -26,6 +26,8 @@ jobs:
       - run: nub run build
       - run: nub run publint
       - run: nub run attw
+      # Docs in the package link only to files it ships (read from node_modules by people and agents).
+      - run: nub run check:links
 
   unit:
     runs-on: ubuntu-latest
