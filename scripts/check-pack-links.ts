@@ -39,7 +39,7 @@ for (const file of markdown) {
 
   // shortcut: checks paths only, not #anchors; add heading checks if anchors start breaking.
   for (const { groups } of text.matchAll(/\]\((?<target>[^)\s#]+)[^)]*\)/gu)) {
-    const target = groups?.target ?? "";
+    const target = groups?.["target"] ?? "";
     // https:, mailto:
     const external = /^[a-z]+:/iu.test(target);
 
