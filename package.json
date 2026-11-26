@@ -1,6 +1,6 @@
 {
   "name": "@fastijs/scheduler",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "A type-safe scheduling framework for TypeScript that runs on your own database.",
   "keywords": [
     "appointments",
